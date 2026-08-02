@@ -281,6 +281,10 @@ public final class VClientImpl extends IVClient.Stub {
         NativeEngine.launchEngine();
         Object mainThread = VirtualCore.mainThread();
         NativeEngine.startDexOverride();
+        // Android 12 records a LoadedApk security violation when the guest context is created
+        // while ActivityThread still identifies the process as the host. Establish the virtual
+        // identity first so later guest createPackageContext(INCLUDE_CODE) calls can reuse it.
+        Object boundApp = fixBoundApp(mBoundApplication);
         Context context = createPackageContext(data.appInfo.packageName);
         try {
             // anti-virus, fuck ESET-NOD32: a variant of Android/AdDisplay.AdLock.AL potentially unwanted
@@ -316,7 +320,6 @@ public final class VClientImpl extends IVClient.Stub {
                 RenderScript.setupDiskCache.call(codeCacheDir);
             }
         }
-        Object boundApp = fixBoundApp(mBoundApplication);
         mBoundApplication.info = ContextImpl.mPackageInfo.get(context);
         mirror.android.app.ActivityThread.AppBindData.info.set(boundApp, data.info);
         VMRuntime.setTargetSdkVersion.call(VMRuntime.getRuntime.call(), data.appInfo.targetSdkVersion);
@@ -335,7 +338,10 @@ public final class VClientImpl extends IVClient.Stub {
         ClassLoader cl = LoadedApk.getClassLoader.call(data.info);
         if (BuildCompat.isS()) {
             ClassLoader parent = cl.getParent();
-            Reflect.on(cl).set("parent", new DelegateLastClassLoader("/system/framework/android.test.base.jar", parent));
+            String sharedLibraryPath = LegacySharedLibraryCompat.android12DelegatePath();
+            if (!sharedLibraryPath.isEmpty()) {
+                Reflect.on(cl).set("parent", new DelegateLastClassLoader(sharedLibraryPath, parent));
+            }
         }
 
         if (Build.VERSION.SDK_INT >= 30)

@@ -5,9 +5,10 @@ an unrooted, bootloader-locked `ASUS_I002D` running Android 12 / API 31. The tar
 16 compatibility (`compileSdk` and `targetSdk` 36).
 
 > **M0 status:** the sideload-only `runtimeProbe` build imports installed base/split APKs into a
-> GPL-3.0 virtual runtime and launches one LINE clone with a host-private data directory. LINE
-> 15.5.4 reached its fresh login screen on the ASUS_I002D acceptance device. This is a focused
-> compatibility milestone, not general Android 16 or arbitrary-app support.
+> GPL-3.0 virtual runtime and launches accepted LINE and Shopee clones with host-private data.
+> LINE 15.5.4 reached its fresh login screen, while Shopee Taiwan 3.79.27 reached its live home and
+> native login screens on the ASUS_I002D acceptance device. This is a focused compatibility
+> milestone, not general Android 16 or arbitrary-app support.
 
 ## M0 architecture
 
@@ -49,8 +50,13 @@ data are separate concepts: activating a verified revision must never replace in
   [`virtual-runtime/UPSTREAM.md`](virtual-runtime/UPSTREAM.md).
 
 The historical candidate review and the reason for selecting the exact GPL release tree are
-recorded in [`docs/core-engine-audit.md`](docs/core-engine-audit.md). The device acceptance evidence
-for the first working LINE clone is in [`docs/m0-line-acceptance.md`](docs/m0-line-acceptance.md).
+recorded in [`docs/core-engine-audit.md`](docs/core-engine-audit.md). Device acceptance evidence is
+recorded for [LINE](docs/m0-line-acceptance.md) and
+[Shopee Taiwan](docs/m0-shopee-acceptance.md).
+
+For Shopee, select the imported package and use **開啟登入** to enter Shopee's declared native
+login activity. The normal clone action continues to open Shopee's home activity. MaskAccounts
+does not bypass Shopee traffic verification or device-integrity decisions.
 
 ## Build and test
 

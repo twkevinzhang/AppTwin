@@ -1,6 +1,8 @@
 package org.maskaccounts.runtime
 
+import android.content.ComponentName
 import android.content.Context
+import android.content.Intent
 import android.content.pm.PackageInfo
 import android.os.Build
 import android.util.Log
@@ -31,7 +33,10 @@ class VirtualRuntimeController(context: Context) {
     private val appContext = context.applicationContext
     private val importer = AndroidPackageRevisionImporter(appContext)
 
-    fun installAndLaunch(instance: VirtualInstance): RuntimeLaunchResult = runCatching {
+    fun installAndLaunch(
+        instance: VirtualInstance,
+        activityName: String? = null,
+    ): RuntimeLaunchResult = runCatching {
         val packageName = instance.packageName
         val revision = requireNotNull(importer.activeRevisionDirectory(packageName)) {
             "沒有可啟動的 active revision"
@@ -66,8 +71,18 @@ class VirtualRuntimeController(context: Context) {
                 "splits=${virtualPackage.splitNames?.contentToString()} " +
                 "sourceDir=${virtualPackage.applicationInfo?.sourceDir}",
         )
-        val launchIntent = requireNotNull(core.getLaunchIntent(packageName, virtualUserId)) {
-            "找不到 virtual launcher activity"
+        val launchIntent = if (activityName == null) {
+            requireNotNull(core.getLaunchIntent(packageName, virtualUserId)) {
+                "找不到 virtual launcher activity"
+            }
+        } else {
+            val component = ComponentName(packageName, activityName)
+            requireNotNull(
+                VPackageManager.get().getActivityInfo(component, 0, virtualUserId),
+            ) { "找不到 virtual activity：$activityName" }
+            Intent(Intent.ACTION_MAIN)
+                .setComponent(component)
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
         }
         val resultCode = VActivityManager.get().startActivity(launchIntent, virtualUserId)
         check(resultCode >= 0) { "virtual activity start failed: $resultCode" }

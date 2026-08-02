@@ -38,6 +38,12 @@ Installed source package
 - On Android 12 and lower, AndroidX's synthetic non-exported dynamic-receiver permission is granted
   virtually and rewritten to a MaskAccounts-owned signature permission before the OS call. This
   preserves receiver privacy while avoiding a permission owned by the original app's signature.
+- On Android 12, the guest delegate class path includes the available platform Apache HTTP legacy
+  shared library. This preserves compatibility with installed apps that declare
+  `org.apache.http.legacy` but load code through the virtual class loader.
+- The Android 12 guest identity is bound before creating the initial package context, preventing a
+  cached host-identity `LoadedApk` from rejecting later guest `createPackageContext(INCLUDE_CODE)`
+  calls.
 - Package broadcasts refresh the foreground UI; foreground/startup reconciliation remains the
   source of truth because Android does not guarantee background delivery to a killed host.
 - `MANAGE_EXTERNAL_STORAGE` is explicitly user-granted. The launcher probes direct visibility of
@@ -49,6 +55,10 @@ Installed source package
   unrooted ASUS_I002D running Android 12/API 31 and reaches the fresh login screen.
 - The guest process uses the MaskAccounts UID, while its process label and window resources remain
   LINE's. The original LINE package and data directory remain separate.
+- One Shopee Taiwan 3.79.27 instance launches on the same device, loads the live home screen, and
+  opens Shopee's declared native login activity. The login screen remained in the foreground for
+  more than 75 seconds, survived a background/foreground cycle, and also passed a force-stop cold
+  launch.
 - This milestone validates ordinary private-data separation for one clone; it is not a security
   boundary against a hostile guest app.
 
@@ -62,4 +72,5 @@ Installed source package
 - Guest update migration tests across two real Play versions.
 - Android 16 runtime acceptance on a physical locked device.
 
-See [`m0-line-acceptance.md`](m0-line-acceptance.md) for the exact accepted path and evidence.
+See [`m0-line-acceptance.md`](m0-line-acceptance.md) and
+[`m0-shopee-acceptance.md`](m0-shopee-acceptance.md) for the exact accepted paths and evidence.
