@@ -1,0 +1,20 @@
+<resources>
+    <string name="app_name">MaskAccounts</string>
+    <string name="m0_title">MaskAccounts M0</string>
+    <string name="m0_subtitle">從主系統已安裝 App 選擇套件來源</string>
+    <string name="all_files_granted">所有檔案存取權：已開啟（Download %1$d 項、相片目錄 %2$d 項）</string>
+    <string name="all_files_missing">所有檔案存取權：尚未開啟（點此設定）</string>
+    <string name="installed_apps">已安裝 App（%1$d）</string>
+    <string name="no_apps">找不到可顯示的已安裝 App</string>
+    <string name="tap_to_sync">點選 App 以建立或修復共用 PackageRevision</string>
+    <string name="syncing_app">正在同步 %1$s 的 base 與 splits…</string>
+    <string name="sync_complete">%1$s 同步完成：%2$d 個 APK，約 %3$d MB</string>
+    <string name="sync_already_current">%1$s 已是最新 revision</string>
+    <string name="sync_rejected">拒絕同步：%1$s</string>
+    <string name="sync_failed">同步失敗：%1$s</string>
+    <string name="package_actions_message">PackageRevision v%1$d 已就緒</string>
+    <string name="create_instance">建立新實例</string>
+    <string name="repair_revision">重新同步</string>
+    <string name="instance_created">已建立 %1$s 的隔離資料目錄</string>
+    <string name="instance_failed">建立實例失敗：%1$s</string>
+</resources>
