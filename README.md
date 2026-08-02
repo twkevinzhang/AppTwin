@@ -4,9 +4,10 @@ MaskAccounts is an experimental, open-source Android app-level multi-account con
 an unrooted, bootloader-locked `ASUS_I002D` running Android 12 / API 31. The target remains Android
 16 compatibility (`compileSdk` and `targetSdk` 36).
 
-> **M0 status:** this repository can import immutable revisions from installed base/split APKs and
-> persist isolated instance records/data roots. It does **not** yet contain an app virtualization
-> runtime and cannot launch a clone.
+> **M0 status:** the sideload-only `runtimeProbe` build imports installed base/split APKs into a
+> GPL-3.0 virtual runtime and launches one LINE clone with a host-private data directory. LINE
+> 15.5.4 reached its fresh login screen on the ASUS_I002D acceptance device. This is a focused
+> compatibility milestone, not general Android 16 or arbitrary-app support.
 
 ## M0 architecture
 
@@ -20,8 +21,13 @@ Google Play updates main-system app
           stage and verify
                  v
         shared PackageRevision
-          /       |       \
-   instance-1 instance-2 instance-3   (future isolated data roots)
+                 |
+                 v
+       Virtual PackageManager
+                 |
+       host StubActivity / guest process
+                 |
+         isolated instance data
 ```
 
 One Android package version will be shared by every virtual instance. Package code and instance
@@ -37,10 +43,14 @@ data are separate concepts: activating a verified revision must never replace in
   persists immutable revisions and an atomic active pointer in host-private storage.
 - `instance-store`: pure Kotlin instance identity model and state store. The app persists each
   instance under its own host-private data root.
+- `virtual-runtime`: downstream Android 12/arm64 port of VirtualXposed 0.22.0's GPL-3.0
+  `VirtualApp/lib`. It supplies virtual package/component routing, guest process startup, and
+  native path redirection. Provenance and downstream changes are recorded in
+  [`virtual-runtime/UPSTREAM.md`](virtual-runtime/UPSTREAM.md).
 
-No third-party virtualization core or hook framework is included. The completed candidate review
-is recorded in [`docs/core-engine-audit.md`](docs/core-engine-audit.md); none of the audited trees is
-safe to import as a modern production baseline.
+The historical candidate review and the reason for selecting the exact GPL release tree are
+recorded in [`docs/core-engine-audit.md`](docs/core-engine-audit.md). The device acceptance evidence
+for the first working LINE clone is in [`docs/m0-line-acceptance.md`](docs/m0-line-acceptance.md).
 
 ## Build and test
 
@@ -53,14 +63,18 @@ Requirements:
 ```shell
 export JAVA_HOME="$(/usr/libexec/java_home -v 17)"
 export ANDROID_HOME="$HOME/Library/Android/sdk"
-./gradlew test assembleDebug
+./gradlew test :app:assembleRuntimeProbeDebug
 ```
 
 Install the sideload-only debug build:
 
 ```shell
-adb install -r app/build/outputs/apk/debug/app-debug.apk
+adb install -r -t app/build/outputs/apk/runtimeProbe/debug/app-runtimeProbe-debug.apk
 ```
+
+`runtimeProbe` intentionally targets Android API 23 behavior while compiling with SDK 36. The
+default product target remains API 36; the legacy-target probe must not be submitted to Google
+Play.
 
 ## Sideload-only permissions
 

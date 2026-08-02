@@ -21,6 +21,9 @@ import org.maskaccounts.revision.AndroidPackageRevisionImporter
 import org.maskaccounts.revision.InstalledAppEntry
 import org.maskaccounts.revision.RevisionImportResult
 import org.maskaccounts.instances.FileInstanceStore
+import org.maskaccounts.instances.VirtualInstance
+import org.maskaccounts.runtime.RuntimeLaunchResult
+import org.maskaccounts.runtime.VirtualRuntimeController
 
 /**
  * Minimal M0 package-source picker.
@@ -35,6 +38,7 @@ class MainActivity : Activity() {
     private lateinit var syncStatus: TextView
     private lateinit var importer: AndroidPackageRevisionImporter
     private lateinit var instanceStore: FileInstanceStore
+    private lateinit var runtimeController: VirtualRuntimeController
     private val importExecutor = Executors.newSingleThreadExecutor()
     private var entries: List<InstalledAppEntry> = emptyList()
     private var packageReceiverRegistered = false
@@ -51,7 +55,13 @@ class MainActivity : Activity() {
         super.onCreate(savedInstanceState)
         importer = AndroidPackageRevisionImporter(this)
         instanceStore = FileInstanceStore(this)
+        runtimeController = VirtualRuntimeController(this)
         setContentView(createContentView())
+        if (BuildConfig.DEBUG && intent.action == ACTION_LAUNCH_LINE_CLONE) {
+            window.decorView.post {
+                instanceStore.list(LINE_PACKAGE).firstOrNull()?.let(::launchInstance)
+            }
+        }
     }
 
     override fun onResume() {
@@ -211,6 +221,11 @@ class MainActivity : Activity() {
             syncPackage(entry)
             return
         }
+        val instances = instanceStore.list(entry.packageName)
+        if (entry.packageName == LINE_PACKAGE) {
+            showLineActions(entry, active.versionCode, instances)
+            return
+        }
         AlertDialog.Builder(this)
             .setTitle(entry.label)
             .setMessage(getString(R.string.package_actions_message, active.versionCode))
@@ -220,7 +235,30 @@ class MainActivity : Activity() {
             .show()
     }
 
-    private fun createInstance(entry: InstalledAppEntry) {
+    private fun showLineActions(
+        entry: InstalledAppEntry,
+        versionCode: Long,
+        instances: List<VirtualInstance>,
+    ) {
+        val first = instances.firstOrNull()
+        val message = if (first == null) {
+            getString(R.string.line_runtime_ready, versionCode)
+        } else {
+            getString(R.string.line_runtime_instance_ready, versionCode, first.displayName)
+        }
+        AlertDialog.Builder(this)
+            .setTitle(entry.label)
+            .setMessage(message)
+            .setPositiveButton(
+                if (first == null) R.string.create_and_launch else R.string.launch_clone,
+            ) { _, _ ->
+                if (first == null) createInstance(entry, launchAfterCreate = true) else launchInstance(first)
+            }
+            .setNegativeButton(android.R.string.cancel, null)
+            .show()
+    }
+
+    private fun createInstance(entry: InstalledAppEntry, launchAfterCreate: Boolean = false) {
         val ordinal = instanceStore.list(entry.packageName).size + 1
         val instance = runCatching {
             instanceStore.create(
@@ -234,6 +272,30 @@ class MainActivity : Activity() {
         }
         syncStatus.text = getString(R.string.instance_created, instance.displayName)
         refreshInstalledApps()
+        if (launchAfterCreate) launchInstance(instance)
+    }
+
+    private fun launchInstance(instance: VirtualInstance) {
+        appList.isEnabled = false
+        syncStatus.text = getString(R.string.launching_clone, instance.displayName)
+        importExecutor.execute {
+            val result = runtimeController.installAndLaunch(instance)
+            runOnUiThread {
+                appList.isEnabled = true
+                syncStatus.text = when (result) {
+                    is RuntimeLaunchResult.Started -> getString(
+                        R.string.clone_started,
+                        instance.displayName,
+                        result.processPrefix,
+                        result.virtualUserId,
+                    )
+                    is RuntimeLaunchResult.Failed -> getString(
+                        R.string.clone_launch_failed,
+                        result.reason,
+                    )
+                }
+            }
+        }
     }
 
     private fun openAllFilesAccessSettings() {
@@ -250,6 +312,8 @@ class MainActivity : Activity() {
     }
 
     private companion object {
+        const val ACTION_LAUNCH_LINE_CLONE = "org.maskaccounts.action.LAUNCH_LINE_CLONE"
+        const val LINE_PACKAGE = "jp.naver.line.android"
         val PACKAGE_CHANGE_ACTIONS = setOf(
             Intent.ACTION_PACKAGE_ADDED,
             Intent.ACTION_PACKAGE_REPLACED,

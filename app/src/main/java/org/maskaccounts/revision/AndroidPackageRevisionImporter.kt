@@ -91,6 +91,13 @@ class AndroidPackageRevisionImporter(context: Context) {
         )
     }
 
+    /** Returns the immutable base+split directory currently selected for runtime loading. */
+    fun activeRevisionDirectory(packageName: String): File? {
+        val active = active(packageName) ?: return null
+        val directory = File(packageRoot(packageName), active.revisionId)
+        return directory.takeIf { it.isDirectory && File(it, "base.apk").isFile }
+    }
+
     fun sync(packageName: String): RevisionImportResult {
         val before = runCatching { captureSource(packageName) }
             .getOrElse { return RevisionImportResult.Failed(it.safeMessage()) }
