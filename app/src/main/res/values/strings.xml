@@ -17,9 +17,10 @@
     <string name="repair_revision">重新同步</string>
     <string name="instance_created">已建立 %1$s 的隔離資料目錄</string>
     <string name="instance_failed">建立實例失敗：%1$s</string>
-    <string name="line_runtime_ready">PackageRevision v%1$d 已就緒，可建立第一個 LINE clone 並啟動。</string>
-    <string name="line_runtime_instance_ready">PackageRevision v%1$d 已就緒。將啟動 %2$s；它使用 MaskAccounts UID 與獨立 guest data。</string>
+    <string name="clone_runtime_ready">PackageRevision v%1$d 已就緒，可建立第一個 %2$s clone 並啟動。</string>
+    <string name="clone_runtime_instance_ready">PackageRevision v%1$d 已就緒。將啟動 %2$s；它使用 MaskAccounts UID 與獨立 guest data。</string>
     <string name="launch_clone">啟動 clone</string>
+    <string name="open_login">開啟登入</string>
     <string name="create_and_launch">建立並啟動</string>
     <string name="launching_clone">正在準備 %1$s 的 virtual package 與獨立資料…</string>
     <string name="clone_started">%1$s 已交給 %2$s（virtual user %3$d）啟動</string>

@@ -22,14 +22,12 @@ import org.maskaccounts.revision.InstalledAppEntry
 import org.maskaccounts.revision.RevisionImportResult
 import org.maskaccounts.instances.FileInstanceStore
 import org.maskaccounts.instances.VirtualInstance
+import org.maskaccounts.runtime.CloneRuntimeSupport
 import org.maskaccounts.runtime.RuntimeLaunchResult
 import org.maskaccounts.runtime.VirtualRuntimeController
 
 /**
- * Minimal M0 package-source picker.
- *
- * This screen deliberately does not launch or virtualize selected apps. It makes the package
- * visibility and storage preconditions observable while the runtime is developed separately.
+ * M0 package-source picker and launcher for device-accepted clone runtimes.
  */
 class MainActivity : Activity() {
     private lateinit var storageStatus: TextView
@@ -57,9 +55,14 @@ class MainActivity : Activity() {
         instanceStore = FileInstanceStore(this)
         runtimeController = VirtualRuntimeController(this)
         setContentView(createContentView())
-        if (BuildConfig.DEBUG && intent.action == ACTION_LAUNCH_LINE_CLONE) {
+        if (BuildConfig.DEBUG) {
+            val debugPackage = when (intent.action) {
+                ACTION_LAUNCH_LINE_CLONE -> CloneRuntimeSupport.LINE_PACKAGE
+                ACTION_LAUNCH_CLONE -> intent.getStringExtra(EXTRA_PACKAGE_NAME)
+                else -> null
+            }?.takeIf(CloneRuntimeSupport::canLaunch)
             window.decorView.post {
-                instanceStore.list(LINE_PACKAGE).firstOrNull()?.let(::launchInstance)
+                debugPackage?.let(instanceStore::list)?.firstOrNull()?.let(::launchInstance)
             }
         }
     }
@@ -222,8 +225,8 @@ class MainActivity : Activity() {
             return
         }
         val instances = instanceStore.list(entry.packageName)
-        if (entry.packageName == LINE_PACKAGE) {
-            showLineActions(entry, active.versionCode, instances)
+        if (CloneRuntimeSupport.canLaunch(entry.packageName)) {
+            showCloneActions(entry, active.versionCode, instances)
             return
         }
         AlertDialog.Builder(this)
@@ -235,18 +238,18 @@ class MainActivity : Activity() {
             .show()
     }
 
-    private fun showLineActions(
+    private fun showCloneActions(
         entry: InstalledAppEntry,
         versionCode: Long,
         instances: List<VirtualInstance>,
     ) {
         val first = instances.firstOrNull()
         val message = if (first == null) {
-            getString(R.string.line_runtime_ready, versionCode)
+            getString(R.string.clone_runtime_ready, versionCode, entry.label)
         } else {
-            getString(R.string.line_runtime_instance_ready, versionCode, first.displayName)
+            getString(R.string.clone_runtime_instance_ready, versionCode, first.displayName)
         }
-        AlertDialog.Builder(this)
+        val dialog = AlertDialog.Builder(this)
             .setTitle(entry.label)
             .setMessage(message)
             .setPositiveButton(
@@ -255,7 +258,13 @@ class MainActivity : Activity() {
                 if (first == null) createInstance(entry, launchAfterCreate = true) else launchInstance(first)
             }
             .setNegativeButton(android.R.string.cancel, null)
-            .show()
+        val loginActivity = CloneRuntimeSupport.loginActivity(entry.packageName)
+        if (first != null && loginActivity != null) {
+            dialog.setNeutralButton(R.string.open_login) { _, _ ->
+                launchInstance(first, loginActivity)
+            }
+        }
+        dialog.show()
     }
 
     private fun createInstance(entry: InstalledAppEntry, launchAfterCreate: Boolean = false) {
@@ -275,11 +284,11 @@ class MainActivity : Activity() {
         if (launchAfterCreate) launchInstance(instance)
     }
 
-    private fun launchInstance(instance: VirtualInstance) {
+    private fun launchInstance(instance: VirtualInstance, activityName: String? = null) {
         appList.isEnabled = false
         syncStatus.text = getString(R.string.launching_clone, instance.displayName)
         importExecutor.execute {
-            val result = runtimeController.installAndLaunch(instance)
+            val result = runtimeController.installAndLaunch(instance, activityName)
             runOnUiThread {
                 appList.isEnabled = true
                 syncStatus.text = when (result) {
@@ -313,7 +322,8 @@ class MainActivity : Activity() {
 
     private companion object {
         const val ACTION_LAUNCH_LINE_CLONE = "org.maskaccounts.action.LAUNCH_LINE_CLONE"
-        const val LINE_PACKAGE = "jp.naver.line.android"
+        const val ACTION_LAUNCH_CLONE = "org.maskaccounts.action.LAUNCH_CLONE"
+        const val EXTRA_PACKAGE_NAME = "packageName"
         val PACKAGE_CHANGE_ACTIONS = setOf(
             Intent.ACTION_PACKAGE_ADDED,
             Intent.ACTION_PACKAGE_REPLACED,
