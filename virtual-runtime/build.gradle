@@ -1,0 +1,55 @@
+plugins {
+    id 'com.android.library'
+}
+
+android {
+    namespace 'com.lody.virtual'
+    compileSdk 36
+    ndkVersion '29.0.13846066'
+
+    defaultConfig {
+        minSdk 21
+        // Runtime compatibility probe intentionally preserves VirtualApp's legacy target behavior.
+        targetSdk 23
+        externalNativeBuild {
+            ndkBuild {
+                abiFilters 'arm64-v8a'
+            }
+        }
+    }
+
+    buildFeatures {
+        aidl true
+        buildConfig true
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_1_8
+        targetCompatibility JavaVersion.VERSION_1_8
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled false
+            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+        }
+    }
+
+    externalNativeBuild {
+        ndkBuild {
+            path file('src/main/jni/Android.mk')
+        }
+    }
+
+    lint {
+        abortOnError false
+        checkReleaseBuilds false
+        // AGP 8.13's receiver detectors crash while visiting VirtualApp's legacy receiver loop.
+        disable 'UnspecifiedRegisterReceiverFlag', 'UnsafeIntentLaunch'
+        warning 'NewApi', 'OnClick'
+    }
+}
+
+dependencies {
+    testImplementation 'junit:junit:4.13.2'
+}

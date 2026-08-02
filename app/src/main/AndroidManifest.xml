@@ -2,6 +2,12 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools">
 
+    <!-- AndroidX uses this signature permission to emulate non-exported dynamic receivers on API <= 32. -->
+    <permission
+        android:name="org.maskaccounts.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION"
+        android:protectionLevel="signature" />
+    <uses-permission android:name="org.maskaccounts.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION" />
+
     <!-- M0 is sideload-only. Play distribution requires a package visibility policy review. -->
     <uses-permission
         android:name="android.permission.QUERY_ALL_PACKAGES"
@@ -30,8 +36,10 @@
         android:required="false" />
 
     <application
+        android:name=".MaskAccountsApplication"
         android:allowBackup="false"
         android:dataExtractionRules="@xml/data_extraction_rules"
+        android:extractNativeLibs="true"
         android:fullBackupContent="false"
         android:icon="@drawable/ic_launcher"
         android:label="@string/app_name"
