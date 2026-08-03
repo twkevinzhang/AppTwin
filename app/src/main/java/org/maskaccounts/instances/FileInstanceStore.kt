@@ -4,6 +4,8 @@ import android.content.Context
 import java.io.File
 import java.io.FileInputStream
 import java.io.FileOutputStream
+import java.nio.file.Files
+import java.nio.file.StandardCopyOption
 import java.util.Properties
 import java.util.UUID
 
@@ -41,22 +43,86 @@ class FileInstanceStore(context: Context) : InstanceStore {
     }
 
     @Synchronized
+    override fun listAll(): List<VirtualInstance> = root.listFiles()
+        .orEmpty()
+        .asSequence()
+        .filter { it.isDirectory }
+        .flatMap { packageRoot ->
+            packageRoot.listFiles()
+                .orEmpty()
+                .asSequence()
+                .filter { it.isDirectory && !it.name.startsWith(".staging-") }
+                .mapNotNull { readMetadata(File(it, METADATA)) }
+        }
+        .sortedWith(INSTANCE_ORDER)
+        .toList()
+
+    @Synchronized
     override fun list(packageName: String): List<VirtualInstance> =
         File(root, packageName).listFiles()
             .orEmpty()
             .asSequence()
             .filter { it.isDirectory && !it.name.startsWith(".staging-") }
             .mapNotNull { readMetadata(File(it, METADATA)) }
-            .sortedWith(compareBy(VirtualInstance::createdAtEpochMillis, VirtualInstance::id))
+            .sortedWith(INSTANCE_ORDER)
             .toList()
 
     @Synchronized
-    override fun find(instanceId: String): VirtualInstance? = root.listFiles()
-        .orEmpty()
-        .asSequence()
-        .map { File(it, "$instanceId/$METADATA") }
-        .mapNotNull(::readMetadata)
-        .firstOrNull()
+    override fun find(instanceId: String): VirtualInstance? = resolveInstanceDirectory(instanceId)
+        ?.let { readMetadata(File(it, METADATA)) }
+
+    @Synchronized
+    override fun rename(instanceId: String, displayName: String): VirtualInstance? {
+        val trimmedDisplayName = displayName.trim()
+        require(trimmedDisplayName.isNotBlank()) { "Instance display name must not be blank" }
+        val instanceDirectory = resolveInstanceDirectory(instanceId) ?: return null
+        val metadata = File(instanceDirectory, METADATA)
+        val current = readMetadata(metadata) ?: return null
+        val renamed = current.copy(displayName = trimmedDisplayName)
+        val replacement = File(instanceDirectory, ".$METADATA-${UUID.randomUUID()}.tmp")
+        return try {
+            writeMetadata(replacement, renamed)
+            Files.move(
+                replacement.toPath(),
+                metadata.toPath(),
+                StandardCopyOption.ATOMIC_MOVE,
+                StandardCopyOption.REPLACE_EXISTING,
+            )
+            renamed
+        } finally {
+            replacement.delete()
+        }
+    }
+
+    @Synchronized
+    override fun delete(instanceId: String): Boolean {
+        val instanceDirectory = resolveInstanceDirectory(instanceId) ?: return false
+        check(instanceDirectory.deleteRecursively()) { "Unable to delete instance directory" }
+        return true
+    }
+
+    private fun resolveInstanceDirectory(instanceId: String): File? {
+        val canonicalInstanceId = runCatching { UUID.fromString(instanceId).toString() }
+            .getOrNull()
+            ?.takeIf { it == instanceId }
+            ?: return null
+        val canonicalRoot = root.canonicalFile
+        return root.listFiles()
+            .orEmpty()
+            .asSequence()
+            .filter { it.isDirectory && it.canonicalFile.parentFile == canonicalRoot }
+            .map { packageRoot -> packageRoot.canonicalFile to File(packageRoot, canonicalInstanceId).canonicalFile }
+            .filter { (packageRoot, instanceDirectory) ->
+                instanceDirectory.isDirectory && instanceDirectory.parentFile == packageRoot
+            }
+            .mapNotNull { (packageRoot, instanceDirectory) ->
+                val instance = readMetadata(File(instanceDirectory, METADATA))
+                instanceDirectory.takeIf {
+                    instance?.id == canonicalInstanceId && instance.packageName == packageRoot.name
+                }
+            }
+            .firstOrNull()
+    }
 
     private fun writeMetadata(file: File, instance: VirtualInstance) {
         val properties = Properties().apply {
@@ -88,5 +154,6 @@ class FileInstanceStore(context: Context) : InstanceStore {
 
     private companion object {
         const val METADATA = "instance.properties"
+        val INSTANCE_ORDER = compareBy(VirtualInstance::createdAtEpochMillis, VirtualInstance::id)
     }
 }
