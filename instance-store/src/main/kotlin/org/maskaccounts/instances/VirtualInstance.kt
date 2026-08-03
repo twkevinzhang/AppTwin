@@ -29,8 +29,11 @@ data class VirtualInstance(
 
 interface InstanceStore {
     fun create(packageName: String, displayName: String, createdAtEpochMillis: Long): VirtualInstance
+    fun listAll(): List<VirtualInstance>
     fun list(packageName: String): List<VirtualInstance>
     fun find(instanceId: String): VirtualInstance?
+    fun rename(instanceId: String, displayName: String): VirtualInstance?
+    fun delete(instanceId: String): Boolean
 }
 
 class InMemoryInstanceStore(
@@ -56,10 +59,29 @@ class InMemoryInstanceStore(
     }
 
     @Synchronized
+    override fun listAll(): List<VirtualInstance> = instances.values
+        .sortedWith(INSTANCE_ORDER)
+
+    @Synchronized
     override fun list(packageName: String): List<VirtualInstance> = instances.values
         .filter { it.packageName == packageName }
-        .sortedWith(compareBy(VirtualInstance::createdAtEpochMillis, VirtualInstance::id))
+        .sortedWith(INSTANCE_ORDER)
 
     @Synchronized
     override fun find(instanceId: String): VirtualInstance? = instances[instanceId]
+
+    @Synchronized
+    override fun rename(instanceId: String, displayName: String): VirtualInstance? {
+        val trimmedDisplayName = displayName.trim()
+        require(trimmedDisplayName.isNotBlank()) { "Instance display name must not be blank" }
+        val current = instances[instanceId] ?: return null
+        return current.copy(displayName = trimmedDisplayName).also { instances[instanceId] = it }
+    }
+
+    @Synchronized
+    override fun delete(instanceId: String): Boolean = instances.remove(instanceId) != null
+
+    private companion object {
+        val INSTANCE_ORDER = compareBy(VirtualInstance::createdAtEpochMillis, VirtualInstance::id)
+    }
 }
