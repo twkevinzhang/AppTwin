@@ -11,6 +11,7 @@ import android.content.pm.ProviderInfo;
 import android.content.pm.ServiceInfo;
 import android.content.pm.Signature;
 import android.os.Bundle;
+import android.util.ArraySet;
 import android.util.DisplayMetrics;
 
 import java.io.File;
@@ -20,6 +21,7 @@ import mirror.MethodParams;
 import mirror.MethodReflectParams;
 import mirror.RefClass;
 import mirror.RefConstructor;
+import mirror.RefInt;
 import mirror.RefMethod;
 import mirror.RefObject;
 import mirror.RefStaticMethod;
@@ -108,12 +110,31 @@ public class PackageParser {
         public static RefConstructor<android.content.pm.SigningInfo> ctor;
     }
 
+    /** Android 13+ SigningInfo constructor, which accepts top-level SigningDetails. */
+    public static class SigningInfoS {
+        public static Class<?> TYPE = RefClass.load(SigningInfoS.class, "android.content.pm.SigningInfo");
+
+        @MethodReflectParams("android.content.pm.SigningDetails")
+        public static RefConstructor<android.content.pm.SigningInfo> ctor;
+    }
+
     public static class SigningDetails {
         public static Class<?> TYPE = RefClass.load(SigningDetails.class, "android.content.pm.PackageParser$SigningDetails");
         public static RefObject<Signature[]> signatures;
         public static RefObject<Signature[]> pastSigningCertificates;
 
+        public static RefInt signatureSchemeVersion;
+        public static RefObject<ArraySet> publicKeys;
+
         public static RefMethod<Boolean> hasPastSigningCertificates;
         public static RefMethod<Boolean> hasSignatures;
+    }
+
+    /** Android 13+ top-level SigningDetails built for the matching SigningInfo constructor. */
+    public static class SigningDetailsS {
+        public static Class<?> TYPE = RefClass.load(SigningDetailsS.class, "android.content.pm.SigningDetails");
+
+        @MethodParams({Signature[].class, int.class, ArraySet.class, Signature[].class})
+        public static RefConstructor<Object> ctor;
     }
 }

@@ -32,6 +32,7 @@ import com.lody.virtual.client.hook.proxies.isms.ISmsStub;
 import com.lody.virtual.client.hook.proxies.isub.ISubStub;
 import com.lody.virtual.client.hook.proxies.job.JobServiceStub;
 import com.lody.virtual.client.hook.proxies.libcore.LibCoreStub;
+import com.lody.virtual.client.hook.proxies.locale.LocaleManagerStub;
 import com.lody.virtual.client.hook.proxies.location.LocationManagerStub;
 import com.lody.virtual.client.hook.proxies.media.router.MediaRouterServiceStub;
 import com.lody.virtual.client.hook.proxies.media.session.SessionManagerStub;
@@ -201,6 +202,9 @@ public final class InvocationStubManager {
             	// http://aospxref.com/android-10.0.0_r47/xref/frameworks/base/core/java/android/os/IDeviceIdentifiersPolicyService.aidl#24
             	addInjector(new DeviceIdentifiersPolicyServiceStub());
 			}
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                addInjector(new LocaleManagerStub());
+            }
 		}
 	}
 

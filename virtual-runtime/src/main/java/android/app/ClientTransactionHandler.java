@@ -77,9 +77,23 @@ public abstract class ClientTransactionHandler {
     public abstract void handleDestroyActivity(ActivityThread.ActivityClientRecord r, boolean finishing,
                                                int configChanges, boolean getNonConfigInstance, String reason);
 
+    // API 37
+    /** Destroy the activity using the API 37 transaction descriptor. */
+    public abstract void handleDestroyActivity(ActivityThread.ActivityClientRecord r,
+                                               boolean finishing,
+                                               boolean getNonConfigInstance,
+                                               String reason);
+
     /** Pause the activity. */
     public abstract void handlePauseActivity(ActivityThread.ActivityClientRecord r, boolean finished, boolean userLeaving,
                                              int configChanges, PendingTransactionActions pendingActions, String reason);
+
+    // API 37
+    public abstract void handlePauseActivity(ActivityThread.ActivityClientRecord r,
+                                             boolean finished, boolean userLeaving,
+                                             boolean autoEnteringPip,
+                                             PendingTransactionActions pendingActions,
+                                             String reason);
     /**
      * Resume the activity.
      * @param token Target activity token.
@@ -94,6 +108,11 @@ public abstract class ClientTransactionHandler {
     // Android 12
     public abstract void handleResumeActivity(ActivityThread.ActivityClientRecord record, boolean finalStateRequest,
                                               boolean isForward, String reason);
+
+    // API 37
+    public abstract void handleResumeActivity(ActivityThread.ActivityClientRecord record,
+                                              boolean finalStateRequest, boolean isForward,
+                                              boolean shouldSendCompatFakeFocus, String reason);
 
     /**
      * Stop the activity.
@@ -116,6 +135,11 @@ public abstract class ClientTransactionHandler {
     // Android 12
     public abstract void handleStopActivity(ActivityThread.ActivityClientRecord r, int configChanges,
                                             PendingTransactionActions pendingActions, boolean finalStateRequest, String reason);
+
+    // API 37
+    public abstract void handleStopActivity(ActivityThread.ActivityClientRecord r,
+                                            PendingTransactionActions pendingActions,
+                                            boolean finalStateRequest, String reason);
 
     /** Report that activity was stopped to server. */
     public abstract void reportStop(PendingTransactionActions pendingActions);
@@ -172,6 +196,10 @@ public abstract class ClientTransactionHandler {
     /** Perform activity launch. */
     public abstract Activity handleLaunchActivity(ActivityThread.ActivityClientRecord r,
             PendingTransactionActions pendingActions, Intent customIntent);
+
+    // API 37
+    public abstract Activity handleLaunchActivity(ActivityThread.ActivityClientRecord r,
+            PendingTransactionActions pendingActions, int deviceId, Intent customIntent);
     /** Perform activity start. */
     public abstract void handleStartActivity(ActivityThread.ActivityClientRecord r,
             PendingTransactionActions pendingActions);
@@ -181,12 +209,21 @@ public abstract class ClientTransactionHandler {
     public abstract void handleStartActivity(ActivityThread.ActivityClientRecord r,
                                              PendingTransactionActions pendingActions, ActivityOptions options);
 
+    // API 37
+    /** Perform activity start with the scene-transition payload used by API 37. */
+    public abstract void handleStartActivity(ActivityThread.ActivityClientRecord r,
+                                             PendingTransactionActions pendingActions,
+                                             ActivityOptions$SceneTransitionInfo sceneTransitionInfo);
+
     // Android 11
     public abstract void handleStartActivity(IBinder binder,
                                              PendingTransactionActions pendingActions);
     /** Get package info. */
     public abstract LoadedApk getPackageInfoNoCheck(ApplicationInfo ai,
                                                     CompatibilityInfo compatInfo);
+
+    // API 37
+    public abstract LoadedApk getPackageInfoNoCheck(ApplicationInfo ai);
     /** Deliver app configuration change notification. */
     public abstract void handleConfigurationChanged(Configuration config);
 
