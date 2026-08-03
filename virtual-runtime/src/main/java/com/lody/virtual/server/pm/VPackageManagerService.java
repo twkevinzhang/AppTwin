@@ -642,7 +642,12 @@ public class VPackageManagerService extends IPackageManager.Stub {
             for (VPackage p : mPackages.values()) {
                 PackageSetting ps = (PackageSetting) p.mExtras;
                 ApplicationInfo info = PackageParserEx.generateApplicationInfo(p, flags, ps.readUserState(userId), userId);
-                list.add(info);
+                // Packages not installed for this virtual user intentionally yield null. Binder's
+                // parceled-list transport cannot encode null entries and GMS enumerates this list
+                // during startup, so only expose applications installed for the requested user.
+                if (info != null) {
+                    list.add(info);
+                }
             }
         }
         return new VParceledListSlice<>(list);

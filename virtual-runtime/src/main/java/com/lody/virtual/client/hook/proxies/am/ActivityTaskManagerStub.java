@@ -8,10 +8,12 @@ import com.lody.virtual.client.hook.base.ReplaceCallingPkgMethodProxy;
 import com.lody.virtual.client.hook.base.StaticMethodProxy;
 import com.lody.virtual.client.ipc.VActivityManager;
 import com.lody.virtual.helper.compat.BuildCompat;
+import com.lody.virtual.helper.utils.VLog;
 
 import java.lang.reflect.Method;
 
 import mirror.android.app.IActivityTaskManager;
+import mirror.android.util.Singleton;
 
 /**
  * @author weishu
@@ -21,6 +23,27 @@ import mirror.android.app.IActivityTaskManager;
 public class ActivityTaskManagerStub extends BinderInvocationProxy {
     public ActivityTaskManagerStub() {
         super(IActivityTaskManager.Stub.TYPE, "activity_task");
+    }
+
+    @Override
+    public void inject() throws Throwable {
+        super.inject();
+        // ActivityTaskManager caches the Binder interface outside ServiceManager. Replacing only
+        // the service cache lets a guest activity bypass StartActivity and launch a real host
+        // component (notably Google AccountIntroActivity) after the first lookup.
+        Object singleton = mirror.android.app.ActivityTaskManager
+                .IActivityTaskManagerSingleton.get();
+        Singleton.mInstance.set(singleton, getInvocationStub().getProxyInterface());
+        VLog.i("ActivityTaskManagerStub", "cacheHook=%s startHook=%s",
+                Singleton.mInstance.get(singleton) == getInvocationStub().getProxyInterface(),
+                getInvocationStub().getMethodProxy("startActivity") != null);
+    }
+
+    @Override
+    public boolean isEnvBad() {
+        Object singleton = mirror.android.app.ActivityTaskManager
+                .IActivityTaskManagerSingleton.get();
+        return Singleton.mInstance.get(singleton) != getInvocationStub().getProxyInterface();
     }
 
     @Override

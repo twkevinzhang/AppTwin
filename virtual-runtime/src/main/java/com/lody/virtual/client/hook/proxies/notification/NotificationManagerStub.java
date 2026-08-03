@@ -3,16 +3,16 @@ package com.lody.virtual.client.hook.proxies.notification;
 import android.os.Build;
 import android.os.IInterface;
 
+import com.lody.virtual.client.core.VirtualCore;
 import com.lody.virtual.client.hook.base.Inject;
 import com.lody.virtual.client.hook.base.MethodInvocationProxy;
 import com.lody.virtual.client.hook.base.MethodInvocationStub;
 import com.lody.virtual.client.hook.base.ReplaceCallingPkgMethodProxy;
 import com.lody.virtual.client.hook.base.StaticMethodProxy;
-import com.lody.virtual.client.hook.utils.MethodParameterUtils;
-import com.lody.virtual.helper.compat.BuildCompat;
 import com.lody.virtual.helper.utils.DeviceUtil;
 
 import java.lang.reflect.Method;
+import java.util.Collections;
 
 import mirror.android.app.NotificationManager;
 import mirror.android.widget.Toast;
@@ -46,23 +46,42 @@ public class NotificationManagerStub extends MethodInvocationProxy<MethodInvocat
         // http://androidxref.com/8.0.0_r4/xref/frameworks/base/core/java/android/app/INotificationManager.aidl
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             addMethodProxy(new ReplaceCallingPkgMethodProxy("createNotificationChannelGroups"));
-            addMethodProxy(new ReplaceCallingPkgMethodProxy("getNotificationChannelGroups"));
+            addMethodProxy(new StaticMethodProxy("getNotificationChannelGroups") {
+                @Override
+                public Object call(Object who, Method method, Object... args) throws Throwable {
+                    if (containsGuestPackage(args)) {
+                        return Collections.emptyList();
+                    }
+                    return super.call(who, method, args);
+                }
+            });
+            addMethodProxy(new StaticMethodProxy("getNotificationChannelGroup") {
+                @Override
+                public Object call(Object who, Method method, Object... args) throws Throwable {
+                    if (containsGuestPackage(args)) {
+                        return null;
+                    }
+                    return super.call(who, method, args);
+                }
+            });
             addMethodProxy(new ReplaceCallingPkgMethodProxy("deleteNotificationChannelGroup"));
             addMethodProxy(new ReplaceCallingPkgMethodProxy("createNotificationChannels"));
-            addMethodProxy(new ReplaceCallingPkgMethodProxy("getNotificationChannels") {
+            addMethodProxy(new StaticMethodProxy("getNotificationChannels") {
                 @Override
-                public boolean beforeCall(Object who, Method method, Object... args) {
-                    MethodParameterUtils.replaceLastUid(args);
-                    return super.beforeCall(who, method, args);
+                public Object call(Object who, Method method, Object... args) throws Throwable {
+                    if (containsGuestPackage(args)) {
+                        return Collections.emptyList();
+                    }
+                    return super.call(who, method, args);
                 }
             });
             addMethodProxy(new StaticMethodProxy("getNotificationChannel") {
                 @Override
-                public boolean beforeCall(Object who, Method method, Object... args) {
-                    MethodParameterUtils.replaceLastUid(args);
-                    int sequence = BuildCompat.isQ() ? 2 : 1;
-                    MethodParameterUtils.replaceSequenceAppPkg(args, sequence);
-                    return super.beforeCall(who, method, args);
+                public Object call(Object who, Method method, Object... args) throws Throwable {
+                    if (containsGuestPackage(args)) {
+                        return null;
+                    }
+                    return super.call(who, method, args);
                 }
             });
             addMethodProxy(new ReplaceCallingPkgMethodProxy("deleteNotificationChannel"));
@@ -70,6 +89,22 @@ public class NotificationManagerStub extends MethodInvocationProxy<MethodInvocat
         if (DeviceUtil.isSamsung()) {
             addMethodProxy(new ReplaceCallingPkgMethodProxy("removeEdgeNotification"));
         }
+    }
+
+    static boolean containsGuestPackage(Object[] args) {
+        String hostPkg = VirtualCore.get().getHostPkg();
+        if (args == null) {
+            return false;
+        }
+        for (Object arg : args) {
+            if (arg instanceof String) {
+                String value = (String) arg;
+                if (VirtualCore.get().isAppInstalled(value) && !hostPkg.equals(value)) {
+                    return true;
+                }
+            }
+        }
+        return false;
     }
 
     @Override

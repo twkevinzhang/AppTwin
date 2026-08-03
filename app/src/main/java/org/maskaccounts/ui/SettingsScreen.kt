@@ -73,7 +73,7 @@ fun SettingsScreen(
                 title = "執行環境",
             ) {
                 Text(
-                    "目前已完成 LINE 與蝦皮的實機 clone 啟動路徑。其他 App 可以建立分身記錄，但啟動相容性仍需逐一驗證。",
+                    "LINE 與蝦皮已完成實機 clone 啟動驗證。YouTube 與 Google Maps 會同步 Google 依賴套件，但仍在相容性實驗中；其他 App 可以建立分身記錄，啟動相容性需逐一驗證。",
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }

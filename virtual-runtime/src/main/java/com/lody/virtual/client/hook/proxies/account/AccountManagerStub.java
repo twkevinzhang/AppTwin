@@ -1,6 +1,7 @@
 package com.lody.virtual.client.hook.proxies.account;
 
 import android.accounts.Account;
+import android.accounts.AccountManager;
 import android.accounts.IAccountManagerResponse;
 import android.content.Context;
 import android.os.Bundle;
@@ -10,6 +11,8 @@ import com.lody.virtual.client.hook.base.BinderInvocationProxy;
 import com.lody.virtual.client.ipc.VAccountManager;
 
 import java.lang.reflect.Method;
+import java.util.HashMap;
+import java.util.Map;
 
 import mirror.android.accounts.IAccountManager;
 
@@ -37,6 +40,7 @@ public class AccountManagerStub extends BinderInvocationProxy {
 		addMethodProxy(new hasFeatures());
 		addMethodProxy(new getAccountsByFeatures());
 		addMethodProxy(new addAccountExplicitly());
+		addMethodProxy(new AddAccountExplicitlyWithVisibility());
 		addMethodProxy(new removeAccount());
 		addMethodProxy(new removeAccountAsUser());
 		addMethodProxy(new removeAccountExplicitly());
@@ -64,6 +68,9 @@ public class AccountManagerStub extends BinderInvocationProxy {
 		addMethodProxy(new renameSharedAccountAsUser());
 
 		addMethodProxy(new setAccountVisibility());
+		addMethodProxy(new GetAccountVisibility());
+		addMethodProxy(new GetAccountsAndVisibilityForPackage());
+		addMethodProxy(new GetPackagesAndVisibilityForAccount());
 	}
 
 	private static class getPassword extends MethodProxy {
@@ -201,6 +208,24 @@ public class AccountManagerStub extends BinderInvocationProxy {
 			Account account = (Account) args[0];
 			String password = (String) args[1];
 			Bundle extras = (Bundle) args[2];
+			return Mgr.addAccountExplicitly(account, password, extras);
+		}
+	}
+
+	static class AddAccountExplicitlyWithVisibility extends MethodProxy {
+		@Override
+		public String getMethodName() {
+			return "addAccountExplicitlyWithVisibility";
+		}
+
+		@Override
+		public Object call(Object who, Method method, Object... args) throws Throwable {
+			Account account = (Account) args[0];
+			String password = (String) args[1];
+			Bundle extras = (Bundle) args[2];
+			// Visibility is deliberately scoped to the virtual user. The legacy virtual account
+			// database has no package-visibility table, so successful insertion means visible to
+			// guests in this container and never to host PackageManager/AccountManager clients.
 			return Mgr.addAccountExplicitly(account, password, extras);
 		}
 	}
@@ -607,6 +632,49 @@ public class AccountManagerStub extends BinderInvocationProxy {
 		@Override
 		public Object call(Object who, Method method, Object... args) throws Throwable {
 			return true;
+		}
+	}
+
+	static class GetAccountVisibility extends MethodProxy {
+		@Override
+		public String getMethodName() {
+			return "getAccountVisibility";
+		}
+
+		@Override
+		public Object call(Object who, Method method, Object... args) throws Throwable {
+			return AccountManager.VISIBILITY_VISIBLE;
+		}
+	}
+
+	static class GetAccountsAndVisibilityForPackage extends MethodProxy {
+		@Override
+		public String getMethodName() {
+			return "getAccountsAndVisibilityForPackage";
+		}
+
+		@Override
+		public Object call(Object who, Method method, Object... args) throws Throwable {
+			String accountType = args.length > 1 && args[1] instanceof String
+					? (String) args[1] : null;
+			Map<Account, Integer> result = new HashMap<>();
+			for (Account account : Mgr.getAccounts(accountType)) {
+				result.put(account, AccountManager.VISIBILITY_VISIBLE);
+			}
+			return result;
+		}
+	}
+
+	static class GetPackagesAndVisibilityForAccount extends MethodProxy {
+		@Override
+		public String getMethodName() {
+			return "getPackagesAndVisibilityForAccount";
+		}
+
+		@Override
+		public Object call(Object who, Method method, Object... args) throws Throwable {
+			// Do not disclose host packages or synthesize cross-container visibility grants.
+			return new HashMap<String, Integer>();
 		}
 	}
 }

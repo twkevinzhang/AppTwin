@@ -16,6 +16,7 @@ import org.maskaccounts.revision.AndroidPackageRevisionImporter
 import org.maskaccounts.revision.InstalledAppEntry
 import org.maskaccounts.revision.RevisionImportResult
 import org.maskaccounts.runtime.CloneRuntimeSupport
+import org.maskaccounts.runtime.RuntimeCompatibility
 import org.maskaccounts.runtime.RuntimeLaunchResult
 import org.maskaccounts.runtime.VirtualRuntimeController
 
@@ -38,6 +39,7 @@ data class InstanceItem(
     val versionName: String,
     val sourceInstalled: Boolean,
     val launchSupported: Boolean,
+    val launchStatus: String,
 )
 
 data class CreateDraft(
@@ -111,6 +113,15 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                         sourceInstalled = source != null,
                         launchSupported = source != null &&
                             CloneRuntimeSupport.canLaunch(instance.packageName),
+                        launchStatus = when {
+                            source == null -> "來源 App 已移除"
+                            CloneRuntimeSupport.compatibility(instance.packageName) ==
+                                RuntimeCompatibility.VERIFIED -> "已就緒 · 點一下啟動"
+                            CloneRuntimeSupport.compatibility(instance.packageName) ==
+                                RuntimeCompatibility.EXPERIMENTAL ->
+                                "相容性實驗中 · 將準備 Google 依賴"
+                            else -> "尚未完成實機相容驗證"
+                        },
                     )
                 }
             post {
@@ -216,7 +227,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             return
         }
         if (!item.launchSupported) {
-            showMessage("目前實機啟動驗證僅支援 LINE 與蝦皮")
+            showMessage("目前實機啟動驗證僅支援 LINE、蝦皮與 YouTube")
             return
         }
         uiState = uiState.copy(launchingInstanceId = item.instance.id)

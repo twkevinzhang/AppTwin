@@ -11,6 +11,7 @@ import android.os.Build;
 import android.os.PersistableBundle;
 
 import com.lody.virtual.client.env.Constants;
+import com.lody.virtual.client.hook.base.BinderInvocationStub;
 import com.lody.virtual.client.hook.base.BinderInvocationProxy;
 import com.lody.virtual.client.hook.base.ReplaceCallingPkgMethodProxy;
 import com.lody.virtual.helper.compat.ParceledListSliceCompat;
@@ -31,6 +32,10 @@ public class ShortcutServiceStub extends BinderInvocationProxy {
         super(IShortcutService.Stub.asInterface, "shortcut");
     }
 
+    ShortcutServiceStub(BinderInvocationStub invocationStub) {
+        super(invocationStub, "shortcut");
+    }
+
     @Override
     public void inject() throws Throwable {
         super.inject();
@@ -42,15 +47,23 @@ public class ShortcutServiceStub extends BinderInvocationProxy {
         addMethodProxy(new ReplaceCallingPkgMethodProxy("getManifestShortcuts"));
         // TODO: 18/3/3 Support dynamic shortcut ?
         addMethodProxy(new ReplaceCallingPkgMethodProxy("getDynamicShortcuts"));
+        addMethodProxy(new ReplaceCallingPkgMethodProxy("getShortcuts"));
+        addMethodProxy(new ReplaceCallingPkgMethodProxy("getShareTargets"));
+        addMethodProxy(new ReplaceCallingPkgMethodProxy("hasShareTargets"));
         addMethodProxy(new ReplacePkgAndShortcutListMethodProxy("setDynamicShortcuts"));
-        addMethodProxy(new ReplaceCallingPkgMethodProxy("addDynamicShortcuts"));
-        addMethodProxy(new ReplaceCallingPkgMethodProxy("createShortcutResultIntent"));
+        addMethodProxy(new ReplacePkgAndShortcutListMethodProxy("addDynamicShortcuts"));
+        addMethodProxy(new ReplacePkgAndShortcutListMethodProxy("updateShortcuts"));
+        addMethodProxy(new ReplacePkgAndShortcutMethodProxy("pushDynamicShortcut"));
+        addMethodProxy(new ReplacePkgAndShortcutMethodProxy("createShortcutResultIntent"));
         addMethodProxy(new ReplaceCallingPkgMethodProxy("disableShortcuts"));
         addMethodProxy(new ReplaceCallingPkgMethodProxy("enableShortcuts"));
+        addMethodProxy(new ReplaceCallingPkgMethodProxy("removeDynamicShortcuts"));
+        addMethodProxy(new ReplaceCallingPkgMethodProxy("removeLongLivedShortcuts"));
         addMethodProxy(new ReplaceCallingPkgMethodProxy("getRemainingCallCount"));
         addMethodProxy(new ReplaceCallingPkgMethodProxy("getRateLimitResetTime"));
         addMethodProxy(new ReplaceCallingPkgMethodProxy("getIconMaxDimensions"));
         addMethodProxy(new ReplaceCallingPkgMethodProxy("getMaxShortcutCountPerActivity"));
+        addMethodProxy(new ReplaceCallingPkgMethodProxy("isRequestPinItemSupported"));
         addMethodProxy(new ReplaceCallingPkgMethodProxy("reportShortcutUsed"));
         addMethodProxy(new ReplaceCallingPkgMethodProxy("onApplicationActive"));
         addMethodProxy(new ReplaceCallingPkgMethodProxy("removeAllDynamicShortcuts"));
@@ -130,7 +143,7 @@ public class ShortcutServiceStub extends BinderInvocationProxy {
                 return null;
             }
             for (Object arg : args) {
-                if (arg.getClass().isAssignableFrom(ParceledListSlice.TYPE)) {
+                if (arg != null && arg.getClass().isAssignableFrom(ParceledListSlice.TYPE)) {
                     return ParceledListSliceCompat.getList(arg);
                 }
             }
@@ -159,7 +172,7 @@ public class ShortcutServiceStub extends BinderInvocationProxy {
                 return null;
             }
             for (Object arg : args) {
-                if (arg.getClass() == mirror.android.content.pm.ShortcutInfo.TYPE) {
+                if (arg != null && arg.getClass() == mirror.android.content.pm.ShortcutInfo.TYPE) {
                     return (ShortcutInfo) arg;
                 }
             }

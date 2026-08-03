@@ -5,7 +5,6 @@ import android.content.ContextWrapper;
 import android.os.Build;
 import android.os.DropBoxManager;
 
-import com.lody.virtual.client.VClientImpl;
 import com.lody.virtual.client.core.InvocationStubManager;
 import com.lody.virtual.client.core.VirtualCore;
 import com.lody.virtual.client.hook.base.BinderInvocationStub;
@@ -73,7 +72,11 @@ public class ContextFixer {
         }
 
         if (ContextImpl.getAttributionSource != null) {
-            fixAttributionSource(ContextImpl.getAttributionSource.call(context), hostPkg, VClientImpl.get().getVUid());
+            // Android 12 validates AttributionSource.uid against Binder.getCallingUid() before a
+            // ContentProvider call reaches our provider hook. The Binder caller is the host app,
+            // not the virtual guest UID, so retaining the guest UID here makes otherwise valid
+            // GMS/GSF queries fail with "Calling uid doesn't match source uid".
+            fixAttributionSource(ContextImpl.getAttributionSource.call(context), hostPkg, VirtualCore.get().myUid());
         }
     }
 

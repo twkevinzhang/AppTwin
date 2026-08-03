@@ -11,11 +11,13 @@ import com.lody.virtual.client.core.VirtualCore
 import com.lody.virtual.client.ipc.VActivityManager
 import com.lody.virtual.client.ipc.VPackageManager
 import com.lody.virtual.os.VEnvironment
+import com.lody.virtual.os.VUserManager
 import java.io.File
 import java.io.FileOutputStream
 import java.util.Properties
 import org.maskaccounts.instances.VirtualInstance
 import org.maskaccounts.revision.AndroidPackageRevisionImporter
+import org.maskaccounts.revision.RevisionImportResult
 
 sealed interface RuntimeLaunchResult {
     data class Started(
@@ -38,11 +40,23 @@ class VirtualRuntimeController(context: Context) {
         activityName: String? = null,
     ): RuntimeLaunchResult = runCatching {
         val packageName = instance.packageName
+        val core = VirtualCore.get()
+        core.waitForEngine()
+        val virtualUserId = virtualUserIdFor(instance)
+        ensureRequiredPackages(packageName, core, virtualUserId)
+        if (packageName == CloneRuntimeSupport.MAPS_PACKAGE) {
+            runCatching {
+                GoogleRuntimeBootstrap.prewarmCheckin(virtualUserId)
+            }.onFailure { error ->
+                // Checkin accelerates first-time Google setup, but it is not a Maps launch
+                // prerequisite. A stale transient GMS service must not strand an otherwise
+                // healthy clone after device registration has already completed.
+                Log.w(TAG, "google-checkin-prewarm-skipped user=$virtualUserId", error)
+            }
+        }
         val revision = requireNotNull(importer.activeRevisionDirectory(packageName)) {
             "沒有可啟動的 active revision"
         }
-        val core = VirtualCore.get()
-        core.waitForEngine()
         prepareVirtualExternalStorage()
 
         if (!core.isAppInstalled(packageName)) {
@@ -52,11 +66,14 @@ class VirtualRuntimeController(context: Context) {
             )
             check(result.isSuccess) { result.error ?: "virtual package install failed" }
         }
+        check(
+            core.isAppInstalledAsUser(virtualUserId, packageName) ||
+                core.installPackageAsUser(virtualUserId, packageName),
+        ) {
+            "無法將 $packageName 提供給 virtual user $virtualUserId"
+        }
         markGuestCodeReadOnly(core, packageName)
 
-        // M0 proves one independent LINE clone first. Additional instance/user mapping follows
-        // after the launcher path is stable on the API 31 acceptance device.
-        val virtualUserId = 0
         check(core.isAppInstalledAsUser(virtualUserId, packageName)) {
             "virtual package is not installed for user $virtualUserId"
         }
@@ -125,6 +142,85 @@ class VirtualRuntimeController(context: Context) {
             mapping.store(output, "MaskAccounts virtual runtime mapping")
             output.fd.sync()
         }
+    }
+
+    private fun virtualUserIdFor(instance: VirtualInstance): Int {
+        if (!CloneRuntimeSupport.requiresDedicatedVirtualUser(instance.packageName)) return 0
+        val mapping = runtimeMappingFile(instance)
+        val existingUserId = mapping.takeIf(File::isFile)
+            ?.let(::readProperties)
+            ?.getProperty("virtualUserId")
+            ?.toIntOrNull()
+        if (existingUserId != null && VUserManager.get().getUserInfo(existingUserId) != null) {
+            return existingUserId
+        }
+        val user = requireNotNull(
+            VUserManager.get().createUser(
+                "MaskAccounts ${instance.packageName.takeLast(24)} ${instance.id.take(8)}",
+                0,
+            ),
+        ) { "無法建立 Maps virtual user" }
+        persistVirtualUserId(instance, user.id)
+        Log.i(TAG, "maps-m1-virtual-user-created instance=${instance.id} user=${user.id}")
+        return user.id
+    }
+
+    private fun persistVirtualUserId(instance: VirtualInstance, virtualUserId: Int) {
+        val mapping = runtimeMappingFile(instance)
+        val properties = mapping.takeIf(File::isFile)?.let(::readProperties) ?: Properties()
+        properties.setProperty("packageName", instance.packageName)
+        properties.setProperty("instanceId", instance.id)
+        properties.setProperty("virtualUserId", virtualUserId.toString())
+        FileOutputStream(mapping).use { output ->
+            properties.store(output, "MaskAccounts virtual runtime mapping")
+            output.fd.sync()
+        }
+    }
+
+    private fun runtimeMappingFile(instance: VirtualInstance): File = File(
+        appContext.filesDir,
+        "instances/${instance.packageName}/${instance.id}/data/runtime.properties",
+    )
+
+    /**
+     * Google clients resolve Play services and the Play Store through the virtual PackageManager.
+     * Import their main-system revisions before the guest application's own first launch; their
+     * code stays shared, while the guest app's data remains under its virtual user directory.
+     */
+    private fun ensureRequiredPackages(packageName: String, core: VirtualCore, virtualUserId: Int) {
+        CloneRuntimeSupport.requiredPackages(packageName).forEach { dependency ->
+            when (val sync = importer.sync(dependency)) {
+                is RevisionImportResult.Activated,
+                is RevisionImportResult.AlreadyCurrent,
+                -> Unit
+                is RevisionImportResult.Rejected -> error("無法同步 $dependency：${sync.reason}")
+                is RevisionImportResult.Failed -> error("無法同步 $dependency：${sync.reason}")
+            }
+            if (!core.isAppInstalled(dependency)) {
+                val revision = requireNotNull(importer.activeRevisionDirectory(dependency))
+                val result = core.installPackage(
+                    revision.absolutePath,
+                    InstallStrategy.TERMINATE_IF_EXIST or InstallStrategy.SKIP_DEX_OPT,
+                )
+                check(result.isSuccess) {
+                    "無法安裝 Google 相依套件 $dependency：${result.error ?: "unknown error"}"
+                }
+            }
+            check(
+                core.isAppInstalledAsUser(virtualUserId, dependency) ||
+                    core.installPackageAsUser(virtualUserId, dependency),
+            ) {
+                "Google 相依套件未提供給 virtual user $virtualUserId：$dependency"
+            }
+            Log.i(
+                TAG,
+                "google-runtime-dependency-ready package=$dependency user=$virtualUserId",
+            )
+        }
+    }
+
+    private fun readProperties(file: File): Properties = Properties().apply {
+        file.inputStream().use(::load)
     }
 
     private fun markGuestCodeReadOnly(core: VirtualCore, packageName: String) {

@@ -31,6 +31,7 @@ import com.lody.virtual.client.core.CrashHandler;
 import com.lody.virtual.client.core.InvocationStubManager;
 import com.lody.virtual.client.core.VirtualCore;
 import com.lody.virtual.client.env.SpecialComponentList;
+import com.lody.virtual.client.stub.StubProcessKeepAliveService;
 import com.lody.virtual.client.env.VirtualRuntime;
 import com.lody.virtual.client.fixer.ContextFixer;
 import com.lody.virtual.client.hook.delegate.AppInstrumentation;
@@ -69,6 +70,7 @@ import mirror.android.app.ContextImpl;
 import mirror.android.app.IActivityManager;
 import mirror.android.app.LoadedApk;
 import mirror.android.content.ContentProviderHolderOreo;
+import mirror.android.content.pm.ApplicationInfoN;
 import mirror.android.providers.Settings;
 import mirror.android.renderscript.RenderScriptCacheDir;
 import mirror.android.security.net.config.ApplicationConfig;
@@ -390,8 +392,20 @@ public final class VClientImpl extends IVClient.Stub {
                                 + ": " + e.toString(), e);
             }
         }
-        VActivityManager.get().appDoneExecuting();
         VirtualCore.get().getComponentDelegate().afterApplicationCreate(mInitialApplication);
+        ensureGoogleMainProcessKeepAlive(packageName, processName);
+        VActivityManager.get().appDoneExecuting();
+    }
+
+    private void ensureGoogleMainProcessKeepAlive(String packageName, String processName) {
+        if (!GoogleProcessKeepAlivePolicy.shouldKeepAlive(packageName, processName)) {
+            return;
+        }
+        Intent keepAlive = new Intent()
+                .setClassName(VirtualCore.get().getHostPkg(),
+                        StubProcessKeepAliveService.C0.class.getName());
+        ComponentName started = VirtualCore.get().getContext().startService(keepAlive);
+        VLog.i(TAG, "Google main-process keep-alive started: " + started);
     }
 
     private void fixWeChatRecovery(Application app) {
@@ -460,7 +474,12 @@ public final class VClientImpl extends IVClient.Stub {
         NativeEngine.redirectDirectory("/data/data/" + info.packageName, info.dataDir);
         NativeEngine.redirectDirectory("/data/user/0/" + info.packageName, info.dataDir);
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
-            NativeEngine.redirectDirectory("/data/user_de/0/" + info.packageName, info.dataDir);
+            String deviceProtectedDataDir = ApplicationInfoN.deviceProtectedDataDir.get(info);
+            if (deviceProtectedDataDir == null) {
+                deviceProtectedDataDir = info.dataDir;
+            }
+            NativeEngine.redirectDirectory("/data/user_de/0/" + info.packageName,
+                    deviceProtectedDataDir);
         }
         String libPath = VEnvironment.getAppLibDirectory(info.packageName).getAbsolutePath();
         String userLibPath = new File(VEnvironment.getUserSystemDirectory(userId), info.packageName + "/lib").getAbsolutePath();

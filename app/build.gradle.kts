@@ -27,9 +27,9 @@ android {
     productFlavors {
         create("runtimeProbe") {
             dimension = "runtime"
-            // VirtualApp 0.22.0's Android 12 compatibility depends on legacy target behavior.
-            // This sideload-only probe is intentionally separate from the target 36 product.
-            targetSdk = 23
+            // Pixel Android 17 rejects targets below 28 and letterboxes legacy activities.
+            // Keep the probe isolated from the target 36 product while meeting that floor.
+            targetSdk = 28
         }
     }
 

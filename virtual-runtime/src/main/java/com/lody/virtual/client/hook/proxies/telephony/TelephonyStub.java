@@ -12,6 +12,7 @@ import com.lody.virtual.client.hook.base.BinderInvocationProxy;
 import com.lody.virtual.client.hook.base.Inject;
 import com.lody.virtual.client.hook.base.ReplaceCallingPkgMethodProxy;
 import com.lody.virtual.client.hook.base.ReplaceLastPkgMethodProxy;
+import com.lody.virtual.client.hook.base.ResultStaticMethodProxy;
 
 import java.lang.reflect.Method;
 
@@ -59,6 +60,15 @@ public class TelephonyStub extends BinderInvocationProxy {
 		addMethodProxy(new ReplaceCallingPkgMethodProxy("getMergedSubscriberIds"));
 		addMethodProxy(new ReplaceLastPkgMethodProxy("getRadioAccessFamily"));
 		addMethodProxy(new ReplaceCallingPkgMethodProxy("isVideoCallingEnabled"));
+
+		// Hardware identifiers belong to the physical phone, not to a virtual instance. Modern
+		// TelephonyManager routes these methods through ITelephony (instead of iphonesubinfo), and
+		// forwarding the guest package with the host UID both leaks identity and is rejected by
+		// Android 12. GMS check-in supports devices without an IMEI/MEID and uses its virtual
+		// Android ID instead.
+		addMethodProxy(new ResultStaticMethodProxy("getImeiForSlot", null));
+		addMethodProxy(new ResultStaticMethodProxy("getMeidForSlot", null));
+		addMethodProxy(new ResultStaticMethodProxy("getPrimaryImei", null));
 
 		addMethodProxy(new ReplaceCallingPkgMethodProxy("getDeviceIdWithFeature") {
 			@Override

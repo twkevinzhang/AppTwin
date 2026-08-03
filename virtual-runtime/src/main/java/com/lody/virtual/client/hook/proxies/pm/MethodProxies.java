@@ -23,6 +23,7 @@ import android.os.Build;
 import android.os.IInterface;
 import android.os.Process;
 
+import com.lody.virtual.client.VClientImpl;
 import com.lody.virtual.client.core.VirtualCore;
 import com.lody.virtual.client.hook.base.MethodProxy;
 import com.lody.virtual.client.hook.utils.MethodParameterUtils;
@@ -747,6 +748,13 @@ class MethodProxies {
         public Object call(Object who, Method method, Object... args) throws Throwable {
             String permName = (String) args[0];
             String pkgName = (String) args[1];
+            String guestPackage = VClientImpl.get().getCurrentPackage();
+            if (GoogleRuntimePermissions.shouldGrant(guestPackage, permName)) {
+                // This only affects the guest's virtual PackageManager result. The host UID does
+                // not receive Android's signature permission, and Settings provider calls remain
+                // subject to their own host-side enforcement.
+                return PackageManager.PERMISSION_GRANTED;
+            }
             int userId = VUserHandle.myUserId();
             return VPackageManager.get().checkPermission(permName, pkgName, userId);
         }
