@@ -7,10 +7,10 @@ import android.content.IntentFilter;
 import android.os.Build;
 
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
-import java.util.ListIterator;
 import java.util.Map;
 import java.util.Set;
 
@@ -124,24 +124,46 @@ public final class SpecialComponentList {
         ACTION_BLACK_LIST.add(action);
     }
 
+    @SuppressWarnings("unchecked")
     public static void protectIntentFilter(IntentFilter filter) {
         if (filter != null) {
-            List<String> actions = mirror.android.content.IntentFilter.mActions.get(filter);
-            ListIterator<String> iterator = actions.listIterator();
-            while (iterator.hasNext()) {
-                String action = iterator.next();
-                if (SpecialComponentList.isActionInBlackList(action)) {
-                    iterator.remove();
-                    continue;
-                }
-                if (SYSTEM_BROADCAST_ACTION.contains(action)) {
-                    continue;
-                }
-                String newAction = SpecialComponentList.protectAction(action);
-                if (newAction != null) {
-                    iterator.set(newAction);
-                }
+            Object actions = mirror.android.content.IntentFilter.mActions.get(filter);
+            if (actions instanceof Collection) {
+                protectActions((Collection<String>) actions);
             }
+        }
+    }
+
+    /**
+     * Newer Android releases store IntentFilter actions in an ArraySet instead of a List.
+     * Mutate through the Collection contract so both platform representations work.
+     */
+    static void protectActions(Collection<String> actions) {
+        if (actions == null || actions.isEmpty()) {
+            return;
+        }
+        List<String> protectedActions = new ArrayList<>(actions.size());
+        boolean changed = false;
+        for (String action : actions) {
+            if (SpecialComponentList.isActionInBlackList(action)) {
+                changed = true;
+                continue;
+            }
+            if (SYSTEM_BROADCAST_ACTION.contains(action)) {
+                protectedActions.add(action);
+                continue;
+            }
+            String newAction = SpecialComponentList.protectAction(action);
+            if (newAction != null) {
+                protectedActions.add(newAction);
+                changed |= !newAction.equals(action);
+            } else {
+                protectedActions.add(action);
+            }
+        }
+        if (changed) {
+            actions.clear();
+            actions.addAll(protectedActions);
         }
     }
 

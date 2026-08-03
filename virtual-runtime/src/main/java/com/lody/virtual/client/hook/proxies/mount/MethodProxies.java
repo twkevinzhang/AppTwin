@@ -4,6 +4,7 @@ import android.os.Build;
 
 import com.lody.virtual.client.hook.base.MethodProxy;
 import com.lody.virtual.client.hook.utils.MethodParameterUtils;
+import com.lody.virtual.os.VUserHandle;
 
 import java.io.File;
 import java.lang.reflect.Method;
@@ -27,7 +28,7 @@ class MethodProxies {
                 return super.beforeCall(who, method, args);
             }
             if (args[0] instanceof Integer) {
-                args[0] = getRealUid();
+                args[0] = volumeListCallerIdForSdk(getRealUid(), Build.VERSION.SDK_INT);
             }
             MethodParameterUtils.replaceFirstAppPkg(args);
             return super.beforeCall(who, method, args);
@@ -37,6 +38,17 @@ class MethodProxies {
         public Object afterCall(Object who, Method method, Object[] args, Object result) throws Throwable {
             return result;
         }
+    }
+
+    /**
+     * Android 13 changed the first {@code IStorageManager#getVolumeList} argument from a UID to
+     * a user ID while retaining the same Java types in the Binder method descriptor. Replacing a
+     * user ID with the host UID makes Android treat that UID as another user and reject the call.
+     */
+    static int volumeListCallerIdForSdk(int realUid, int sdkInt) {
+        return sdkInt >= Build.VERSION_CODES.TIRAMISU
+                ? VUserHandle.getUserId(realUid)
+                : realUid;
     }
 
     static class Mkdirs extends MethodProxy {

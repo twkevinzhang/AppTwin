@@ -11,6 +11,7 @@ import com.lody.virtual.helper.utils.ArrayUtils;
 import com.lody.virtual.helper.utils.VLog;
 
 import java.lang.reflect.Method;
+import java.util.Collections;
 
 /**
  * @author Lody
@@ -18,6 +19,35 @@ import java.lang.reflect.Method;
 
 @SuppressWarnings("unused")
 class MethodProxies {
+
+    static class GetAppActiveNotifications extends MethodProxy {
+
+        @Override
+        public String getMethodName() {
+            return "getAppActiveNotifications";
+        }
+
+        @Override
+        public Object call(Object who, Method method, Object... args) throws Throwable {
+            return callGetAppActiveNotifications(who, method, args, getHostPkg());
+        }
+    }
+
+    static Object callGetAppActiveNotifications(Object who, Method method, Object[] args,
+                                                String hostPkg) throws Throwable {
+        if (isHostActiveNotificationsRequest(args, hostPkg)) {
+            return method.invoke(who, args);
+        }
+        return Collections.emptyList();
+    }
+
+    static boolean isHostActiveNotificationsRequest(Object[] args, String hostPkg) {
+        return hostPkg != null
+                && args != null
+                && args.length > 0
+                && args[0] instanceof String
+                && hostPkg.equals(args[0]);
+    }
 
     static class EnqueueNotification extends MethodProxy {
 

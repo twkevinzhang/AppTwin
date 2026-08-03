@@ -87,6 +87,43 @@ public class PackageParserEx {
         }
     }
 
+    /**
+     * PackageParser.Package keeps the legacy nested SigningDetails through API
+     * 37. Android 13 changed only SigningInfo's constructor to require the
+     * top-level SigningDetails type, which must be rebuilt from those fields.
+     */
+    static boolean requiresTopLevelSigningDetails(int apiLevel) {
+        return apiLevel >= Build.VERSION_CODES.TIRAMISU;
+    }
+
+    private static boolean hasPastSigningCertificates(Object signingDetails) {
+        return mirror.android.content.pm.PackageParser.SigningDetails.hasPastSigningCertificates.call(signingDetails);
+    }
+
+    private static boolean hasSignatures(Object signingDetails) {
+        return mirror.android.content.pm.PackageParser.SigningDetails.hasSignatures.call(signingDetails);
+    }
+
+    private static Signature[] getPastSigningCertificates(Object signingDetails) {
+        return mirror.android.content.pm.PackageParser.SigningDetails.pastSigningCertificates.get(signingDetails);
+    }
+
+    private static Signature[] getSignatures(Object signingDetails) {
+        return mirror.android.content.pm.PackageParser.SigningDetails.signatures.get(signingDetails);
+    }
+
+    private static android.content.pm.SigningInfo createSigningInfo(Object signingDetails) {
+        if (!requiresTopLevelSigningDetails(Build.VERSION.SDK_INT)) {
+            return mirror.android.content.pm.PackageParser.SigningInfo.ctor.newInstance(signingDetails);
+        }
+        Object topLevelSigningDetails = mirror.android.content.pm.PackageParser.SigningDetailsS.ctor.newInstance(
+                getSignatures(signingDetails),
+                mirror.android.content.pm.PackageParser.SigningDetails.signatureSchemeVersion.get(signingDetails),
+                mirror.android.content.pm.PackageParser.SigningDetails.publicKeys.get(signingDetails),
+                getPastSigningCertificates(signingDetails));
+        return mirror.android.content.pm.PackageParser.SigningInfoS.ctor.newInstance(topLevelSigningDetails);
+    }
+
     public static VPackage readPackageCache(String packageName) {
         Parcel p = Parcel.obtain();
         try {
@@ -207,20 +244,20 @@ public class PackageParserEx {
             cache.mSignatures = p.mSignatures;
         } else {
             Object signingDetails = mirror.android.content.pm.PackageParser.Package.mSigningDetails.get(p);
-            boolean hasPastSigningCertificates = mirror.android.content.pm.PackageParser.SigningDetails.hasPastSigningCertificates.call(signingDetails);
+            boolean hasPastSigningCertificates = hasPastSigningCertificates(signingDetails);
             if (hasPastSigningCertificates) {
                 cache.mSignatures = new Signature[1];
-                cache.mSignatures[0] = mirror.android.content.pm.PackageParser.SigningDetails.pastSigningCertificates.get(signingDetails)[0];
+                cache.mSignatures[0] = getPastSigningCertificates(signingDetails)[0];
             } else {
-                boolean hasSignatures = mirror.android.content.pm.PackageParser.SigningDetails.hasSignatures.call(signingDetails);
+                boolean hasSignatures = hasSignatures(signingDetails);
                 if (hasSignatures) {
-                    Signature[] signatures = mirror.android.content.pm.PackageParser.SigningDetails.signatures.get(signingDetails);
+                    Signature[] signatures = getSignatures(signingDetails);
                     int numberOfSigs = signatures.length;
                     cache.mSignatures = new Signature[numberOfSigs];
                     System.arraycopy(signatures, 0, cache.mSignatures, 0, numberOfSigs);
                 }
             }
-            cache.signingInfo = mirror.android.content.pm.PackageParser.SigningInfo.ctor.newInstance(signingDetails);
+            cache.signingInfo = createSigningInfo(signingDetails);
         }
         cache.mAppMetaData = p.mAppMetaData;
         cache.packageName = p.packageName;

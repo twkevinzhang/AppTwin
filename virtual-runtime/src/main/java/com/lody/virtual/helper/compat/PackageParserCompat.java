@@ -34,6 +34,7 @@ import static android.os.Build.VERSION_CODES.LOLLIPOP;
 import static android.os.Build.VERSION_CODES.LOLLIPOP_MR1;
 import static android.os.Build.VERSION_CODES.M;
 import static android.os.Build.VERSION_CODES.N;
+import static android.os.Build.VERSION_CODES.Q;
 
 /**
  * @author Lody
@@ -44,7 +45,25 @@ public class PackageParserCompat {
     public static final int[] GIDS = VirtualCore.get().getGids();
     private static final int API_LEVEL = Build.VERSION.SDK_INT;
     private static final int myUserId = VUserHandle.getUserId(Process.myUid());
-    private static final Object sUserState = API_LEVEL >= JELLY_BEAN_MR1 ? PackageUserState.ctor.newInstance() : null;
+    /**
+     * PackageUserState's no-argument constructor is part of the legacy PackageParser API.
+     * It is not available on Android Q and newer, so resolving it there makes this class fail
+     * during static initialization before a package can be parsed.
+     */
+    private static final Object sUserState = LegacyUserStateCompat.create(API_LEVEL);
+
+    static final class LegacyUserStateCompat {
+        private LegacyUserStateCompat() {
+        }
+
+        static boolean isRequired(int apiLevel) {
+            return apiLevel >= JELLY_BEAN_MR1 && apiLevel < Q;
+        }
+
+        static Object create(int apiLevel) {
+            return isRequired(apiLevel) ? PackageUserState.ctor.newInstance() : null;
+        }
+    }
 
 
     public static PackageParser createParser(File packageFile) {

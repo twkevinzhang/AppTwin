@@ -80,8 +80,22 @@ public class TransactionHandlerProxy extends ClientTransactionHandler {
     }
 
     @Override
+    public void handleDestroyActivity(ActivityClientRecord r, boolean finishing,
+                                      boolean getNonConfigInstance, String reason) {
+        originalHandler.handleDestroyActivity(r, finishing, getNonConfigInstance, reason);
+    }
+
+    @Override
     public void handlePauseActivity(ActivityClientRecord r, boolean finished, boolean userLeaving, int configChanges, PendingTransactionActions pendingActions, String reason) {
         originalHandler.handlePauseActivity(r, finished, userLeaving, configChanges, pendingActions, reason);
+    }
+
+    @Override
+    public void handlePauseActivity(ActivityClientRecord r, boolean finished, boolean userLeaving,
+                                    boolean autoEnteringPip,
+                                    PendingTransactionActions pendingActions, String reason) {
+        originalHandler.handlePauseActivity(r, finished, userLeaving, autoEnteringPip,
+                pendingActions, reason);
     }
 
     @Override
@@ -92,6 +106,13 @@ public class TransactionHandlerProxy extends ClientTransactionHandler {
     @Override
     public void handleResumeActivity(ActivityClientRecord record, boolean finalStateRequest, boolean isForward, String reason) {
         originalHandler.handleResumeActivity(record, finalStateRequest, isForward, reason);
+    }
+
+    @Override
+    public void handleResumeActivity(ActivityClientRecord record, boolean finalStateRequest,
+                                     boolean isForward, boolean shouldSendCompatFakeFocus, String reason) {
+        originalHandler.handleResumeActivity(record, finalStateRequest, isForward,
+                shouldSendCompatFakeFocus, reason);
     }
 
     @Override
@@ -107,6 +128,13 @@ public class TransactionHandlerProxy extends ClientTransactionHandler {
     @Override
     public void handleStopActivity(ActivityClientRecord r, int configChanges, PendingTransactionActions pendingActions, boolean finalStateRequest, String reason) {
         originalHandler.handleStopActivity(r, configChanges, pendingActions, finalStateRequest, reason);
+    }
+
+    @Override
+    public void handleStopActivity(ActivityClientRecord r,
+                                   PendingTransactionActions pendingActions,
+                                   boolean finalStateRequest, String reason) {
+        originalHandler.handleStopActivity(r, pendingActions, finalStateRequest, reason);
     }
 
     @Override
@@ -196,12 +224,41 @@ public class TransactionHandlerProxy extends ClientTransactionHandler {
 
     @Override
     public Activity handleLaunchActivity(ActivityClientRecord r, PendingTransactionActions pendingActions, Intent customIntent) {
+        LaunchPreparation preparation = prepareLaunchActivity(r);
+        if (preparation == LaunchPreparation.ABORT) {
+            return null;
+        }
+        if (preparation == LaunchPreparation.RETRY) {
+            return handleLaunchActivity(r, pendingActions, customIntent);
+        }
+        return originalHandler.handleLaunchActivity(r, pendingActions, customIntent);
+    }
+
+    @Override
+    public Activity handleLaunchActivity(ActivityClientRecord r, PendingTransactionActions pendingActions,
+                                         int deviceId, Intent customIntent) {
+        LaunchPreparation preparation = prepareLaunchActivity(r);
+        if (preparation == LaunchPreparation.ABORT) {
+            return null;
+        }
+        if (preparation == LaunchPreparation.RETRY) {
+            return handleLaunchActivity(r, pendingActions, deviceId, customIntent);
+        }
+        return originalHandler.handleLaunchActivity(r, pendingActions, deviceId, customIntent);
+    }
+
+    /**
+     * Applies the virtual activity record before either platform launch descriptor is delegated.
+     *
+     * @return whether the launch can continue, must retry, or must stop.
+     */
+    private LaunchPreparation prepareLaunchActivity(ActivityClientRecord r) {
 
         Intent stubIntent = mirror.android.app.ActivityThread.ActivityClientRecord.intent.get(r);
         StubActivityRecord saveInstance = new StubActivityRecord(stubIntent);
         if (saveInstance.intent == null) {
             Log.i(TAG, "save instance intent is null, return");
-            return null;
+            return LaunchPreparation.ABORT;
         }
         Intent intent = saveInstance.intent;
         ComponentName caller = saveInstance.caller;
@@ -211,18 +268,18 @@ public class TransactionHandlerProxy extends ClientTransactionHandler {
             InstalledAppInfo installedAppInfo = VirtualCore.get().getInstalledAppInfo(info.packageName, 0);
             if (installedAppInfo == null) {
                 Log.i(TAG, "install app info is null, return");
-                return null;
+                return LaunchPreparation.ABORT;
             }
             VActivityManager.get().processRestarted(info.packageName, info.processName, saveInstance.userId);
             // getH().sendMessageAtFrontOfQueue(Message.obtain(msg));
             Log.i(TAG, "restart process, return");
-            return handleLaunchActivity(r, pendingActions, customIntent);
+            return LaunchPreparation.RETRY;
         }
         if (!VClientImpl.get().isBound()) {
             VClientImpl.get().bindApplicationForActivity(info.packageName, info.processName, intent);
             // getH().sendMessageAtFrontOfQueue(Message.obtain(msg));
             Log.i(TAG, "rebound application, return");
-            return handleLaunchActivity(r, pendingActions, customIntent);
+            return LaunchPreparation.RETRY;
         }
         int taskId = IActivityManager.getTaskForActivity.call(
                 ActivityManagerNative.getDefault.call(),
@@ -240,12 +297,24 @@ public class TransactionHandlerProxy extends ClientTransactionHandler {
         mirror.android.app.ActivityThread.ActivityClientRecord.intent.set(r, intent);
         mirror.android.app.ActivityThread.ActivityClientRecord.activityInfo.set(r, info);
 
-        return originalHandler.handleLaunchActivity(r, pendingActions, customIntent);
+        return LaunchPreparation.CONTINUE;
+    }
+
+    private enum LaunchPreparation {
+        CONTINUE,
+        RETRY,
+        ABORT
     }
 
     @Override
     public void handleStartActivity(ActivityClientRecord r, PendingTransactionActions pendingActions, ActivityOptions options) {
         originalHandler.handleStartActivity(r, pendingActions, options);
+    }
+
+    @Override
+    public void handleStartActivity(ActivityClientRecord r, PendingTransactionActions pendingActions,
+                                    ActivityOptions$SceneTransitionInfo sceneTransitionInfo) {
+        originalHandler.handleStartActivity(r, pendingActions, sceneTransitionInfo);
     }
 
     @Override
@@ -261,6 +330,11 @@ public class TransactionHandlerProxy extends ClientTransactionHandler {
     @Override
     public LoadedApk getPackageInfoNoCheck(ApplicationInfo ai, CompatibilityInfo compatInfo) {
         return originalHandler.getPackageInfoNoCheck(ai, compatInfo);
+    }
+
+    @Override
+    public LoadedApk getPackageInfoNoCheck(ApplicationInfo ai) {
+        return originalHandler.getPackageInfoNoCheck(ai);
     }
 
     @Override
