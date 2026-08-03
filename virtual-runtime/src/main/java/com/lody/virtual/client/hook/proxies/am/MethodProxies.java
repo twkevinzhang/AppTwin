@@ -41,6 +41,7 @@ import com.lody.virtual.client.hook.base.MethodProxy;
 import com.lody.virtual.client.hook.base.ReplaceLastPkgMethodProxy;
 import com.lody.virtual.client.hook.delegate.TaskDescriptionDelegate;
 import com.lody.virtual.client.hook.providers.ProviderHook;
+import com.lody.virtual.client.hook.proxies.pm.GoogleRuntimePermissions;
 import com.lody.virtual.client.hook.secondary.ServiceConnectionDelegate;
 import com.lody.virtual.client.hook.utils.MethodParameterUtils;
 import com.lody.virtual.client.ipc.ActivityClientRecord;
@@ -48,6 +49,7 @@ import com.lody.virtual.client.ipc.VActivityManager;
 import com.lody.virtual.client.ipc.VNotificationManager;
 import com.lody.virtual.client.ipc.VPackageManager;
 import com.lody.virtual.client.stub.ChooserActivity;
+import com.lody.virtual.client.stub.ChooseTypeAndAccountActivity;
 import com.lody.virtual.client.stub.StubPendingActivity;
 import com.lody.virtual.client.stub.StubPendingReceiver;
 import com.lody.virtual.client.stub.StubPendingService;
@@ -70,6 +72,7 @@ import com.lody.virtual.server.interfaces.IAppRequestListener;
 import java.io.File;
 import java.lang.ref.WeakReference;
 import java.lang.reflect.Method;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.WeakHashMap;
 
@@ -308,10 +311,18 @@ class MethodProxies {
             String[] resolvedTypes = (String[]) args[mResolvedTypesIndex];
             int type = (int) args[0];
             int flags = (int) args[mFlagsIndex];
-            if (args[5] instanceof Intent[]) {
+            if ("com.google.android.gms".equals(getAppPkg())) {
+                VLog.i("VA-IntentSender", "create method=%s type=%s creator=%s",
+                        method.getName(), type, creator);
+            }
+            if (args[mIntentIndex] instanceof Intent[]) {
                 Intent[] intents = (Intent[]) args[mIntentIndex];
                 for (int i = 0; i < intents.length; i++) {
                     Intent intent = intents[i];
+                    if ("com.google.android.gms".equals(getAppPkg())) {
+                        VLog.i("VA-IntentSender", "target action=%s component=%s",
+                                intent.getAction(), intent.getComponent());
+                    }
                     if (resolvedTypes != null && i < resolvedTypes.length) {
                         intent.setDataAndType(intent.getData(), resolvedTypes[i]);
                     }
@@ -409,6 +420,10 @@ class MethodProxies {
             String resolvedType = (String) args[intentIndex + 1];
             Intent intent = (Intent) args[intentIndex];
             intent.setDataAndType(intent.getData(), resolvedType);
+            if ("com.google.android.gms".equals(getAppPkg())) {
+                VLog.i("VA-StartActivity", "method=%s action=%s component=%s",
+                        method.getName(), intent.getAction(), intent.getComponent());
+            }
             IBinder resultTo = resultToIndex >= 0 ? (IBinder) args[resultToIndex] : null;
             int userId = VUserHandle.myUserId();
 
@@ -433,6 +448,19 @@ class MethodProxies {
                     MediaStore.ACTION_VIDEO_CAPTURE.equals(intent.getAction()) ||
                     MediaStore.ACTION_IMAGE_CAPTURE_SECURE.equals(intent.getAction())) {
                 handleMediaCaptureRequest(intent);
+            } else if ("android.settings.ADD_ACCOUNT_SETTINGS".equals(intent.getAction())
+                    && "com.google.android.apps.maps".equals(getAppPkg())) {
+                // Android Settings would hand this request to the real system AccountManager and
+                // leak the host account list. Route Maps into VirtualApp's account chooser so the
+                // authenticator and resulting account stay inside the current virtual user.
+                intent.setAction(null);
+                intent.setData(null);
+                intent.setComponent(new ComponentName(
+                        getHostContext(), ChooseTypeAndAccountActivity.class));
+                intent.putExtra(ChooseTypeAndAccountActivity.KEY_USER_ID, userId);
+                intent.putExtra(
+                        ChooseTypeAndAccountActivity.EXTRA_ALLOWABLE_ACCOUNT_TYPES_STRING_ARRAY,
+                        new String[]{"com.google"});
             }
 
             String resultWho = null;
@@ -453,7 +481,10 @@ class MethodProxies {
             }
 
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.JELLY_BEAN_MR2) {
-                args[intentIndex - 1] = getHostPkg();
+                // ActivityTaskManager on Android 11+ inserts callingFeatureId immediately before
+                // the Intent. Always rewrite the actual first package argument, not the adjacent
+                // feature-id slot.
+                MethodParameterUtils.replaceFirstAppPkg(args);
             }
             if (intent.getScheme() != null && intent.getScheme().equals(SCHEME_PACKAGE) && intent.getData() != null) {
                 if (intent.getAction() != null && intent.getAction().startsWith("android.settings.")) {
@@ -844,7 +875,9 @@ class MethodProxies {
 
         @Override
         public Object call(Object who, Method method, Object... args) throws Throwable {
-
+            if ("com.google.android.gms".equals(getAppPkg())) {
+                VLog.i("VA-IntentSender", "send method=%s", method.getName());
+            }
             return super.call(who, method, args);
         }
     }
@@ -933,6 +966,12 @@ class MethodProxies {
             }
             service.setDataAndType(service.getData(), resolvedType);
             ServiceInfo serviceInfo = VirtualCore.get().resolveServiceInfo(service, VUserHandle.myUserId());
+            if ("com.google.android.gms".equals(getAppPkg())) {
+                VLog.i("VA-StartService", "action=%s component=%s resolved=%s user=%s",
+                        service.getAction(), service.getComponent(),
+                        serviceInfo == null ? null : new ComponentName(
+                                serviceInfo.packageName, serviceInfo.name), userId);
+            }
             if (serviceInfo != null) {
                 if (isFiltered(service)) {
                     return service.getComponent();
@@ -1090,6 +1129,21 @@ class MethodProxies {
         }
     }
 
+    static class GetCurrentUserId extends MethodProxy {
+
+        @Override
+        public String getMethodName() {
+            return "getCurrentUserId";
+        }
+
+        @Override
+        public Object call(Object who, Method method, Object... args) {
+            // Guest processes always execute through Android's primary real user. Returning the
+            // virtual id here would make the framework require INTERACT_ACROSS_USERS.
+            return 0;
+        }
+    }
+
 
     static class KillApplicationProcess extends MethodProxy {
 
@@ -1140,6 +1194,10 @@ class MethodProxies {
         @Override
         public Object call(Object who, Method method, Object... args) throws Throwable {
             String permission = (String) args[0];
+            if (GoogleRuntimePermissions.shouldGrant(
+                    VClientImpl.get().getCurrentPackage(), permission)) {
+                return PackageManager.PERMISSION_GRANTED;
+            }
             if (DynamicReceiverPermissionCompat.isSyntheticPermission(permission)) {
                 // AndroidX generates this permission from Context.getPackageName(). The guest
                 // package is virtual, so Android cannot grant its signature permission to the
@@ -1162,6 +1220,26 @@ class MethodProxies {
             return isAppProcess();
         }
 
+    }
+
+    static class GetHistoricalProcessExitReasons extends MethodProxy {
+
+        @Override
+        public String getMethodName() {
+            return "getHistoricalProcessExitReasons";
+        }
+
+        @Override
+        public Object call(Object who, Method method, Object... args) {
+            // The system sees the host UID paired with a guest package and requires DUMP. Returning
+            // no guest exit history is safer than exposing the host application's process history.
+            return new ArrayList<>();
+        }
+
+        @Override
+        public boolean isEnable() {
+            return Build.VERSION.SDK_INT >= Build.VERSION_CODES.R && isAppProcess();
+        }
     }
 
 
@@ -1418,6 +1496,7 @@ class MethodProxies {
                     IInterface provider = ContentProviderHolderOreo.provider.get(holder);
                     if (provider != null) {
                         provider = VActivityManager.get().acquireProviderClient(userId, info);
+                        provider = ProviderHook.createProxy(false, info.authority, provider);
                     }
                     ContentProviderHolderOreo.provider.set(holder, provider);
                     ContentProviderHolderOreo.info.set(holder, info);
@@ -1425,6 +1504,7 @@ class MethodProxies {
                     IInterface provider = IActivityManager.ContentProviderHolder.provider.get(holder);
                     if (provider != null) {
                         provider = VActivityManager.get().acquireProviderClient(userId, info);
+                        provider = ProviderHook.createProxy(false, info.authority, provider);
                     }
                     IActivityManager.ContentProviderHolder.provider.set(holder, provider);
                     IActivityManager.ContentProviderHolder.info.set(holder, info);
@@ -1592,26 +1672,48 @@ class MethodProxies {
 
         @Override
         public Object call(Object who, Method method, Object... args) throws Throwable {
-            Intent intent = (Intent) args[1];
-            String type = (String) args[2];
+            int intentIndex = ArrayUtils.indexOfFirst(args, Intent.class);
+            if (intentIndex < 0) {
+                return method.invoke(who, args);
+            }
+            Intent intent = (Intent) args[intentIndex];
+            String type = args.length > intentIndex + 1 && args[intentIndex + 1] instanceof String
+                    ? (String) args[intentIndex + 1]
+                    : null;
             intent.setDataAndType(intent.getData(), type);
             if (VirtualCore.get().getComponentDelegate() != null) {
                 VirtualCore.get().getComponentDelegate().onSendBroadcast(intent);
             }
             Intent newIntent = handleIntent(intent);
             if (newIntent != null) {
-                args[1] = newIntent;
+                args[intentIndex] = newIntent;
             } else {
                 return 0;
             }
 
-            if (args[7] instanceof String || args[7] instanceof String[]) {
+            if ("broadcastIntent".equals(method.getName())
+                    && args.length > 7
+                    && (args[7] instanceof String || args[7] instanceof String[])) {
                 // clear the permission
                 args[7] = null;
+            } else {
+                // Android 12's broadcastIntentWithFeature moved the permission argument. Clear
+                // only the first permission-array slot; later arrays are exclusion filters.
+                for (int i = intentIndex + 2; i < args.length; i++) {
+                    if (args[i] instanceof String[]) {
+                        args[i] = null;
+                        break;
+                    }
+                }
+            }
+            // The virtual user id is carried inside the redirected intent. The real framework
+            // broadcast must stay in Android user 0; forwarding USER_ALL (-1) from a regular host
+            // UID requires INTERACT_ACROSS_USERS and crashes modern GMS background workers.
+            if (args[args.length - 1] instanceof Integer) {
+                args[args.length - 1] = 0;
             }
             return method.invoke(who, args);
         }
-
 
         private Intent handleIntent(final Intent intent) {
             final String action = intent.getAction();
@@ -1715,6 +1817,14 @@ class MethodProxies {
         @Override
         public boolean isEnable() {
             return isAppProcess();
+        }
+    }
+
+    static class BroadcastIntentWithFeature extends BroadcastIntent {
+
+        @Override
+        public String getMethodName() {
+            return "broadcastIntentWithFeature";
         }
     }
 

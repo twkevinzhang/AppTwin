@@ -10,6 +10,7 @@ import android.accounts.AuthenticatorException;
 import android.accounts.OperationCanceledException;
 import android.app.Activity;
 import android.content.Intent;
+import android.content.pm.ActivityInfo;
 import android.os.Build;
 import android.os.Bundle;
 import android.os.Parcelable;
@@ -23,7 +24,9 @@ import android.widget.ListView;
 import android.widget.TextView;
 
 import com.lody.virtual.R;
+import com.lody.virtual.client.core.VirtualCore;
 import com.lody.virtual.client.ipc.VAccountManager;
+import com.lody.virtual.client.ipc.VActivityManager;
 import com.lody.virtual.helper.utils.VLog;
 
 import java.io.IOException;
@@ -197,6 +200,24 @@ public class ChooseTypeAndAccountActivity extends Activity
     }
 
     @Override
+    protected void onResume() {
+        super.onResume();
+        if (mPendingRequest != REQUEST_ADD_ACCOUNT || mExistingAccounts == null) {
+            return;
+        }
+        Set<Account> existing = new HashSet<>();
+        for (Parcelable account : mExistingAccounts) {
+            existing.add((Account) account);
+        }
+        for (Account account : VAccountManager.get().getAccounts(mCallingUserId, null)) {
+            if (!existing.contains(account)) {
+                setResultAndFinish(account.name, account.type);
+                return;
+            }
+        }
+    }
+
+    @Override
     protected void onSaveInstanceState(final Bundle outState) {
         super.onSaveInstanceState(outState);
         outState.putInt(KEY_INSTANCE_STATE_PENDING_REQUEST, mPendingRequest);
@@ -328,6 +349,22 @@ public class ChooseTypeAndAccountActivity extends Activity
                 mPendingRequest = REQUEST_ADD_ACCOUNT;
                 mExistingAccounts = VAccountManager.get().getAccounts(mCallingUserId, null);
                 intent.setFlags(intent.getFlags() & ~Intent.FLAG_ACTIVITY_NEW_TASK);
+                ActivityInfo activityInfo = VirtualCore.get().resolveActivityInfo(
+                        intent, mCallingUserId);
+                if (activityInfo != null) {
+                    intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                    int result = VActivityManager.get().startActivity(
+                            intent,
+                            activityInfo,
+                            null,
+                            null,
+                            null,
+                            0,
+                            mCallingUserId);
+                    if (result == 0) {
+                        return;
+                    }
+                }
                 startActivityForResult(intent, REQUEST_ADD_ACCOUNT);
                 return;
             }

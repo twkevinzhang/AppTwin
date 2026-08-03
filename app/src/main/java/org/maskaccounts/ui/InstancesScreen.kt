@@ -226,11 +226,7 @@ private fun InstanceCard(
     onLaunch: () -> Unit,
     onMore: () -> Unit,
 ) {
-    val status = when {
-        !item.sourceInstalled -> "來源 App 已移除"
-        !item.launchSupported -> "尚未完成實機相容驗證"
-        else -> "已就緒 · 點一下啟動"
-    }
+    val status = item.launchStatus
     Card(
         onClick = onLaunch,
         colors = CardDefaults.cardColors(

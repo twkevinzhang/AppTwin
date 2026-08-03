@@ -59,54 +59,118 @@ public class ServiceRecord extends Binder {
 		return null;
 	}
 
-	void addToBoundIntent(Intent intent, IServiceConnection connection) {
-		IntentBindRecord record = peekBinding(intent);
-		if (record == null) {
-			record = new IntentBindRecord();
-			record.intent = intent;
-			synchronized (bindings) {
-				bindings.add(record);
+	IntentBindRecord addToBoundIntent(Intent intent, IServiceConnection connection) {
+		synchronized (bindings) {
+			for (IntentBindRecord bindRecord : bindings) {
+				if (bindRecord.intent.filterEquals(intent)) {
+					bindRecord.addConnection(connection);
+					return bindRecord;
+				}
 			}
+			IntentBindRecord record = new IntentBindRecord();
+			record.intent = intent;
+			record.addConnection(connection);
+			bindings.add(record);
+			return record;
 		}
-		record.addConnection(connection);
 	}
 
 	public static class IntentBindRecord {
 		public  final List<IServiceConnection> connections = Collections.synchronizedList(new ArrayList<IServiceConnection>());
 		public IBinder binder;
 		Intent intent;
-		public boolean doRebind = false;
+		private boolean bindRequested;
+		private boolean doRebind = false;
 
 		public boolean containConnection(IServiceConnection connection) {
-			for (IServiceConnection con : connections) {
-				if (con.asBinder() == connection.asBinder()) {
-					return true;
+			synchronized (connections) {
+				for (IServiceConnection con : connections) {
+					if (con.asBinder() == connection.asBinder()) {
+						return true;
+					}
 				}
 			}
 			return false;
 		}
 
 		public void addConnection(IServiceConnection connection) {
-			if (!containConnection(connection)) {
-				connections.add(connection);
-				try {
-					connection.asBinder().linkToDeath(new DeathRecipient(this, connection), 0);
-				} catch (RemoteException e) {
-					e.printStackTrace();
+			synchronized (connections) {
+				if (!containConnection(connection)) {
+					connections.add(connection);
+					try {
+						connection.asBinder().linkToDeath(new DeathRecipient(this, connection), 0);
+					} catch (RemoteException e) {
+						e.printStackTrace();
+					}
 				}
 			}
 		}
 
-		public void removeConnection(IServiceConnection connection) {
+		public boolean removeConnection(IServiceConnection connection) {
+			boolean removed = false;
 			synchronized (connections) {
 				Iterator<IServiceConnection> iterator = connections.iterator();
 				while (iterator.hasNext()) {
 					IServiceConnection conn = iterator.next();
 					if (conn.asBinder() == connection.asBinder()) {
 						iterator.remove();
+						removed = true;
 					}
 				}
 			}
+			return removed;
+		}
+
+		/** Removes a connection and reports whether it was the final client atomically. */
+		public boolean removeConnectionAndCheckIfLast(IServiceConnection connection) {
+			synchronized (connections) {
+				boolean removed = removeConnection(connection);
+				return removed && connections.isEmpty();
+			}
+		}
+
+		public boolean hasConnections() {
+			synchronized (connections) {
+				return !connections.isEmpty();
+			}
+		}
+
+		public List<IServiceConnection> snapshotConnections() {
+			synchronized (connections) {
+				return new ArrayList<>(connections);
+			}
+		}
+
+		/** Returns true once while an unpublished binding needs onBind scheduled. */
+		public synchronized boolean requestBindIfNeeded() {
+			if (bindRequested || (binder != null && binder.pingBinder())) {
+				return false;
+			}
+			bindRequested = true;
+			return true;
+		}
+
+		public synchronized void bindRequestFailed() {
+			bindRequested = false;
+		}
+
+		public synchronized List<IServiceConnection> publish(IBinder service) {
+			binder = service;
+			bindRequested = false;
+			return snapshotConnections();
+		}
+
+		/** Consumes a completed onUnbind(true) result so onRebind is scheduled once. */
+		public synchronized boolean consumeDoRebind() {
+			if (!doRebind) {
+				return false;
+			}
+			doRebind = false;
+			return true;
+		}
+
+		public synchronized void setDoRebind(boolean doRebind) {
+			this.doRebind = doRebind;
 		}
 	}
 

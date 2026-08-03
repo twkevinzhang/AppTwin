@@ -226,10 +226,6 @@
             android:name="com.lody.virtual.client.stub.DaemonService"
             android:process="@string/engine_process_name" />
 
-        <service
-            android:name="com.lody.virtual.client.stub.DaemonService$InnerService"
-            android:process="@string/engine_process_name" />
-
         <activity
             android:name="com.lody.virtual.client.stub.ShortcutHandleActivity"
             android:excludeFromRecents="true"
@@ -245,6 +241,11 @@
         <service
             android:name=".client.stub.StubPendingService"
             android:process="@string/engine_process_name" />
+
+        <service
+            android:name=".client.stub.StubProcessKeepAliveService$C0"
+            android:exported="false"
+            android:process=":p0" />
         <receiver
             android:name=".client.stub.StubPendingReceiver"
             android:process="@string/engine_process_name" />

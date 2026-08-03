@@ -1,0 +1,149 @@
+package com.lody.virtual.client.hook.proxies.shortcut;
+
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertNotNull;
+import static org.junit.Assert.assertNull;
+
+import android.os.IBinder;
+import android.os.IInterface;
+
+import com.lody.virtual.client.hook.base.BinderInvocationStub;
+import com.lody.virtual.client.hook.base.MethodProxy;
+import com.lody.virtual.client.hook.base.ReplaceCallingPkgMethodProxy;
+
+import org.junit.Test;
+
+import java.lang.reflect.Constructor;
+import java.lang.reflect.Method;
+import java.util.HashMap;
+import java.util.Map;
+
+public class ShortcutServiceStubTest {
+
+    @Test
+    public void bindsAndroid17PackageBearingMethodsWithExpectedProxyTypes() {
+        TestBinderInvocationStub invocationStub = new TestBinderInvocationStub();
+
+        new ShortcutServiceStub(invocationStub);
+
+        String[] callingPackageMethods = {
+                "getManifestShortcuts",
+                "getDynamicShortcuts",
+                "getShortcuts",
+                "getShareTargets",
+                "hasShareTargets",
+                "disableShortcuts",
+                "enableShortcuts",
+                "removeDynamicShortcuts",
+                "removeLongLivedShortcuts",
+                "getRemainingCallCount",
+                "getRateLimitResetTime",
+                "getIconMaxDimensions",
+                "getMaxShortcutCountPerActivity",
+                "isRequestPinItemSupported",
+                "reportShortcutUsed",
+                "onApplicationActive",
+                "removeAllDynamicShortcuts",
+                "getPinnedShortcuts"
+        };
+        for (String method : callingPackageMethods) {
+            assertProxyType(invocationStub, method, ReplaceCallingPkgMethodProxy.class);
+        }
+
+        String[] shortcutListMethods = {
+                "setDynamicShortcuts",
+                "addDynamicShortcuts",
+                "updateShortcuts"
+        };
+        for (String method : shortcutListMethods) {
+            assertProxyType(invocationStub, method, "ReplacePkgAndShortcutListMethodProxy");
+        }
+
+        String[] shortcutMethods = {
+                "pushDynamicShortcut",
+                "createShortcutResultIntent",
+                "requestPinShortcut"
+        };
+        for (String method : shortcutMethods) {
+            assertProxyType(invocationStub, method, "ReplacePkgAndShortcutMethodProxy");
+        }
+    }
+
+    @Test
+    public void doesNotBindAndroid17MethodsWithoutPackageArguments() {
+        TestBinderInvocationStub invocationStub = new TestBinderInvocationStub();
+
+        new ShortcutServiceStub(invocationStub);
+
+        assertNull(invocationStub.getMethodProxy("applyRestore"));
+        assertNull(invocationStub.getMethodProxy("getBackupPayload"));
+        assertNull(invocationStub.getMethodProxy("resetThrottling"));
+    }
+
+    @Test
+    public void shortcutArgumentFindersIgnoreNullArgumentsWithoutLoadingAndroidStubs()
+            throws Exception {
+        assertNull(invokeShortcutFinder("ReplacePkgAndShortcutListMethodProxy",
+                "findFirstShortcutList"));
+        assertNull(invokeShortcutFinder("ReplacePkgAndShortcutMethodProxy",
+                "findFirstShortcutInfo"));
+    }
+
+    private static Object invokeShortcutFinder(String proxySimpleName, String finderName)
+            throws Exception {
+        Class<?> proxyClass = Class.forName(
+                ShortcutServiceStub.class.getName() + "$" + proxySimpleName);
+        Constructor<?> constructor = proxyClass.getDeclaredConstructor(String.class);
+        constructor.setAccessible(true);
+        Object proxy = constructor.newInstance("test");
+        Method finder = proxyClass.getDeclaredMethod(finderName, Object[].class);
+        finder.setAccessible(true);
+        return finder.invoke(proxy, (Object) new Object[]{null});
+    }
+
+    private static void assertProxyType(TestBinderInvocationStub invocationStub,
+                                        String method,
+                                        Class<? extends MethodProxy> expectedType) {
+        MethodProxy proxy = invocationStub.getMethodProxy(method);
+        assertNotNull(method, proxy);
+        assertEquals(method, expectedType, proxy.getClass());
+    }
+
+    private static void assertProxyType(TestBinderInvocationStub invocationStub,
+                                        String method,
+                                        String expectedSimpleName) {
+        MethodProxy proxy = invocationStub.getMethodProxy(method);
+        assertNotNull(method, proxy);
+        assertEquals(method, expectedSimpleName, proxy.getClass().getSimpleName());
+    }
+
+    /** Avoids Android's ServiceManager and Binder implementations in local JVM tests. */
+    private static final class TestBinderInvocationStub extends BinderInvocationStub {
+        private Map<String, MethodProxy> hooks;
+
+        TestBinderInvocationStub() {
+            super(new IInterface() {
+                @Override
+                public IBinder asBinder() {
+                    return null;
+                }
+            });
+            hooks = new HashMap<>();
+        }
+
+        @Override
+        public MethodProxy addMethodProxy(MethodProxy methodProxy) {
+            // BinderInvocationStub adds asBinder while this subclass is still being constructed.
+            if (hooks != null) {
+                hooks.put(methodProxy.getMethodName(), methodProxy);
+            }
+            return methodProxy;
+        }
+
+        @SuppressWarnings("unchecked")
+        @Override
+        public <H extends MethodProxy> H getMethodProxy(String name) {
+            return (H) hooks.get(name);
+        }
+    }
+}

@@ -25,6 +25,7 @@ public class VEnvironment {
     private static final File ROOT;
     private static final File DATA_DIRECTORY;
     private static final File USER_DIRECTORY;
+    private static final File DEVICE_USER_DIRECTORY;
     private static final File DALVIK_CACHE_DIRECTORY;
 
     static {
@@ -35,6 +36,8 @@ public class VEnvironment {
         DATA_DIRECTORY = ensureCreated(new File(ROOT, "data"));
         // Point to: /data/user/
         USER_DIRECTORY = ensureCreated(new File(DATA_DIRECTORY, "user"));
+        // Point to: /data/user_de/. Direct-boot data must not alias credential data.
+        DEVICE_USER_DIRECTORY = ensureCreated(new File(DATA_DIRECTORY, "user_de"));
         // Point to: /opt/
         DALVIK_CACHE_DIRECTORY = ensureCreated(new File(ROOT, "opt"));
     }
@@ -66,6 +69,11 @@ public class VEnvironment {
     public static File getDataUserPackageDirectory(int userId,
                                                    String packageName) {
         return ensureCreated(new File(getUserSystemDirectory(userId), packageName));
+    }
+
+    public static File getDeDataUserPackageDirectory(int userId,
+                                                     String packageName) {
+        return ensureCreated(new File(getDeUserSystemDirectory(userId), packageName));
     }
 
     public static File getPackageResourcePath(String packgeName) {
@@ -157,6 +165,10 @@ public class VEnvironment {
 
     public static File getUserSystemDirectory(int userId) {
         return new File(USER_DIRECTORY, String.valueOf(userId));
+    }
+
+    public static File getDeUserSystemDirectory(int userId) {
+        return new File(DEVICE_USER_DIRECTORY, String.valueOf(userId));
     }
 
     public static File getVirtualStorageBaseDir() {

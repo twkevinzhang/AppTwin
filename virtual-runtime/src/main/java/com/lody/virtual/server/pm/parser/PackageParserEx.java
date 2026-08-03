@@ -325,18 +325,25 @@ public class PackageParserEx {
     }
 
     private static void initApplicationAsUser(ApplicationInfo ai, int userId) {
-        ai.dataDir = VEnvironment.getDataUserPackageDirectory(userId, ai.packageName).getPath();
+        String credentialDataDir = VEnvironment.getDataUserPackageDirectory(userId, ai.packageName).getPath();
+        String deviceDataDir = VEnvironment.getDeDataUserPackageDirectory(userId, ai.packageName).getPath();
+        initApplicationDataDirs(ai, credentialDataDir, deviceDataDir);
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
             ApplicationInfoL.scanSourceDir.set(ai, ai.dataDir);
             ApplicationInfoL.scanPublicSourceDir.set(ai, ai.dataDir);
         }
+    }
+
+    static void initApplicationDataDirs(ApplicationInfo ai, String credentialDataDir,
+                                        String deviceDataDir) {
+        ai.dataDir = credentialDataDir;
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
             if(Build.VERSION.SDK_INT < 26) {
-                ApplicationInfoN.deviceEncryptedDataDir.set(ai, ai.dataDir);
-                ApplicationInfoN.credentialEncryptedDataDir.set(ai, ai.dataDir);
+                ApplicationInfoN.deviceEncryptedDataDir.set(ai, deviceDataDir);
+                ApplicationInfoN.credentialEncryptedDataDir.set(ai, credentialDataDir);
             }
-            ApplicationInfoN.deviceProtectedDataDir.set(ai, ai.dataDir);
-            ApplicationInfoN.credentialProtectedDataDir.set(ai, ai.dataDir);
+            ApplicationInfoN.deviceProtectedDataDir.set(ai, deviceDataDir);
+            ApplicationInfoN.credentialProtectedDataDir.set(ai, credentialDataDir);
         }
     }
 

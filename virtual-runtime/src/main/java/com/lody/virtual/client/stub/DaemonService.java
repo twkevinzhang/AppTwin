@@ -1,6 +1,8 @@
 package com.lody.virtual.client.stub;
 
 import android.app.Notification;
+import android.app.NotificationChannel;
+import android.app.NotificationManager;
 import android.app.Service;
 import android.content.Context;
 import android.content.Intent;
@@ -20,16 +22,22 @@ import java.io.File;
 public class DaemonService extends Service {
 
     private static final int NOTIFY_ID = 1001;
+	private static final String NOTIFICATION_CHANNEL_ID = "virtual_runtime_daemon";
 
 	static boolean showNotification = true;
 
 	public static void startup(Context context) {
 		File flagFile = context.getFileStreamPath(Constants.NO_NOTIFICATION_FLAG);
-		if (Build.VERSION.SDK_INT >= 25 && flagFile.exists()) {
-			showNotification = false;
-		}
+		showNotification = Build.VERSION.SDK_INT >= Build.VERSION_CODES.O
+				|| Build.VERSION.SDK_INT < 25
+				|| !flagFile.exists();
 
-		context.startService(new Intent(context, DaemonService.class));
+		Intent intent = new Intent(context, DaemonService.class);
+		if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+			context.startForegroundService(intent);
+		} else {
+			context.startService(intent);
+		}
 		if (VirtualCore.get().isServerProcess()) {
 			// PrivilegeAppOptimizer.notifyBootFinish();
 			DaemonJobService.scheduleJob(context);
@@ -53,30 +61,43 @@ public class DaemonService extends Service {
 		if (!showNotification) {
 			return;
 		}
-        startService(new Intent(this, InnerService.class));
-        startForeground(NOTIFY_ID, new Notification());
+		startForeground(NOTIFY_ID, createForegroundNotification());
+	}
+
+	private Notification createForegroundNotification() {
+		CharSequence applicationLabel = getApplicationInfo().loadLabel(getPackageManager());
+		if (applicationLabel == null || applicationLabel.length() == 0) {
+			applicationLabel = getPackageName();
+		}
+
+		Notification.Builder builder;
+		if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+			NotificationChannel channel = new NotificationChannel(
+					NOTIFICATION_CHANNEL_ID,
+					applicationLabel,
+					NotificationManager.IMPORTANCE_LOW);
+			NotificationManager notificationManager = getSystemService(NotificationManager.class);
+			if (notificationManager != null) {
+				notificationManager.createNotificationChannel(channel);
+			}
+			builder = new Notification.Builder(this, NOTIFICATION_CHANNEL_ID);
+		} else {
+			builder = new Notification.Builder(this)
+					.setPriority(Notification.PRIORITY_LOW);
+		}
+
+		return builder
+				.setSmallIcon(android.R.drawable.stat_notify_sync)
+				.setContentTitle(applicationLabel)
+				.setCategory(Notification.CATEGORY_SERVICE)
+				.setOngoing(true)
+				.setShowWhen(false)
+				.build();
 	}
 
 	@Override
 	public int onStartCommand(Intent intent, int flags, int startId) {
 		return START_STICKY;
 	}
-
-	public static final class InnerService extends Service {
-
-        @Override
-        public int onStartCommand(Intent intent, int flags, int startId) {
-            startForeground(NOTIFY_ID, new Notification());
-            stopForeground(true);
-            stopSelf();
-            return super.onStartCommand(intent, flags, startId);
-        }
-
-		@Override
-		public IBinder onBind(Intent intent) {
-			return null;
-		}
-	}
-
 
 }

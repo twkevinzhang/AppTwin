@@ -5,6 +5,7 @@ import android.os.Bundle;
 
 import com.lody.virtual.client.VClientImpl;
 import com.lody.virtual.client.hook.base.MethodBox;
+import com.lody.virtual.helper.utils.VLog;
 
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
@@ -27,6 +28,10 @@ public class SettingsProviderHook extends ExternalProviderHook {
     static {
         PRE_SET_VALUES.put("user_setup_complete", "1");
         PRE_SET_VALUES.put("install_non_market_apps", "0");
+        // Google Services Framework is a privileged system package on the host. When it runs as
+        // a guest it cannot read DeviceConfig, so keep its legacy local Gservices storage path.
+        // This avoids asking the host Settings provider for READ_DEVICE_CONFIG during Maps M1.
+        PRE_SET_VALUES.put("enable_gmscore_gservices_storage", "false");
     }
 
 
@@ -51,6 +56,9 @@ public class SettingsProviderHook extends ExternalProviderHook {
 
     @Override
     public Bundle call(MethodBox methodBox, String method, String arg, Bundle extras) throws InvocationTargetException {
+        if ("com.google.android.gsf".equals(VClientImpl.get().getCurrentPackage())) {
+            VLog.i(TAG, "maps-m1 gsf settings call method=%s key=%s", method, arg);
+        }
         if (!VClientImpl.get().isBound()) {
             return methodBox.call();
         }
