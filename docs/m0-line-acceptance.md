@@ -1,4 +1,4 @@
-# M0 LINE clone acceptance
+# M0 LINE GroupApp acceptance
 
 Acceptance was executed on 2026-08-03 against an unrooted, bootloader-locked ASUS_I002D running
 Android 12/API 31. The source package was the main-system installation of
@@ -7,7 +7,7 @@ Android 12/API 31. The source package was the main-system installation of
 ## Accepted user path
 
 1. Sideload the clean `runtimeProbeDebug` APK without clearing MaskAccounts data.
-2. Launch the persisted LINE instance through MaskAccounts.
+2. Launch the persisted LINE GroupApp through MaskAccounts.
 3. Wait 75 seconds, exceeding the former 60-second initialization failure threshold.
 4. Confirm that the screen still contains `歡迎使用LINE`, `登入`, and `註冊新帳號`.
 5. Confirm that logcat contains neither `MainProcessInitializationException` nor LINE's
@@ -17,9 +17,9 @@ Result: passed. ActivityManager reported the host component
 `org.maskaccounts/com.lody.virtual.client.stub.StubActivity$C0`, while the active guest window was
 `jp.naver.line.android/com.linecorp.registration.ui.RegistrationActivity`.
 
-## Clone proof
+## GroupApp isolation proof
 
-| Evidence | Main-system LINE | MaskAccounts clone |
+| Evidence | Main-system LINE | MaskAccounts GroupApp |
 | --- | --- | --- |
 | Android UID | `10744` | `10959` (MaskAccounts UID) |
 | Process | normal installed LINE package | process label `jp.naver.line.android`, PID owned by UID `10959` |

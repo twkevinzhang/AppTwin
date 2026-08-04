@@ -30,10 +30,16 @@ Installed source package
 - Every copied APK receives SHA-256 metadata and is made read-only before activation.
 - The active pointer is replaced using an atomic filesystem move.
 - Version rollback and signing-lineage replacement are rejected by the transition model.
-- Each Group has persistent identity metadata, a unique GroupApp set, and a host-private `data/`
-  root. New Groups receive a dedicated virtual user when their first App needs runtime services.
-- GSF, GMS, and Play Store are prepared lazily inside that Group's virtual user. Apps in one Group
-  share its account environment; another Group cannot see that virtual user's package data.
+- Each Group has persistent identity metadata, a unique GroupApp set, a host-private `data/` root,
+  and exactly one immutable isolation-environment binding allocated during Group creation.
+- Group creation and deletion run through a durable operation journal. A restart rolls forward or
+  cleans up an interrupted transition; an already-healthy Group is never silently rebound.
+- GSF, GMS, and Play Store are prepared lazily inside that Group's isolation environment. Apps in
+  one Group share its account environment; another Group cannot see those package or account data.
+- App private data, Google account state, per-App install/enable state, runtime permissions, and
+  the supported subset of system-service state are scoped by the same Group environment.
+- If a healthy Group's bound environment disappears, the Group becomes `DAMAGED`. Recovery must
+  be explicit; allocating a replacement would violate the Group's identity contract.
 - The runtime installs the active immutable revision into its own virtual package registry and
   launches the guest through a host `StubActivity` without adding another Android package.
 - Guest code runs in a MaskAccounts-owned process/UID. Native path redirection maps guest private
@@ -54,15 +60,15 @@ Installed source package
 
 ## M0 device-validated boundary
 
-- One LINE 15.5.4 instance launches through the virtual PackageManager/ActivityManager path on an
+- One LINE 15.5.4 GroupApp launches through the virtual PackageManager/ActivityManager path on an
   unrooted ASUS_I002D running Android 12/API 31 and reaches the fresh login screen.
 - The guest process uses the MaskAccounts UID, while its process label and window resources remain
   LINE's. The original LINE package and data directory remain separate.
-- One Shopee Taiwan 3.79.27 instance launches on the same device, loads the live home screen, and
+- One Shopee Taiwan 3.79.27 GroupApp launches on the same device, loads the live home screen, and
   opens Shopee's declared native login activity. The login screen remained in the foreground for
   more than 75 seconds, survived a background/foreground cycle, and also passed a force-stop cold
   launch.
-- This milestone validates ordinary private-data separation for one clone; it is not a security
+- This milestone validates ordinary private-data separation for one GroupApp; it is not a security
   boundary against a hostile guest app.
 
 ## Not implemented or not accepted yet

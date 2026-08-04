@@ -5,7 +5,7 @@ an unrooted, bootloader-locked `ASUS_I002D` running Android 12 / API 31. The tar
 16 compatibility (`compileSdk` and `targetSdk` 36).
 
 > **M0 status:** the sideload-only `runtimeProbe` build imports installed base/split APKs into a
-> GPL-3.0 virtual runtime and launches accepted LINE and Shopee clones with host-private data.
+> GPL-3.0 runtime and launches accepted LINE and Shopee GroupApps with host-private data.
 > LINE 15.5.4 reached its fresh login screen, while Shopee Taiwan 3.79.27 reached its live home and
 > native login screens on the ASUS_I002D acceptance device. This is a focused compatibility
 > milestone, not general Android 16 or arbitrary-app support.
@@ -31,9 +31,11 @@ Google Play updates main-system app
       isolated GroupApp data
 ```
 
-One Android package version is shared by every GroupApp. Each Group gets its own virtual user and
-lazy GSF/GMS/Play Store environment, while package code remains shared. Activating a verified
-revision must never replace Group data.
+One Android package version is shared by every GroupApp. Creating a Group immediately allocates
+one dedicated isolation environment and permanently binds that environment to the Group. App
+private data, Google accounts, per-App enabled state, permissions, and supported system-service
+state live inside that boundary. GSF/GMS/Play Store contents are prepared lazily, while package
+code remains shared. Activating a verified revision must never replace Group data.
 
 ## Modules
 
@@ -43,7 +45,7 @@ revision must never replace Group data.
   signature lineage, and supported ABIs.
 - `revision-store`: pure Kotlin revision state machine for staging and atomic activation. The app
   persists immutable revisions and an atomic active pointer in host-private storage.
-- `group-store`: pure Kotlin `AppGroup`/`GroupApp` model and state store. One package can appear at
+- `group-store`: pure Kotlin `Group`/`GroupApp` model and state store. One package can appear at
   most once in a Group, while separate Groups may each contain it.
 - `virtual-runtime`: downstream Android 12/arm64 port of VirtualXposed 0.22.0's GPL-3.0
   `VirtualApp/lib`. It supplies virtual package/component routing, guest process startup, and
@@ -53,10 +55,12 @@ revision must never replace Group data.
 The historical candidate review and the reason for selecting the exact GPL release tree are
 recorded in [`docs/core-engine-audit.md`](docs/core-engine-audit.md). Device acceptance evidence is
 recorded for [LINE](docs/m0-line-acceptance.md) and
-[Shopee Taiwan](docs/m0-shopee-acceptance.md).
+[Shopee Taiwan](docs/m0-shopee-acceptance.md). The immutable Group environment migration and reboot
+acceptance is recorded in
+[`docs/group-environment-binding-acceptance.md`](docs/group-environment-binding-acceptance.md).
 
 For Shopee, select the imported package and use **開啟登入** to enter Shopee's declared native
-login activity. The normal clone action continues to open Shopee's home activity. MaskAccounts
+login activity. The normal GroupApp action continues to open Shopee's home activity. MaskAccounts
 does not bypass Shopee traffic verification or device-integrity decisions.
 
 ## Build and test

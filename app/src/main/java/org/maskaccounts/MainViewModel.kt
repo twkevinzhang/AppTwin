@@ -11,10 +11,14 @@ import androidx.compose.runtime.setValue
 import androidx.lifecycle.AndroidViewModel
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.Executors
-import org.maskaccounts.groups.AppGroup
+import org.maskaccounts.groups.FileGroupOperationJournal
 import org.maskaccounts.groups.FileGroupStore
+import org.maskaccounts.groups.GoogleServicesState
+import org.maskaccounts.groups.Group
 import org.maskaccounts.groups.GroupApp
-import org.maskaccounts.groups.GroupRuntimeState
+import org.maskaccounts.groups.GroupAppState
+import org.maskaccounts.groups.GroupHealth
+import org.maskaccounts.groups.GroupLifecycleCoordinator
 import org.maskaccounts.revision.AndroidPackageRevisionImporter
 import org.maskaccounts.revision.InstalledAppEntry
 import org.maskaccounts.revision.RevisionImportResult
@@ -24,10 +28,7 @@ import org.maskaccounts.runtime.RuntimeCompatibility
 import org.maskaccounts.runtime.RuntimeLaunchResult
 import org.maskaccounts.runtime.VirtualRuntimeController
 
-enum class MainDestination {
-    HOME,
-    SETTINGS,
-}
+enum class MainDestination { HOME, SETTINGS }
 
 data class AppItem(
     val entry: InstalledAppEntry,
@@ -37,7 +38,10 @@ data class AppItem(
 )
 
 data class GroupAppItem(
-    val group: AppGroup,
+    val groupId: String,
+    val groupName: String,
+    val groupHealth: GroupHealth,
+    val googleServicesState: GoogleServicesState,
     val app: GroupApp,
     val appLabel: String,
     val versionName: String,
@@ -45,13 +49,18 @@ data class GroupAppItem(
     val launchSupported: Boolean,
     val launchStatus: String,
 ) {
-    val launchKey: String = "${group.id}:${app.packageName}"
+    val launchKey: String = "$groupId:${app.packageName}"
 }
 
 data class GroupItem(
-    val group: AppGroup,
+    val groupId: String,
+    val name: String,
+    val health: GroupHealth,
+    val googleServicesState: GoogleServicesState,
     val apps: List<GroupAppItem>,
-)
+) {
+    fun contains(packageName: String): Boolean = apps.any { it.app.packageName == packageName }
+}
 
 data class MainUiState(
     val destination: MainDestination = MainDestination.HOME,
@@ -59,6 +68,7 @@ data class MainUiState(
     val groups: List<GroupItem> = emptyList(),
     val appPickerGroupId: String? = null,
     val isRefreshing: Boolean = true,
+    val isCreatingGroup: Boolean = false,
     val busyPackageName: String? = null,
     val busyGroupId: String? = null,
     val launchingAppKey: String? = null,
@@ -73,6 +83,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val importer = AndroidPackageRevisionImporter(application)
     private val groupStore = FileGroupStore(application)
     private val runtimeController = VirtualRuntimeController(application)
+    private val lifecycle = GroupLifecycleCoordinator(
+        store = groupStore,
+        runtime = runtimeController,
+        journal = FileGroupOperationJournal(application),
+    )
     private val worker = Executors.newSingleThreadExecutor()
     private val mainHandler = Handler(Looper.getMainLooper())
     private val activePreparations = ConcurrentHashMap.newKeySet<String>()
@@ -82,7 +97,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         private set
 
     init {
-        refresh()
+        reconcileAndRefresh()
     }
 
     fun navigate(destination: MainDestination) {
@@ -90,14 +105,14 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun openAppPicker(groupId: String) {
-        if (groupStore.find(groupId) == null) {
+        val group = groupStore.find(groupId)
+        if (group == null) {
             showMessage("找不到這個群組")
-            return
+        } else if (group.health != GroupHealth.HEALTHY) {
+            showMessage("這個群組目前無法加入 App")
+        } else {
+            uiState = uiState.copy(destination = MainDestination.HOME, appPickerGroupId = groupId)
         }
-        uiState = uiState.copy(
-            destination = MainDestination.HOME,
-            appPickerGroupId = groupId,
-        )
     }
 
     fun closeAppPicker() {
@@ -114,16 +129,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         )
         worker.execute {
             val entries = runCatching(importer::listCloneableApps).getOrDefault(emptyList())
-            val groups = runCatching(groupStore::listAll).getOrDefault(emptyList()).map { group ->
-                if (
-                    group.runtimeState == GroupRuntimeState.PREPARING &&
-                    group.id !in activePreparations
-                ) {
-                    groupStore.updateRuntimeState(group.id, GroupRuntimeState.FAILED) ?: group
-                } else {
-                    group
-                }
-            }
+            val groups = runCatching(groupStore::listAll).getOrDefault(emptyList())
             val entriesByPackage = entries.associateBy(InstalledAppEntry::packageName)
             val appItems = entries.map { entry ->
                 val active = importer.active(entry.packageName)
@@ -134,32 +140,32 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     groupCount = groups.count { it.contains(entry.packageName) },
                 )
             }
-            val groupItems = groups
-                .sortedByDescending(AppGroup::createdAtEpochMillis)
-                .map { group ->
-                    GroupItem(
-                        group = group,
-                        apps = group.apps.map { app ->
-                            val source = entriesByPackage[app.packageName]
-                            GroupAppItem(
-                                group = group,
-                                app = app,
-                                appLabel = source?.label ?: app.packageName,
-                                versionName = source?.versionName.orEmpty(),
-                                sourceInstalled = source != null,
-                                launchSupported = source != null &&
-                                    GroupAppRuntimeSupport.canLaunch(app.packageName),
-                                launchStatus = launchStatus(app.packageName, source != null),
-                            )
-                        },
-                    )
-                }
-            post {
-                uiState = uiState.copy(
-                    apps = appItems,
-                    groups = groupItems,
-                    isRefreshing = false,
+            val groupItems = groups.sortedByDescending(Group::createdAtEpochMillis).map { group ->
+                GroupItem(
+                    groupId = group.id,
+                    name = group.name,
+                    health = group.health,
+                    googleServicesState = group.googleServicesState,
+                    apps = group.apps.map { app ->
+                        val source = entriesByPackage[app.packageName]
+                        GroupAppItem(
+                            groupId = group.id,
+                            groupName = group.name,
+                            groupHealth = group.health,
+                            googleServicesState = group.googleServicesState,
+                            app = app,
+                            appLabel = source?.label ?: app.packageName,
+                            versionName = source?.versionName.orEmpty(),
+                            sourceInstalled = source != null,
+                            launchSupported = source != null &&
+                                GroupAppRuntimeSupport.canLaunch(app.packageName),
+                            launchStatus = launchStatus(app.packageName, source != null),
+                        )
+                    },
                 )
+            }
+            post {
+                uiState = uiState.copy(apps = appItems, groups = groupItems, isRefreshing = false)
                 pendingLaunchPackage?.let { packageName ->
                     val pending = groupItems.asSequence()
                         .flatMap { it.apps.asSequence() }
@@ -174,12 +180,18 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun createGroup(name: String) {
-        runCatching { groupStore.create(name, System.currentTimeMillis()) }
-            .onSuccess { group ->
-                showMessage("已建立 ${group.name}，Google 服務會在需要時準備")
-                refresh()
+        if (uiState.isCreatingGroup) return
+        uiState = uiState.copy(isCreatingGroup = true)
+        worker.execute {
+            val result = runCatching { lifecycle.createGroup(name) }
+            post {
+                uiState = uiState.copy(isCreatingGroup = false)
+                result.onSuccess { group ->
+                    showMessage("已建立「${group.name}」")
+                    refresh()
+                }.onFailure { error -> showMessage("建立群組失敗：${error.userMessage()}") }
             }
-            .onFailure { error -> showMessage("建立群組失敗：${error.userMessage()}") }
+        }
     }
 
     fun renameGroup(groupId: String, name: String) {
@@ -187,7 +199,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             .onSuccess { renamed ->
                 if (renamed == null) showMessage("找不到這個群組")
                 else {
-                    showMessage("已重新命名為 ${renamed.name}")
+                    showMessage("已重新命名為「${renamed.name}」")
                     refresh()
                 }
             }
@@ -202,17 +214,15 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
         uiState = uiState.copy(busyGroupId = groupId)
         worker.execute {
-            val result = runCatching {
-                runtimeController.deleteGroupRuntime(group)
-                check(groupStore.delete(groupId)) { "群組資料夾不存在" }
-            }
+            val result = runCatching { lifecycle.deleteGroup(groupId) }
             post {
                 uiState = uiState.copy(busyGroupId = null)
                 result.onSuccess {
-                    showMessage("已刪除 ${group.name} 的 App、帳戶與 Google 服務資料")
+                    showMessage("已刪除「${group.name}」及其中的所有資料")
                     refresh()
                 }.onFailure { error ->
                     showMessage("刪除群組失敗：${error.userMessage()}")
+                    refresh()
                 }
             }
         }
@@ -225,8 +235,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             closeAppPicker()
             return
         }
+        if (group.health != GroupHealth.HEALTHY) {
+            showMessage("這個群組目前無法加入 App")
+            return
+        }
         if (group.contains(app.entry.packageName)) {
-            showMessage("${app.entry.label} 已在 ${group.name} 中")
+            showMessage("${app.entry.label} 已在「${group.name}」中")
             return
         }
         if (uiState.busyPackageName != null) return
@@ -256,7 +270,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 uiState = uiState.copy(busyPackageName = null)
                 added.onSuccess {
                     uiState = uiState.copy(appPickerGroupId = null)
-                    showMessage("已將 ${app.entry.label} 加入 ${group.name}")
+                    showMessage("已將 ${app.entry.label} 加入「${group.name}」")
                     refresh()
                     prepareGroup(groupId)
                 }.onFailure { error -> showMessage(error.userMessage()) }
@@ -267,22 +281,29 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     fun prepareGroup(groupId: String) {
         if (groupId in activePreparations) return
         val group = groupStore.find(groupId) ?: return
+        if (group.health != GroupHealth.HEALTHY) {
+            showMessage("群組環境目前無法準備 Google 服務")
+            return
+        }
         activePreparations += groupId
-        groupStore.updateRuntimeState(groupId, GroupRuntimeState.PREPARING)
+        groupStore.updateGoogleServicesState(groupId, GoogleServicesState.PREPARING)
         refresh()
         worker.execute {
             val current = groupStore.find(groupId) ?: group
             val result = runtimeController.prepareGroup(current)
-            val state = when (result) {
-                is GroupPreparationResult.Ready -> GroupRuntimeState.READY
-                is GroupPreparationResult.Failed -> GroupRuntimeState.FAILED
-            }
-            groupStore.updateRuntimeState(groupId, state)
+            groupStore.updateGoogleServicesState(
+                groupId,
+                if (result is GroupPreparationResult.Ready) {
+                    GoogleServicesState.READY
+                } else {
+                    GoogleServicesState.FAILED
+                },
+            )
             activePreparations -= groupId
             post {
                 when (result) {
                     is GroupPreparationResult.Ready ->
-                        showMessage("${current.name} 的 Google 服務已就緒")
+                        showMessage("「${current.name}」的 Google 服務已就緒")
                     is GroupPreparationResult.Failed ->
                         showMessage("Google 服務準備失敗：${result.reason}")
                 }
@@ -293,6 +314,20 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     fun launchGroupApp(item: GroupAppItem) {
         if (uiState.launchingAppKey != null) return
+        if (item.groupId in activePreparations) {
+            showMessage("「${item.groupName}」正在準備，請稍候")
+            return
+        }
+        if (item.groupHealth != GroupHealth.HEALTHY) {
+            showMessage(
+                if (item.groupHealth == GroupHealth.DAMAGED) {
+                    "「${item.groupName}」的隔離環境已損毀"
+                } else {
+                    "「${item.groupName}」目前無法啟動 App"
+                },
+            )
+            return
+        }
         if (!item.sourceInstalled) {
             showMessage("來源 App 已移除，暫時無法啟動")
             return
@@ -301,33 +336,62 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             showMessage("目前實機啟動驗證僅支援 LINE、蝦皮、YouTube 與 Maps")
             return
         }
-        activePreparations += item.group.id
+        activePreparations += item.groupId
         uiState = uiState.copy(launchingAppKey = item.launchKey)
         worker.execute {
-            val currentGroup = groupStore.find(item.group.id) ?: item.group
-            val preparation = if (currentGroup.runtimeState == GroupRuntimeState.READY) {
-                GroupPreparationResult.Ready(-1)
+            val currentGroup = groupStore.find(item.groupId)
+            val result = if (currentGroup == null || currentGroup.health != GroupHealth.HEALTHY) {
+                RuntimeLaunchResult.Failed("群組環境目前無法使用")
             } else {
-                groupStore.updateRuntimeState(currentGroup.id, GroupRuntimeState.PREPARING)
-                runtimeController.prepareGroup(currentGroup)
-            }
-            val result = when (preparation) {
-                is GroupPreparationResult.Ready -> {
-                    groupStore.updateRuntimeState(currentGroup.id, GroupRuntimeState.READY)
-                    runtimeController.installAndLaunch(currentGroup, item.app)
+                val preparation = if (
+                    currentGroup.googleServicesState == GoogleServicesState.READY
+                ) {
+                    GroupPreparationResult.Ready
+                } else {
+                    groupStore.updateGoogleServicesState(
+                        currentGroup.id,
+                        GoogleServicesState.PREPARING,
+                    )
+                    runtimeController.prepareGroup(currentGroup)
                 }
-                is GroupPreparationResult.Failed -> {
-                    groupStore.updateRuntimeState(currentGroup.id, GroupRuntimeState.FAILED)
-                    RuntimeLaunchResult.Failed(preparation.reason, preparation.error)
+                when (preparation) {
+                    is GroupPreparationResult.Ready -> {
+                        groupStore.updateGoogleServicesState(
+                            currentGroup.id,
+                            GoogleServicesState.READY,
+                        )
+                        groupStore.updateAppState(
+                            currentGroup.id,
+                            item.app.packageName,
+                            GroupAppState.INSTALLING,
+                        )
+                        runtimeController.installAndLaunch(currentGroup, item.app).also { launch ->
+                            groupStore.updateAppState(
+                                currentGroup.id,
+                                item.app.packageName,
+                                if (launch is RuntimeLaunchResult.Started) {
+                                    GroupAppState.ENABLED
+                                } else {
+                                    GroupAppState.FAILED
+                                },
+                            )
+                        }
+                    }
+                    is GroupPreparationResult.Failed -> {
+                        groupStore.updateGoogleServicesState(
+                            currentGroup.id,
+                            GoogleServicesState.FAILED,
+                        )
+                        RuntimeLaunchResult.Failed(preparation.reason, preparation.error)
+                    }
                 }
             }
             post {
-                activePreparations -= currentGroup.id
+                activePreparations -= item.groupId
                 uiState = uiState.copy(launchingAppKey = null)
                 when (result) {
-                    is RuntimeLaunchResult.Started -> showMessage(
-                        "${item.appLabel} 已從 ${currentGroup.name} 啟動 · virtual user ${result.virtualUserId}",
-                    )
+                    is RuntimeLaunchResult.Started ->
+                        showMessage("${item.appLabel} 已從「${item.groupName}」啟動")
                     is RuntimeLaunchResult.Failed -> showMessage("啟動失敗：${result.reason}")
                 }
                 refresh()
@@ -344,6 +408,19 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     fun consumeMessage(messageId: Long) {
         if (uiState.messageId == messageId) uiState = uiState.copy(message = null)
+    }
+
+    private fun reconcileAndRefresh() {
+        uiState = uiState.copy(isRefreshing = true)
+        worker.execute {
+            val result = runCatching(lifecycle::reconcile)
+            post {
+                result.onFailure { error ->
+                    showMessage("部分群組環境需要處理：${error.userMessage()}")
+                }
+                refresh()
+            }
+        }
     }
 
     private fun launchStatus(packageName: String, sourceInstalled: Boolean): String = when {

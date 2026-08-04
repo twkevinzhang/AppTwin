@@ -65,7 +65,7 @@ fun MaskAccountsApp(
     val snackbarHostState = remember { SnackbarHostState() }
     var showCreateGroup by remember { mutableStateOf(false) }
     val pickerGroup = state.appPickerGroupId?.let { selectedId ->
-        state.groups.firstOrNull { it.group.id == selectedId }
+        state.groups.firstOrNull { it.groupId == selectedId }
     }
 
     BackHandler(enabled = pickerGroup != null) {
@@ -228,7 +228,7 @@ private fun CreateGroupDialog(
         text = {
             Column {
                 Text(
-                    "每個群組會在需要時建立獨立的 Google 服務、帳戶與 App 資料。",
+                    "每個群組會立即建立專屬隔離環境；Google 服務則在加入 App 後按需準備。",
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
                 OutlinedTextField(

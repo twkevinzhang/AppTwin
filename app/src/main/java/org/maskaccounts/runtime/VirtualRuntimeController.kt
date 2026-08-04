@@ -15,16 +15,18 @@ import com.lody.virtual.os.VUserManager
 import java.io.File
 import java.io.FileOutputStream
 import java.util.Properties
-import org.maskaccounts.groups.AppGroup
+import org.maskaccounts.groups.EnvironmentBinding
 import org.maskaccounts.groups.FileGroupStore
+import org.maskaccounts.groups.Group
 import org.maskaccounts.groups.GroupApp
+import org.maskaccounts.groups.GroupEnvironmentRuntime
+import org.maskaccounts.groups.GroupHealth
 import org.maskaccounts.revision.AndroidPackageRevisionImporter
 import org.maskaccounts.revision.RevisionImportResult
 
 sealed interface RuntimeLaunchResult {
     data class Started(
         val packageName: String,
-        val virtualUserId: Int,
         val processPrefix: String,
         val dataDirectory: String,
     ) : RuntimeLaunchResult
@@ -33,57 +35,128 @@ sealed interface RuntimeLaunchResult {
 }
 
 sealed interface GroupPreparationResult {
-    data class Ready(val virtualUserId: Int) : GroupPreparationResult
+    data object Ready : GroupPreparationResult
     data class Failed(val reason: String, val error: Throwable? = null) : GroupPreparationResult
 }
 
-/** Bridges shared package revisions and isolated Group identities to the GPL virtual engine. */
-class VirtualRuntimeController(context: Context) {
+/** The only adapter allowed to translate a Group environment into the engine's numeric user API. */
+class VirtualRuntimeController(context: Context) : GroupEnvironmentRuntime {
     private val appContext = context.applicationContext
     private val importer = AndroidPackageRevisionImporter(appContext)
 
-    fun prepareGroup(group: AppGroup): GroupPreparationResult = runCatching {
+    override fun createEnvironment(groupId: String, groupName: String): EnvironmentBinding {
         val core = VirtualCore.get()
         core.waitForEngine()
-        val resolution = virtualUserFor(group)
-        val virtualUserId = resolution.userId
-        ensurePackages(GROUP_GOOGLE_PACKAGES, core, virtualUserId)
-        migrateLegacyGroupApps(group, resolution)
-        GroupPreparationResult.Ready(virtualUserId)
+        val user = requireNotNull(
+            VUserManager.get().createUser(
+                environmentName(groupId),
+                0,
+            ),
+        ) { "無法建立群組環境" }
+        Log.i(TAG, "group-environment-created groupId=$groupId environmentId=${user.id}")
+        return EnvironmentBinding(user.id)
+    }
+
+    override fun findEnvironment(groupId: String): EnvironmentBinding? {
+        VirtualCore.get().waitForEngine()
+        val matches = VUserManager.get().users.filter { it.name == environmentName(groupId) }
+        check(matches.size <= 1) { "群組存在多個隔離環境" }
+        return matches.singleOrNull()?.id?.let(::EnvironmentBinding)
+    }
+
+    override fun environmentExists(binding: EnvironmentBinding): Boolean {
+        VirtualCore.get().waitForEngine()
+        return VUserManager.get().getUserInfo(binding.internalId) != null
+    }
+
+    override fun copyPrivateAppData(
+        source: EnvironmentBinding,
+        destination: EnvironmentBinding,
+        apps: List<GroupApp>,
+    ) {
+        require(source != destination) { "來源與目標群組環境不可相同" }
+        apps.forEach { app ->
+            val sourceDirectory = VEnvironment.getDataUserPackageDirectory(
+                source.internalId,
+                app.packageName,
+            )
+            if (!sourceDirectory.isDirectory) return@forEach
+            VActivityManager.get().killAppByPkg(app.packageName, source.internalId)
+            val destinationDirectory = VEnvironment.getDataUserPackageDirectory(
+                destination.internalId,
+                app.packageName,
+            )
+            if (destinationDirectory.exists()) {
+                check(destinationDirectory.deleteRecursively()) {
+                    "無法清除新群組的空白 App 資料：${app.packageName}"
+                }
+            }
+            check(
+                destinationDirectory.parentFile?.isDirectory == true ||
+                    destinationDirectory.parentFile?.mkdirs() == true,
+            ) { "無法建立群組 App 資料目錄：${app.packageName}" }
+            check(sourceDirectory.copyRecursively(destinationDirectory, overwrite = true)) {
+                "無法複製群組 App 資料：${app.packageName}"
+            }
+            Log.i(
+                TAG,
+                "group-private-data-copied package=${app.packageName} " +
+                    "sourceEnvironment=${source.internalId} " +
+                    "destinationEnvironment=${destination.internalId}",
+            )
+        }
+    }
+
+    override fun deleteEnvironment(binding: EnvironmentBinding) {
+        val core = VirtualCore.get()
+        core.waitForEngine()
+        require(binding.internalId != 0) { "預設引擎環境不可刪除" }
+        if (!environmentExists(binding)) return
+        check(VUserManager.get().removeUser(binding.internalId)) { "無法刪除群組環境" }
+        repeat(40) {
+            if (!environmentExists(binding)) {
+                Log.i(TAG, "group-environment-deleted environmentId=${binding.internalId}")
+                return
+            }
+            Thread.sleep(50)
+        }
+        error("群組環境刪除逾時")
+    }
+
+    fun prepareGroup(group: Group): GroupPreparationResult = runCatching {
+        val core = VirtualCore.get()
+        core.waitForEngine()
+        val binding = requireHealthyEnvironment(group)
+        ensurePackages(GROUP_GOOGLE_PACKAGES, core, binding.internalId)
+        GroupPreparationResult.Ready
     }.getOrElse { error ->
-        Log.e(TAG, "Group runtime preparation failed for ${group.id}", error)
+        Log.e(TAG, "Group environment preparation failed for ${group.id}", error)
         GroupPreparationResult.Failed(error.message ?: error.javaClass.simpleName, error)
     }
 
     fun installAndLaunch(
-        group: AppGroup,
+        group: Group,
         app: GroupApp,
         activityName: String? = null,
     ): RuntimeLaunchResult = runCatching {
-        require(group.contains(app.packageName)) { "GroupApp does not belong to this group" }
+        require(group.contains(app.packageName)) { "GroupApp does not belong to this Group" }
+        val binding = requireHealthyEnvironment(group)
+        val environmentId = binding.internalId
         val packageName = app.packageName
         val core = VirtualCore.get()
         core.waitForEngine()
-        val resolution = virtualUserFor(group)
-        val virtualUserId = resolution.userId
-        ensurePackages(GROUP_GOOGLE_PACKAGES, core, virtualUserId)
-        migrateLegacyGroupApps(group, resolution)
-        ensurePackages(GroupAppRuntimeSupport.requiredPackages(packageName), core, virtualUserId)
+        ensurePackages(GROUP_GOOGLE_PACKAGES, core, environmentId)
+        ensurePackages(GroupAppRuntimeSupport.requiredPackages(packageName), core, environmentId)
         if (packageName == GroupAppRuntimeSupport.MAPS_PACKAGE) {
-            runCatching {
-                GoogleRuntimeBootstrap.prewarmCheckin(virtualUserId)
-            }.onFailure { error ->
-                // Checkin accelerates first-time Google setup, but it is not a Maps launch
-                // prerequisite. A stale transient GMS service must not strand an otherwise
-                // healthy clone after device registration has already completed.
-                Log.w(TAG, "google-checkin-prewarm-skipped user=$virtualUserId", error)
-            }
+            runCatching { GoogleRuntimeBootstrap.prewarmCheckin(environmentId) }
+                .onFailure { error ->
+                    Log.w(TAG, "google-checkin-prewarm-skipped environmentId=$environmentId", error)
+                }
         }
         val revision = requireNotNull(importer.activeRevisionDirectory(packageName)) {
             "沒有可啟動的 active revision"
         }
         prepareVirtualExternalStorage()
-
         if (!core.isAppInstalled(packageName)) {
             val result = core.installPackage(
                 revision.absolutePath,
@@ -92,53 +165,44 @@ class VirtualRuntimeController(context: Context) {
             check(result.isSuccess) { result.error ?: "virtual package install failed" }
         }
         check(
-            core.isAppInstalledAsUser(virtualUserId, packageName) ||
-                core.installPackageAsUser(virtualUserId, packageName),
-        ) {
-            "無法將 $packageName 提供給 virtual user $virtualUserId"
-        }
+            core.isAppInstalledAsUser(environmentId, packageName) ||
+                core.installPackageAsUser(environmentId, packageName),
+        ) { "無法將 $packageName 加入群組環境" }
         markGuestCodeReadOnly(core, packageName)
-
-        check(core.isAppInstalledAsUser(virtualUserId, packageName)) {
-            "virtual package is not installed for user $virtualUserId"
-        }
         val virtualPackage = requireNotNull(
-            VPackageManager.get().getPackageInfo(packageName, 0, virtualUserId),
-        ) { "virtual package info is missing" }
+            VPackageManager.get().getPackageInfo(packageName, 0, environmentId),
+        ) { "群組 App 套件資訊不存在" }
         Log.i(
             TAG,
-            "virtual-package package=${virtualPackage.packageName} " +
+            "group-package package=${virtualPackage.packageName} " +
                 "versionCode=${virtualPackage.versionCodeCompat()} " +
                 "versionName=${virtualPackage.versionName} " +
-                "splits=${virtualPackage.splitNames?.contentToString()} " +
-                "sourceDir=${virtualPackage.applicationInfo?.sourceDir}",
+                "splits=${virtualPackage.splitNames?.contentToString()}",
         )
         val launchIntent = if (activityName == null) {
-            requireNotNull(core.getLaunchIntent(packageName, virtualUserId)) {
-                "找不到 virtual launcher activity"
+            requireNotNull(core.getLaunchIntent(packageName, environmentId)) {
+                "找不到群組 App 啟動入口"
             }
         } else {
             val component = ComponentName(packageName, activityName)
-            requireNotNull(
-                VPackageManager.get().getActivityInfo(component, 0, virtualUserId),
-            ) { "找不到 virtual activity：$activityName" }
+            requireNotNull(VPackageManager.get().getActivityInfo(component, 0, environmentId)) {
+                "找不到指定的群組 App activity"
+            }
             Intent(Intent.ACTION_MAIN)
                 .setComponent(component)
                 .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
         }
-        val resultCode = VActivityManager.get().startActivity(launchIntent, virtualUserId)
-        check(resultCode >= 0) { "virtual activity start failed: $resultCode" }
-
-        val dataDirectory = VEnvironment.getDataUserPackageDirectory(virtualUserId, packageName)
-        persistRuntimeMapping(group, app, virtualUserId, dataDirectory)
+        val resultCode = VActivityManager.get().startActivity(launchIntent, environmentId)
+        check(resultCode >= 0) { "群組 App 啟動失敗：$resultCode" }
+        val dataDirectory = VEnvironment.getDataUserPackageDirectory(environmentId, packageName)
+        persistRuntimeDiagnostics(group, app, binding, dataDirectory)
         Log.i(
             TAG,
-            "group-app-start package=$packageName group=${group.id} user=$virtualUserId " +
-                "data=${dataDirectory.absolutePath}",
+            "group-app-start groupId=${group.id} environmentId=$environmentId " +
+                "package=$packageName data=${dataDirectory.absolutePath}",
         )
         RuntimeLaunchResult.Started(
             packageName = packageName,
-            virtualUserId = virtualUserId,
             processPrefix = "${appContext.packageName}:p",
             dataDirectory = dataDirectory.absolutePath,
         )
@@ -147,193 +211,43 @@ class VirtualRuntimeController(context: Context) {
         RuntimeLaunchResult.Failed(error.message ?: error.javaClass.simpleName, error)
     }
 
-    fun deleteGroupRuntime(group: AppGroup) {
-        val core = VirtualCore.get()
-        core.waitForEngine()
-        val virtualUserId = readMappedVirtualUserId(group) ?: return
-        if (virtualUserId == 0) {
-            // Legacy M0 records used user 0. Remove only this group's apps; user 0 may still back
-            // another migrated group, so deleting it would destroy unrelated data.
-            group.apps.forEach { app ->
-                if (core.isAppInstalledAsUser(virtualUserId, app.packageName)) {
-                    check(core.uninstallPackageAsUser(app.packageName, virtualUserId)) {
-                        "無法清除舊版 GroupApp 資料：${app.packageName}"
-                    }
-                }
-            }
-        } else {
-            check(VUserManager.get().removeUser(virtualUserId)) {
-                "無法刪除 Group virtual user $virtualUserId"
-            }
-        }
-        Log.i(TAG, "group-runtime-delete-started group=${group.id} user=$virtualUserId")
+    private fun requireHealthyEnvironment(group: Group): EnvironmentBinding {
+        require(group.health == GroupHealth.HEALTHY) { "群組環境目前無法使用" }
+        val binding = requireNotNull(group.environmentBinding) { "群組環境尚未建立" }
+        check(environmentExists(binding)) { "群組環境已損毀" }
+        return binding
     }
 
-    private fun persistRuntimeMapping(
-        group: AppGroup,
+    private fun persistRuntimeDiagnostics(
+        group: Group,
         app: GroupApp,
-        virtualUserId: Int,
+        binding: EnvironmentBinding,
         runtimeDataDirectory: File,
     ) {
-        val groupData = groupDataDirectory(group)
-        check(groupData.isDirectory) { "找不到 group data root" }
+        val groupData = File(
+            appContext.filesDir,
+            "groups/${group.id}/${FileGroupStore.DATA_DIRECTORY}",
+        )
+        check(groupData.isDirectory) { "找不到群組資料目錄" }
         val mappingFile = File(groupData, FileGroupStore.RUNTIME_METADATA)
-        val mapping = mappingFile.takeIf(File::isFile)?.let(::readProperties) ?: Properties()
-        mapping.apply {
+        val properties = Properties().apply {
             setProperty("groupId", group.id)
-            setProperty("virtualUserId", virtualUserId.toString())
-            setProperty("runtimeDataDirectory.${app.packageName}", runtimeDataDirectory.absolutePath)
+            setProperty("environmentBindingId", binding.internalId.toString())
+            setProperty(
+                "runtimeDataDirectory.${app.packageName}",
+                runtimeDataDirectory.absolutePath,
+            )
         }
         FileOutputStream(mappingFile).use { output ->
-            mapping.store(output, "MaskAccounts Group runtime mapping")
+            properties.store(output, "MaskAccounts Group runtime diagnostics")
             output.fd.sync()
         }
     }
 
-    private fun virtualUserFor(group: AppGroup): VirtualUserResolution {
-        val properties = runtimeMappingFile(group)
-            .takeIf(File::isFile)
-            ?.let(::readProperties)
-            ?: Properties()
-        val existingUserId = properties.getProperty("virtualUserId")?.toIntOrNull()
-        val isLegacySharedUser = requiresDedicatedGroupMigration(
-            existingUserId = existingUserId,
-            hasLegacyInstanceId = properties.getProperty("instanceId") != null,
-            legacyDataMigrated = properties.getProperty("legacyDataMigrated") == "true",
-        )
-        if (
-            existingUserId != null &&
-            !isLegacySharedUser &&
-            VUserManager.get().getUserInfo(existingUserId) != null
-        ) {
-            return VirtualUserResolution(
-                existingUserId,
-                properties.getProperty("legacyVirtualUserId")?.toIntOrNull(),
-            )
-        }
-        val user = requireNotNull(
-            VUserManager.get().createUser(
-                "MaskAccounts ${group.name.take(24)} ${group.id.take(8)}",
-                0,
-            ),
-        ) { "無法建立 Group virtual user" }
-        val legacySourceUserId = existingUserId.takeIf { isLegacySharedUser }
-        persistVirtualUserId(group, user.id, legacySourceUserId)
-        Log.i(TAG, "group-virtual-user-created group=${group.id} user=${user.id}")
-        return VirtualUserResolution(user.id, legacySourceUserId)
-    }
-
-    private fun persistVirtualUserId(
-        group: AppGroup,
-        virtualUserId: Int,
-        legacySourceUserId: Int?,
-    ) {
-        val mapping = runtimeMappingFile(group)
-        val properties = mapping.takeIf(File::isFile)?.let(::readProperties) ?: Properties()
-        properties.setProperty("groupId", group.id)
-        properties.setProperty("virtualUserId", virtualUserId.toString())
-        legacySourceUserId?.let { sourceUserId ->
-            properties.setProperty("legacyVirtualUserId", sourceUserId.toString())
-            properties.setProperty("legacyDataMigrated", "false")
-        }
-        FileOutputStream(mapping).use { output ->
-            properties.store(output, "MaskAccounts Group runtime mapping")
-            output.fd.sync()
-        }
-    }
-
-    /**
-     * M0 placed ordinary apps in virtual user 0. On first Group preparation, copy only each
-     * GroupApp's private data into its new user. GMS data deliberately starts clean so separate
-     * migrated Groups cannot inherit the same Google account environment.
-     */
-    private fun migrateLegacyGroupApps(
-        group: AppGroup,
-        resolution: VirtualUserResolution,
-    ) {
-        val sourceUserId = resolution.legacySourceUserId ?: return
-        val mapping = runtimeMappingFile(group)
-        val properties = readProperties(mapping)
-        if (properties.getProperty("legacyDataMigrated") == "true") {
-            var changed = properties.remove("runtimeDataDirectory") != null
-            group.apps.forEach { app ->
-                val key = "runtimeDataDirectory.${app.packageName}"
-                if (properties.getProperty(key) == null) {
-                    properties.setProperty(
-                        key,
-                        VEnvironment.getDataUserPackageDirectory(
-                            resolution.userId,
-                            app.packageName,
-                        ).absolutePath,
-                    )
-                    changed = true
-                }
-            }
-            if (changed) writeRuntimeProperties(mapping, properties)
-            return
-        }
-        group.apps.forEach { app ->
-            val source = VEnvironment.getDataUserPackageDirectory(sourceUserId, app.packageName)
-            if (!source.isDirectory) return@forEach
-            VActivityManager.get().killAppByPkg(app.packageName, sourceUserId)
-            val destination = VEnvironment.getDataUserPackageDirectory(
-                resolution.userId,
-                app.packageName,
-            )
-            if (destination.exists()) {
-                check(destination.deleteRecursively()) {
-                    "無法清除新 GroupApp 的空白資料目錄：${app.packageName}"
-                }
-            }
-            check(destination.parentFile?.isDirectory == true || destination.parentFile?.mkdirs() == true) {
-                "無法建立 GroupApp 資料目錄：${app.packageName}"
-            }
-            check(source.copyRecursively(destination, overwrite = true)) {
-                "無法搬移舊 GroupApp 資料：${app.packageName}"
-            }
-            properties.setProperty(
-                "runtimeDataDirectory.${app.packageName}",
-                destination.absolutePath,
-            )
-            Log.i(
-                TAG,
-                "legacy-group-app-data-copied group=${group.id} package=${app.packageName} " +
-                    "fromUser=$sourceUserId toUser=${resolution.userId}",
-            )
-        }
-        properties.remove("runtimeDataDirectory")
-        properties.setProperty("legacyDataMigrated", "true")
-        writeRuntimeProperties(mapping, properties)
-    }
-
-    private fun writeRuntimeProperties(mapping: File, properties: Properties) {
-        FileOutputStream(mapping).use { output ->
-            properties.store(output, "MaskAccounts Group runtime mapping")
-            output.fd.sync()
-        }
-    }
-
-    private fun readMappedVirtualUserId(group: AppGroup): Int? = runtimeMappingFile(group)
-        .takeIf(File::isFile)
-        ?.let(::readProperties)
-        ?.getProperty("virtualUserId")
-        ?.toIntOrNull()
-
-    private fun runtimeMappingFile(group: AppGroup): File =
-        File(groupDataDirectory(group), FileGroupStore.RUNTIME_METADATA)
-
-    private fun groupDataDirectory(group: AppGroup): File =
-        File(appContext.filesDir, "groups/${group.id}/${FileGroupStore.DATA_DIRECTORY}")
-
-    /**
-     * Google clients resolve Play services and the Play Store through the virtual PackageManager.
-     * Import their main-system revisions before the guest application's own first launch; their
-     * code stays shared, while the guest app's data remains under its virtual user directory.
-     */
     private fun ensurePackages(
         packages: List<String>,
         core: VirtualCore,
-        virtualUserId: Int,
+        environmentId: Int,
     ) {
         packages.distinct().forEach { dependency ->
             when (val sync = importer.sync(dependency)) {
@@ -354,20 +268,14 @@ class VirtualRuntimeController(context: Context) {
                 }
             }
             check(
-                core.isAppInstalledAsUser(virtualUserId, dependency) ||
-                    core.installPackageAsUser(virtualUserId, dependency),
-            ) {
-                "Google 相依套件未提供給 virtual user $virtualUserId：$dependency"
-            }
+                core.isAppInstalledAsUser(environmentId, dependency) ||
+                    core.installPackageAsUser(environmentId, dependency),
+            ) { "Google 相依套件未加入群組環境：$dependency" }
             Log.i(
                 TAG,
-                "google-runtime-dependency-ready package=$dependency user=$virtualUserId",
+                "google-runtime-dependency-ready package=$dependency environmentId=$environmentId",
             )
         }
-    }
-
-    private fun readProperties(file: File): Properties = Properties().apply {
-        file.inputStream().use(::load)
     }
 
     private fun markGuestCodeReadOnly(core: VirtualCore, packageName: String) {
@@ -390,24 +298,10 @@ class VirtualRuntimeController(context: Context) {
 
     private companion object {
         const val TAG = "MaskAccountsRuntime"
-        val GROUP_GOOGLE_PACKAGES = listOf(
-            GroupAppRuntimeSupport.GOOGLE_SERVICES_FRAMEWORK_PACKAGE,
-            GroupAppRuntimeSupport.GOOGLE_PLAY_SERVICES_PACKAGE,
-            GroupAppRuntimeSupport.GOOGLE_PLAY_STORE_PACKAGE,
-        )
+        fun environmentName(groupId: String): String = "MaskAccounts:group:$groupId"
+        val GROUP_GOOGLE_PACKAGES = GroupAppRuntimeSupport.googlePackages
     }
-
-    private data class VirtualUserResolution(
-        val userId: Int,
-        val legacySourceUserId: Int? = null,
-    )
 }
 
 private fun PackageInfo.versionCodeCompat(): Long =
     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) longVersionCode else versionCode.toLong()
-
-internal fun requiresDedicatedGroupMigration(
-    existingUserId: Int?,
-    hasLegacyInstanceId: Boolean,
-    legacyDataMigrated: Boolean,
-): Boolean = existingUserId == 0 && hasLegacyInstanceId && !legacyDataMigrated

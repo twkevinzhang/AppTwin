@@ -73,7 +73,7 @@ fun SettingsScreen(
                 title = "執行環境",
             ) {
                 Text(
-                    "LINE 與蝦皮已完成實機啟動驗證。YouTube 與 Google Maps 仍在相容性實驗中；每個群組都使用自己的 virtual user 與 Google 服務資料。",
+                    "LINE 與蝦皮已完成實機啟動驗證。YouTube 與 Google Maps 仍在相容性實驗中；每個群組都有一套永久綁定的隔離環境與 Google 服務資料。",
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
@@ -84,7 +84,7 @@ fun SettingsScreen(
                 title = "群組隔離邊界",
             ) {
                 Text(
-                    "同一群組內的 App 共用帳戶環境；不同群組使用不同 virtual user。這是 MaskAccounts app-level runtime，不是 Android Work Profile 或系統使用者。",
+                    "同一群組內的 App 共用帳戶環境；不同群組的 App 資料、Google 帳戶、安裝狀態與權限彼此隔離。刪除群組時，它的隔離環境也會一併刪除。",
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }

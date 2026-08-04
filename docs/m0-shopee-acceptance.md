@@ -1,4 +1,4 @@
-# M0 Shopee Taiwan clone acceptance
+# M0 Shopee Taiwan GroupApp acceptance
 
 Acceptance was executed on 2026-08-03 against an unrooted, bootloader-locked ASUS_I002D running
 Android 12/API 31. The source package was the main-system installation of `com.shopee.tw` 3.79.27
@@ -7,7 +7,7 @@ Android 12/API 31. The source package was the main-system installation of `com.s
 ## Accepted user paths
 
 1. Sideload the `runtimeProbeDebug` APK without clearing MaskAccounts data.
-2. Select the imported Shopee package and launch its persisted instance.
+2. Select the imported Shopee package and launch its persisted GroupApp.
 3. Confirm that Shopee's live home screen and remote content render.
 4. Return to MaskAccounts, select Shopee, and choose **開啟登入**.
 5. Confirm that the native screen shows phone/email/user name, password, SMS login, Facebook,
@@ -17,7 +17,7 @@ Android 12/API 31. The source package was the main-system installation of `com.s
    rejection.
 7. Press Home, wait eight seconds, restore the guest task, and confirm that the same login screen
    resumes.
-8. Force-stop MaskAccounts, launch the Shopee clone again, and confirm that the live home screen
+8. Force-stop MaskAccounts, launch the Shopee GroupApp again, and confirm that the live home screen
    loads from a cold process.
 
 Result: passed. The final 75-second foreground run used host component
@@ -25,9 +25,9 @@ Result: passed. The final 75-second foreground run used host component
 `com.shopee.tw/com.shopee.app.ui.auth2.login.origin.LoginActivity_`. A subsequent force-stop cold
 run reached `com.shopee.app.ui.home.HomeActivity_` and rendered live Shopee content.
 
-## Clone proof
+## GroupApp isolation proof
 
-| Evidence | Main-system Shopee | MaskAccounts clone |
+| Evidence | Main-system Shopee | MaskAccounts GroupApp |
 | --- | --- | --- |
 | Android UID | `10956` | `10959` (MaskAccounts UID) |
 | Process | original package process | process label `com.shopee.tw`, PID owned by UID `10959` |
@@ -46,7 +46,7 @@ The virtual base and split APK checksums exactly matched the installed source:
 The installed Shopee package retained UID `10956`; the accepted process reported name
 `com.shopee.tw` but `/proc/<pid>/status` reported UID/GID `10959`. Together with the virtual stub
 component, separate host-private data tree, and matching APK hashes, this proves that the observed
-screens came from imported Shopee code running as a MaskAccounts clone rather than from the
+screens came from imported Shopee code running as a MaskAccounts GroupApp rather than from the
 main-system Shopee process.
 
 ## Android 12 compatibility fixes
@@ -66,5 +66,5 @@ guest package context.
 
 Shopee's server may redirect normal navigation to a traffic-verification page depending on device
 or network signals. MaskAccounts does not spoof Play Integrity, bypass a challenge, automate real
-credentials, or perform purchases. This acceptance covers clone startup, live home rendering, the
+credentials, or perform purchases. This acceptance covers GroupApp startup, live home rendering, the
 declared native login UI, ordinary background return, and process/data/code isolation only.
