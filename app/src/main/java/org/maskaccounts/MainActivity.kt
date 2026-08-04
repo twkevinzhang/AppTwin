@@ -12,7 +12,7 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.lifecycle.ViewModelProvider
-import org.maskaccounts.runtime.CloneRuntimeSupport
+import org.maskaccounts.runtime.GroupAppRuntimeSupport
 import org.maskaccounts.ui.MaskAccountsApp
 
 class MainActivity : ComponentActivity() {
@@ -39,10 +39,10 @@ class MainActivity : ComponentActivity() {
         }
         if (BuildConfig.DEBUG) {
             val debugPackage = when (intent.action) {
-                ACTION_LAUNCH_LINE_CLONE -> CloneRuntimeSupport.LINE_PACKAGE
+                ACTION_LAUNCH_LINE_CLONE -> GroupAppRuntimeSupport.LINE_PACKAGE
                 ACTION_LAUNCH_CLONE -> intent.getStringExtra(EXTRA_PACKAGE_NAME)
                 else -> null
-            }?.takeIf(CloneRuntimeSupport::canLaunch)
+            }?.takeIf(GroupAppRuntimeSupport::canLaunch)
             window.decorView.post {
                 debugPackage?.let(mainViewModel::launchFirst)
             }

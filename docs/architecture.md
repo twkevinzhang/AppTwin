@@ -17,7 +17,7 @@ Installed source package
                        |
              guest process (host UID)
                        |
-        host-private virtual instance data
+       host-private GroupApp data
 ```
 
 ## Implemented boundaries
@@ -30,7 +30,10 @@ Installed source package
 - Every copied APK receives SHA-256 metadata and is made read-only before activation.
 - The active pointer is replaced using an atomic filesystem move.
 - Version rollback and signing-lineage replacement are rejected by the transition model.
-- Each virtual instance has persistent identity metadata and a separate host-private `data/` root.
+- Each Group has persistent identity metadata, a unique GroupApp set, and a host-private `data/`
+  root. New Groups receive a dedicated virtual user when their first App needs runtime services.
+- GSF, GMS, and Play Store are prepared lazily inside that Group's virtual user. Apps in one Group
+  share its account environment; another Group cannot see that virtual user's package data.
 - The runtime installs the active immutable revision into its own virtual package registry and
   launches the guest through a host `StubActivity` without adding another Android package.
 - Guest code runs in a MaskAccounts-owned process/UID. Native path redirection maps guest private
@@ -64,9 +67,8 @@ Installed source package
 
 ## Not implemented or not accepted yet
 
-- Assigning a distinct virtual user/data tree to every persisted instance record; the runtime
-  probe currently launches virtual user 0.
-- A complete per-instance permission policy across all Android framework services.
+- Full device acceptance for multiple newly-created Groups running the same package concurrently.
+- A complete per-Group permission policy across all Android framework services.
 - Notification routing, FCM/GMS integration, deep links, camera, microphone, voice/video, and
   background survival.
 - Guest update migration tests across two real Play versions.

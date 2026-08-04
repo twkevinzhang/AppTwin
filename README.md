@@ -28,22 +28,23 @@ Google Play updates main-system app
                  |
        host StubActivity / guest process
                  |
-         isolated instance data
+      isolated GroupApp data
 ```
 
-One Android package version will be shared by every virtual instance. Package code and instance
-data are separate concepts: activating a verified revision must never replace instance data.
+One Android package version is shared by every GroupApp. Each Group gets its own virtual user and
+lazy GSF/GMS/Play Store environment, while package code remains shared. Activating a verified
+revision must never replace Group data.
 
 ## Modules
 
-- `app`: minimal View-based launcher showing installed packages, all-files access status, package
-  revision sync, and persistent instance records/data roots.
+- `app`: Material 3 launcher showing independent Groups, installed package import, lazy Google
+  runtime status, all-files access status, and persistent GroupApp data roots.
 - `package-source`: pure Kotlin immutable models and completeness validation for base/split APKs,
   signature lineage, and supported ABIs.
 - `revision-store`: pure Kotlin revision state machine for staging and atomic activation. The app
   persists immutable revisions and an atomic active pointer in host-private storage.
-- `instance-store`: pure Kotlin instance identity model and state store. The app persists each
-  instance under its own host-private data root.
+- `group-store`: pure Kotlin `AppGroup`/`GroupApp` model and state store. One package can appear at
+  most once in a Group, while separate Groups may each contain it.
 - `virtual-runtime`: downstream Android 12/arm64 port of VirtualXposed 0.22.0's GPL-3.0
   `VirtualApp/lib`. It supplies virtual package/component routing, guest process startup, and
   native path redirection. Provenance and downstream changes are recorded in

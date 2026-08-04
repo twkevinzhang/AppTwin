@@ -67,7 +67,7 @@ dependencies {
     implementation(project(":virtual-runtime"))
     implementation(project(":package-source"))
     implementation(project(":revision-store"))
-    implementation(project(":instance-store"))
+    implementation(project(":group-store"))
     implementation(composeBom)
     implementation("androidx.activity:activity-compose:1.10.1")
     implementation("androidx.compose.material3:material3")

@@ -18,5 +18,5 @@ rootProject.name = "MaskAccounts"
 include(":app")
 include(":package-source")
 include(":revision-store")
-include(":instance-store")
+include(":group-store")
 include(":virtual-runtime")
