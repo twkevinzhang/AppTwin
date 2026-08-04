@@ -32,6 +32,8 @@ import com.lody.virtual.client.IVClient;
 import com.lody.virtual.client.core.VirtualCore;
 import com.lody.virtual.client.env.Constants;
 import com.lody.virtual.client.env.SpecialComponentList;
+import com.lody.virtual.client.hook.proxies.am.GoogleLocationServicePolicy;
+import com.lody.virtual.client.hook.proxies.location.LocationAccessPolicy;
 import com.lody.virtual.client.ipc.ProviderCall;
 import com.lody.virtual.client.ipc.VNotificationManager;
 import com.lody.virtual.client.stub.VASettings;
@@ -316,6 +318,13 @@ public class VActivityManagerService extends IActivityManager.Stub {
         if (serviceInfo == null) {
             VLog.w(TAG, "startService unresolved: " + service + " user=" + userId);
             return null;
+        }
+        if (scheduleServiceArgs && GoogleLocationServicePolicy.shouldBlock(
+                serviceInfo.packageName, serviceInfo.name, service.getAction(),
+                LocationAccessPolicy.hasLocationPermission())) {
+            VLog.i(TAG, "location-denied service skipped "
+                    + ComponentUtils.toComponentName(serviceInfo) + " user=" + userId);
+            return ComponentUtils.toComponentName(serviceInfo);
         }
         VLog.i(TAG, "startService " + service + " resolved="
                 + ComponentUtils.toComponentName(serviceInfo) + " user=" + userId);

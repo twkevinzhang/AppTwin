@@ -41,6 +41,7 @@ import com.lody.virtual.client.hook.base.MethodProxy;
 import com.lody.virtual.client.hook.base.ReplaceLastPkgMethodProxy;
 import com.lody.virtual.client.hook.delegate.TaskDescriptionDelegate;
 import com.lody.virtual.client.hook.providers.ProviderHook;
+import com.lody.virtual.client.hook.proxies.location.LocationAccessPolicy;
 import com.lody.virtual.client.hook.proxies.pm.GoogleRuntimePermissions;
 import com.lody.virtual.client.hook.secondary.ServiceConnectionDelegate;
 import com.lody.virtual.client.hook.utils.MethodParameterUtils;
@@ -973,7 +974,7 @@ class MethodProxies {
                                 serviceInfo.packageName, serviceInfo.name), userId);
             }
             if (serviceInfo != null) {
-                if (isFiltered(service)) {
+                if (isFiltered(service, serviceInfo)) {
                     return service.getComponent();
                 }
                 return VActivityManager.get().startService(appThread, service, resolvedType, userId);
@@ -986,7 +987,12 @@ class MethodProxies {
             return isAppProcess() || isServerProcess();
         }
 
-        private boolean isFiltered(Intent service) {
+        private boolean isFiltered(Intent service, ServiceInfo serviceInfo) {
+            if (GoogleLocationServicePolicy.shouldBlock(
+                    serviceInfo.packageName, serviceInfo.name, service.getAction(),
+                    LocationAccessPolicy.hasLocationPermission())) {
+                return true;
+            }
             // disable tinker.
             if (service != null && service.getComponent() != null
                     && EncodeUtils.decode("Y29tLnRlbmNlbnQudGlua2VyLmxpYi5zZXJ2aWMuVGlua2VyUGF0Y2hTZXJ2aWNl") // com.tencent.tinker.lib.service.TinkerPatchService

@@ -80,7 +80,10 @@ import mirror.android.app.IActivityManager;
                     } else if (CREATE_SERVICE == msg.what) {
                         if (!VClientImpl.get().isBound()) {
                             ServiceInfo info = Reflect.on(msg.obj).get("info");
-                            VClientImpl.get().bindApplication(info.packageName, info.processName);
+                            if (GuestServiceBindingPolicy.shouldBindGuestApplication(
+                                    VirtualCore.get().getHostPkg(), info.packageName)) {
+                                VClientImpl.get().bindApplication(info.packageName, info.processName);
+                            }
                         }
                     } else if (SCHEDULE_CRASH == msg.what) {
                         // to avoid the exception send from System.

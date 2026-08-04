@@ -58,4 +58,17 @@ public class SpecialComponentListTest {
                 Intent.ACTION_SCREEN_ON
         )), actions);
     }
+
+    @Test
+    public void protectActionsDropsGoogleProtoStoreProcessSignals() {
+        ArrayList<String> actions = new ArrayList<>(Arrays.asList(
+                SpecialComponentList.GOOGLE_PROTOSTORE_ACTION_PREFIX + "SIGNAL_ACTION",
+                SpecialComponentList.GOOGLE_PROTOSTORE_ACTION_PREFIX + "MULTI_APP",
+                "com.example.CUSTOM"
+        ));
+
+        SpecialComponentList.protectActions(actions);
+
+        assertEquals(Arrays.asList("_VA_protected_com.example.CUSTOM"), actions);
+    }
 }

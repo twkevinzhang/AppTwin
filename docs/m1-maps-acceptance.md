@@ -69,6 +69,44 @@ Play Store installed, and a new `地圖 1` MaskAccounts instance exists:
 - Runtime user `1` owns the guest package data and the virtual account database is stored inside
   MaskAccounts private storage. The main-system Maps data directory is not mounted as guest data.
 
+## 2026-08-04 Maps performance regression acceptance
+
+### Reproduction and causes
+
+Given `地圖 1` was open with fine and coarse location denied, the original runtime still exposed
+host location providers and forwarded Android 12 `registerLocationListener` calls. Google services
+therefore retried location work using the guest package name against the MaskAccounts UID. Two
+additional runtime defects amplified the slowdown:
+
+- the host keep-alive service could make a guest slot try to bind `org.maskaccounts` as a virtual
+  package, terminating and restarting the slot;
+- Google ProtoStore process-local broadcasts (`SIGNAL_ACTION` and `MULTI_APP`) were registered
+  with the host ActivityManager, never completed, and caused 60-second background/foreground ANRs.
+
+The final runtime returns permission-denied location fallbacks without host Binder calls, skips
+location-only GMS service starts while preserving GMS bind/search paths, does not guest-bind the
+host keep-alive service, and omits the complete ProtoStore process-local action prefix from host
+broadcast registration.
+
+### Device result
+
+- Installed with `adb install -r`; no package data was cleared.
+- The final APK stayed alive beyond the 60-second broadcast timeout boundary with stable Maps and
+  GMS PIDs. No ProtoStore timeout, `ANR in org.maskaccounts`, `App not exist`, `invalid package`,
+  `ILocationManager`, or fatal exception appeared in the final interaction log window.
+- A fresh `dumpsys gfxinfo ... framestats` run covered 20 map pans and five double-tap zooms. For
+  87 valid completion timestamps: P50 `7.079 ms`, P90 `41.868 ms`, P95 `42.846 ms`, P99
+  `47.473 ms`, maximum `48.760 ms`. Two invalid Android/driver completion timestamps were excluded
+  rather than treating the fixed `4950 ms` histogram bucket as a real five-second frame.
+- `Taipei 101` public search rendered live tiles, markers, ratings, and place result cards after the
+  performance changes.
+- Three final-APK cold starts reached a MaskAccounts `StubActivity` and a Maps guest process under
+  the MaskAccounts UID. The second and third MaskAccounts activity cold-start times were `1323 ms`
+  and `1845 ms`; all three cycles had zero matching ANR/fatal/package-identity errors.
+- The account menu showed `登入` during this performance run. This run did not enter credentials
+  and therefore does not make a new claim that a signed-in session was present; the historical M1
+  sign-in evidence above remains a separate acceptance observation.
+
 ### Residual risks
 
 - Google services still probe privileged platform APIs such as `READ_DEVICE_CONFIG`, prioritized
@@ -77,6 +115,16 @@ Play Store installed, and a new `地圖 1` MaskAccounts instance exists:
 - One earlier post-login launch observed an obfuscated Maps `Binding only allowed within app`
   process exit. It was not reproduced in three consecutive cold starts of the final APK; keep it
   as a soak-test regression target before treating this vertical slice as broadly production-stable.
+- GMS persistent still initializes fused-location native work after a bind and used roughly
+  `11-15%` of one CPU during the measured interaction. Blocking that bind made public Maps search
+  hang, so it remains enabled until the runtime can return a compatible denied-location Binder.
+- Guest APK profile loading still cannot read the host package's ART profiles under the
+  MaskAccounts UID. Cold-start performance therefore remains below a native Maps installation even
+  though the reproduced ANR/restart stalls are removed.
+- A background GMS `ConfigUpdateIntentOperation` can still exit the GMS main process when a guest
+  GSF provider reads `DeviceConfig` before its `Application` is available. Maps remains foreground
+  and search works after the process is recreated. Returning an empty Gservices result prevented
+  the crash but made public search hang, so that attempted fallback was deliberately not retained.
 
 The M1 vertical slice is **accepted for the stated ASUS_I002D sideload contract**: original Maps is
 logged in inside runtime user `1`, live tiles and public search work, location remains denied, and

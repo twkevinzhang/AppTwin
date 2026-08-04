@@ -14,6 +14,7 @@ import com.lody.virtual.remote.vloc.VLocation;
 import com.lody.virtual.client.hook.utils.MethodParameterUtils;
 import java.lang.reflect.Method;
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.List;
 
 import mirror.android.location.LocationRequestL;
@@ -47,6 +48,9 @@ public class MethodProxies {
 
         @Override
         public Object call(Object who, Method method, Object... args) throws Throwable {
+            if (!LocationAccessPolicy.hasLocationPermission()) {
+                return LocationAccessPolicy.deniedResult(method.getReturnType());
+            }
             if (isFakeLocationEnable()) {
                 Object transport = ArrayUtils.getFirst(args, mirror.android.location.LocationManager.GpsStatusListenerTransport.TYPE);
                 Object locationManager = mirror.android.location.LocationManager.GpsStatusListenerTransport.this$0.get(transport);
@@ -72,6 +76,9 @@ public class MethodProxies {
 
         @Override
         public Object call(final Object who, Method method, Object... args) throws Throwable {
+            if (!LocationAccessPolicy.hasLocationPermission()) {
+                return LocationAccessPolicy.deniedResult(method.getReturnType());
+            }
             if (Build.VERSION.SDK_INT > Build.VERSION_CODES.JELLY_BEAN) {
                 LocationRequest request = (LocationRequest) args[0];
                 fixLocationRequest(request);
@@ -90,6 +97,22 @@ public class MethodProxies {
                 args[3] = VirtualCore.get().getContext().getPackageName();
             }
             
+            return super.call(who, method, args);
+        }
+    }
+
+    /** Android 12+ renamed the listener Binder entry point while keeping the same semantics. */
+    static class RegisterLocationListener extends ReplaceLastPkgMethodProxy {
+
+        RegisterLocationListener() {
+            super("registerLocationListener");
+        }
+
+        @Override
+        public Object call(Object who, Method method, Object... args) throws Throwable {
+            if (!LocationAccessPolicy.hasLocationPermission()) {
+                return LocationAccessPolicy.deniedResult(method.getReturnType());
+            }
             return super.call(who, method, args);
         }
     }
@@ -118,6 +141,9 @@ public class MethodProxies {
 
         @Override
         public Object call(Object who, Method method, Object... args) throws Throwable {
+            if (!LocationAccessPolicy.hasLocationPermission()) {
+                return null;
+            }
             if (!(args[0] instanceof String)) {
                 LocationRequest request = (LocationRequest) args[0];
                 fixLocationRequest(request);
@@ -156,6 +182,9 @@ public class MethodProxies {
 
         @Override
         public Object call(Object who, Method method, Object... args) throws Throwable {
+            if (!LocationAccessPolicy.hasLocationPermission()) {
+                return Collections.emptyList();
+            }
             return PROVIDERS;
         }
     }
@@ -168,6 +197,9 @@ public class MethodProxies {
 
         @Override
         public Object call(Object who, Method method, Object... args) throws Throwable {
+            if (!LocationAccessPolicy.hasLocationPermission()) {
+                return false;
+            }
             if (isFakeLocationEnable()) {
                 String provider = (String) args[0];
                 if (LocationManager.PASSIVE_PROVIDER.equals(provider)) {
@@ -183,6 +215,13 @@ public class MethodProxies {
 
             }
             return super.call(who, method, args);
+        }
+    }
+
+    static class IsProviderEnabledForUser extends IsProviderEnabled {
+        @Override
+        public String getMethodName() {
+            return "isProviderEnabledForUser";
         }
     }
 
@@ -202,6 +241,9 @@ public class MethodProxies {
 
         @Override
         public Object call(Object who, Method method, Object... args) throws Throwable {
+            if (!LocationAccessPolicy.hasLocationPermission()) {
+                return null;
+            }
             if (isFakeLocationEnable()) {
                 return LocationManager.GPS_PROVIDER;
             }
@@ -260,6 +302,9 @@ public class MethodProxies {
 
         @Override
         public Object call(Object who, Method method, Object... args) throws Throwable {
+            if (!LocationAccessPolicy.hasLocationPermission()) {
+                return false;
+            }
             MethodParameterUtils.replaceFirstAppPkg(args);
             if (!isFakeLocationEnable()) {
                 return super.call(who, method, args);

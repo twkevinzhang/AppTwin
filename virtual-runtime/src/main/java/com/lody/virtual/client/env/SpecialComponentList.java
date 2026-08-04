@@ -22,6 +22,9 @@ import mirror.android.webkit.WebViewFactory;
  */
 public final class SpecialComponentList {
 
+    static final String GOOGLE_PROTOSTORE_ACTION_PREFIX =
+            "com.google.android.libraries.storage.protostore.";
+
     public static class ConflictInstrumentation {
         private static final HashSet<String> INSTRUMENTATION_CONFLICTING = new HashSet<>(2);
 
@@ -112,7 +115,12 @@ public final class SpecialComponentList {
      * @param action Action
      */
     public static boolean isActionInBlackList(String action) {
-        return ACTION_BLACK_LIST.contains(action);
+        // ProtoStore actions are process-local cache signals. Registering them against the host
+        // ActivityManager leaves their async receiver unfinished and kills the guest after the
+        // broadcast timeout. File reads still observe the shared on-disk revision.
+        return action != null
+                && (ACTION_BLACK_LIST.contains(action)
+                || action.startsWith(GOOGLE_PROTOSTORE_ACTION_PREFIX));
     }
 
     /**
