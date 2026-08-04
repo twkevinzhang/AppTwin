@@ -908,6 +908,15 @@ class MethodProxies {
             }
             ServiceInfo serviceInfo = VirtualCore.get().resolveServiceInfo(service, userId);
             if (serviceInfo != null) {
+                if (PlayStoreServiceBindingPolicy.shouldRejectLocalOnlyBinding(
+                        getAppPkg(), serviceInfo.packageName, serviceInfo.name)) {
+                    // Firebase's WithinAppServiceConnection requires the concrete local
+                    // Binder implementation. A virtual service necessarily crosses the
+                    // runtime server and becomes BinderProxy, which Firebase rejects with
+                    // a process-fatal SecurityException. Binding failure is Firebase's
+                    // supported no-push fallback and does not affect Play installs.
+                    return 0;
+                }
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
                     service.setComponent(new ComponentName(serviceInfo.packageName, serviceInfo.name));
                 }

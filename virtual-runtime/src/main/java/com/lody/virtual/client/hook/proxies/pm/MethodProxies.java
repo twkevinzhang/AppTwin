@@ -54,6 +54,11 @@ import mirror.android.content.pm.ParceledListSlice;
 @SuppressWarnings("unused")
 class MethodProxies {
 
+    static boolean isStagedSessionQuery(String methodName) {
+        return "getStagedSessions".equals(methodName)
+                || "getActiveStagedSession".equals(methodName);
+    }
+
     /**
      * Android 13+ package-manager binder methods use long-backed *Flags values,
      * while the virtual package manager still exposes the legacy int API.
@@ -292,6 +297,16 @@ class MethodProxies {
                     new InvocationHandler() {
                         @Override
                         public Object invoke(Object proxy, Method method, Object[] args) throws Throwable {
+                            if (isStagedSessionQuery(method.getName())) {
+                                if ("getStagedSessions".equals(method.getName())) {
+                                    // MaskAccounts does not expose Android system staged installs.
+                                    // Returning an empty platform slice matches a device with no
+                                    // pending staged sessions and keeps modern Play Store versions
+                                    // from terminating their background process during startup.
+                                    return ParceledListSliceCompat.create(new ArrayList<>());
+                                }
+                                return null;
+                            }
                             switch (method.getName()) {
                                 case "createSession": {
                                     SessionParams params = SessionParams.create((PackageInstaller.SessionParams) args[0]);
@@ -942,10 +957,12 @@ class MethodProxies {
         public Object call(Object who, Method method, Object... args) throws Throwable {
             String pkgName = (String) args[0];
             try {
-                VirtualCore.get().uninstallPackage(pkgName);
+                boolean success = VirtualCore.get().uninstallPackageAsUser(
+                        pkgName, VUserHandle.myUserId());
                 IPackageDeleteObserver2 observer = (IPackageDeleteObserver2) args[1];
                 if (observer != null) {
-                    observer.onPackageDeleted(pkgName, 0, "done.");
+                    observer.onPackageDeleted(pkgName, success ? 1 : -1,
+                            success ? "done." : "package not installed for user");
                 }
             } catch (Throwable e) {
                 // Ignore

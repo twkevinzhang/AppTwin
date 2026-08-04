@@ -2,7 +2,7 @@ package org.maskaccounts.groups
 
 import java.util.UUID
 
-const val CURRENT_GROUP_SCHEMA_VERSION = 2
+const val CURRENT_GROUP_SCHEMA_VERSION = 3
 
 enum class GroupHealth {
     PROVISIONING,
@@ -27,6 +27,11 @@ enum class GroupAppState {
     FAILED,
 }
 
+enum class GroupAppOrigin {
+    SYSTEM_IMPORT,
+    PLAY_STORE,
+}
+
 @JvmInline
 value class EnvironmentBinding(val internalId: Int) {
     init {
@@ -38,6 +43,7 @@ data class GroupApp(
     val packageName: String,
     val addedAtEpochMillis: Long,
     val state: GroupAppState = GroupAppState.ADDED,
+    val origin: GroupAppOrigin = GroupAppOrigin.SYSTEM_IMPORT,
 ) {
     init {
         require(PACKAGE_NAME.matches(packageName)) { "Invalid Android package name" }
@@ -89,7 +95,12 @@ interface GroupStore {
     fun listAll(): List<Group>
     fun find(groupId: String): Group?
     fun rename(groupId: String, name: String): Group?
-    fun addApp(groupId: String, packageName: String, addedAtEpochMillis: Long): Group?
+    fun addApp(
+        groupId: String,
+        packageName: String,
+        addedAtEpochMillis: Long,
+        origin: GroupAppOrigin = GroupAppOrigin.SYSTEM_IMPORT,
+    ): Group?
     fun removeApp(groupId: String, packageName: String): Group?
     fun updateAppState(groupId: String, packageName: String, state: GroupAppState): Group?
     fun updateGoogleServicesState(groupId: String, state: GoogleServicesState): Group?
@@ -146,10 +157,11 @@ class InMemoryGroupStore : GroupStore {
         groupId: String,
         packageName: String,
         addedAtEpochMillis: Long,
+        origin: GroupAppOrigin,
     ): Group? = update(groupId) { group ->
         require(group.health == GroupHealth.HEALTHY) { "Group is not available" }
         require(!group.contains(packageName)) { "$packageName already exists in this group" }
-        group.copy(apps = group.apps + GroupApp(packageName, addedAtEpochMillis))
+        group.copy(apps = group.apps + GroupApp(packageName, addedAtEpochMillis, origin = origin))
     }
 
     @Synchronized

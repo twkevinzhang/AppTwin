@@ -67,6 +67,29 @@ class InMemoryGroupStoreTest {
     }
 
     @Test
+    fun `existing addApp callers default to system import`() {
+        val store = InMemoryGroupStore()
+        val group = store.create(ID_1, "工作", EnvironmentBinding(8), 100)
+
+        store.addApp(group.id, LINE, 200)
+
+        assertEquals(GroupAppOrigin.SYSTEM_IMPORT, store.find(group.id)!!.apps.single().origin)
+    }
+
+    @Test
+    fun `the same package keeps an independent origin in separate Groups`() {
+        val store = InMemoryGroupStore()
+        val imported = store.create(ID_1, "匯入", EnvironmentBinding(8), 100)
+        val playStore = store.create(ID_2, "商店", EnvironmentBinding(9), 200)
+
+        store.addApp(imported.id, LINE, 300, GroupAppOrigin.SYSTEM_IMPORT)
+        store.addApp(playStore.id, LINE, 400, GroupAppOrigin.PLAY_STORE)
+
+        assertEquals(GroupAppOrigin.SYSTEM_IMPORT, store.find(imported.id)!!.apps.single().origin)
+        assertEquals(GroupAppOrigin.PLAY_STORE, store.find(playStore.id)!!.apps.single().origin)
+    }
+
+    @Test
     fun `damaged Group cannot receive a new App`() {
         val store = InMemoryGroupStore()
         val group = store.create(ID_1, "工作", EnvironmentBinding(8), 100)

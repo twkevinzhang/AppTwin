@@ -141,7 +141,8 @@ fun MaskAccountsApp(
                             if (
                                 state.busyPackageName != null ||
                                 state.busyGroupId != null ||
-                                state.launchingAppKey != null
+                                state.launchingAppKey != null ||
+                                state.launchingPlayStoreGroupId != null
                             ) {
                                 LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
                             }
@@ -154,6 +155,7 @@ fun MaskAccountsApp(
                                 state.destination == MainDestination.HOME -> HomeScreen(
                                     state = state,
                                     onLaunch = viewModel::launchGroupApp,
+                                    onLaunchPlayStore = viewModel::launchPlayStore,
                                     onAddApp = viewModel::openAppPicker,
                                     onPrepareGroup = viewModel::prepareGroup,
                                     onRenameGroup = viewModel::renameGroup,

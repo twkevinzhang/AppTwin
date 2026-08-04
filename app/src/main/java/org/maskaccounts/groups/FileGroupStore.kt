@@ -10,13 +10,15 @@ import java.util.Properties
 import java.util.UUID
 
 /** Persists Group identity, immutable environment ownership, and GroupApp membership. */
-class FileGroupStore(context: Context) : GroupStore {
-    private val filesRoot = context.applicationContext.filesDir
+class FileGroupStore internal constructor(private val filesRoot: File) : GroupStore {
+    constructor(context: Context) : this(context.applicationContext.filesDir)
+
     private val root = File(filesRoot, "groups")
     private val legacyRoot = File(filesRoot, "instances")
 
     init {
         migrateLegacyInstances()
+        migrateSchema2Groups()
     }
 
     @Synchronized
@@ -73,12 +75,13 @@ class FileGroupStore(context: Context) : GroupStore {
         groupId: String,
         packageName: String,
         addedAtEpochMillis: Long,
+        origin: GroupAppOrigin,
     ): Group? {
         val directory = resolveGroupDirectory(groupId) ?: return null
         val current = requireNotNull(readGroup(directory)) { "Unable to read Group" }
         require(current.health == GroupHealth.HEALTHY) { "Group is not available" }
         require(!current.contains(packageName)) { "$packageName already exists in this Group" }
-        val app = GroupApp(packageName, addedAtEpochMillis)
+        val app = GroupApp(packageName, addedAtEpochMillis, origin = origin)
         writeAppAtomically(directory, app)
         return readGroup(directory)
     }
@@ -183,7 +186,7 @@ class FileGroupStore(context: Context) : GroupStore {
                 properties.getProperty("createdAtEpochMillis")?.toLongOrNull(),
             ),
             environmentBinding = bindingId?.let(::EnvironmentBinding),
-            health = if (schemaVersion >= CURRENT_GROUP_SCHEMA_VERSION) {
+            health = if (schemaVersion >= GROUP_HEALTH_SCHEMA_VERSION) {
                 GroupHealth.valueOf(requireNotNull(properties.getProperty("health")))
             } else {
                 GroupHealth.PROVISIONING
@@ -237,6 +240,7 @@ class FileGroupStore(context: Context) : GroupStore {
             setProperty("packageName", app.packageName)
             setProperty("addedAtEpochMillis", app.addedAtEpochMillis.toString())
             setProperty("state", app.state.name)
+            setProperty("origin", app.origin.name)
         }
         writeProperties(file, properties, "MaskAccounts GroupApp")
     }
@@ -251,6 +255,9 @@ class FileGroupStore(context: Context) : GroupStore {
             state = properties.getProperty("state")
                 ?.let(GroupAppState::valueOf)
                 ?: GroupAppState.ADDED,
+            origin = properties.getProperty("origin")
+                ?.let(GroupAppOrigin::valueOf)
+                ?: GroupAppOrigin.SYSTEM_IMPORT,
         )
     }.getOrNull()
 
@@ -311,6 +318,30 @@ class FileGroupStore(context: Context) : GroupStore {
         }
     }
 
+    /** Adds the source discriminator while preserving schema 2 identity and health semantics. */
+    private fun migrateSchema2Groups() {
+        root.listFiles()
+            .orEmpty()
+            .filter { it.isDirectory && !it.name.startsWith(".staging-") }
+            .forEach { directory ->
+                val metadata = File(directory, GROUP_METADATA)
+                val properties = readProperties(metadata) ?: return@forEach
+                if (properties.getProperty("schemaVersion")?.toIntOrNull() != 2) return@forEach
+                val group = readGroup(directory) ?: return@forEach
+                group.apps.forEach { app -> writeAppAtomically(directory, app) }
+                val replacement = File(directory, ".$GROUP_METADATA-${UUID.randomUUID()}.tmp")
+                try {
+                    writeGroupMetadata(
+                        replacement,
+                        group.copy(schemaVersion = CURRENT_GROUP_SCHEMA_VERSION),
+                    )
+                    atomicReplace(replacement, metadata)
+                } finally {
+                    replacement.delete()
+                }
+            }
+    }
+
     private fun ensureRoot() {
         check(root.isDirectory || root.mkdirs()) { "Unable to create Groups root" }
     }
@@ -342,6 +373,7 @@ class FileGroupStore(context: Context) : GroupStore {
         private const val GROUP_METADATA = "group.properties"
         private const val APPS_DIRECTORY = "apps"
         private const val LEGACY_METADATA = "instance.properties"
+        private const val GROUP_HEALTH_SCHEMA_VERSION = 2
         private val GROUP_ORDER = compareBy(Group::createdAtEpochMillis, Group::id)
     }
 }

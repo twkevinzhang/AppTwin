@@ -1,6 +1,7 @@
 package org.maskaccounts.runtime
 
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -57,6 +58,23 @@ class GroupAppRuntimeSupportTest {
     @Test
     fun `unaccepted packages remain metadata only`() {
         assertFalse(GroupAppRuntimeSupport.canLaunch("com.example.unaccepted"))
+    }
+
+    @Test
+    fun `Play Store has a dedicated non GroupApp launcher contract`() {
+        val launcher = GroupPlayStoreLaunchContract.launcher
+
+        assertEquals(GroupAppRuntimeSupport.GOOGLE_PLAY_STORE_PACKAGE, launcher.packageName)
+        assertEquals("android.intent.action.MAIN", launcher.action)
+        assertEquals("android.intent.category.LAUNCHER", launcher.category)
+        assertTrue(launcher.flags != 0)
+        assertTrue(GroupPlayStoreLaunchContract.isReservedGroupService(launcher.packageName))
+        assertFalse(GroupAppRuntimeSupport.canLaunch(launcher.packageName))
+        assertFalse(
+            GroupPlayStoreLaunchContract.isReservedGroupService(
+                GroupAppRuntimeSupport.LINE_PACKAGE,
+            ),
+        )
     }
 
 }

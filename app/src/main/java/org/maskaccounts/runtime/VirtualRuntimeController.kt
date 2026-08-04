@@ -39,6 +39,13 @@ sealed interface GroupPreparationResult {
     data class Failed(val reason: String, val error: Throwable? = null) : GroupPreparationResult
 }
 
+data class VirtualPackageSummary(
+    val packageName: String,
+    val label: String,
+    val versionName: String,
+    val versionCode: Long,
+)
+
 /** The only adapter allowed to translate a Group environment into the engine's numeric user API. */
 class VirtualRuntimeController(context: Context) : GroupEnvironmentRuntime {
     private val appContext = context.applicationContext
@@ -210,6 +217,115 @@ class VirtualRuntimeController(context: Context) : GroupEnvironmentRuntime {
         Log.e(TAG, "GroupApp launch failed for ${app.packageName}/${group.id}", error)
         RuntimeLaunchResult.Failed(error.message ?: error.javaClass.simpleName, error)
     }
+
+    /** Opens the Play Store that belongs to this Group's virtual user. */
+    fun launchPlayStore(group: Group): RuntimeLaunchResult = runCatching {
+        val binding = requireHealthyEnvironment(group)
+        val environmentId = binding.internalId
+        val core = VirtualCore.get()
+        core.waitForEngine()
+        ensurePackages(GROUP_GOOGLE_PACKAGES, core, environmentId)
+        runCatching { GoogleRuntimeBootstrap.prewarmCheckin(environmentId) }
+            .onFailure { error ->
+                // A newly created GMS process can miss the runtime's first service-bind
+                // deadline while Chimera modules initialize. Play and its account flow
+                // retry Checkin themselves, so this best-effort prewarm must not make the
+                // Group's store unusable.
+                Log.w(TAG, "google-checkin-prewarm-skipped environmentId=$environmentId", error)
+            }
+        prepareVirtualExternalStorage()
+
+        val contract = GroupPlayStoreLaunchContract.launcher
+        check(core.isAppInstalledAsUser(environmentId, contract.packageName)) {
+            "Play 商店尚未加入群組環境"
+        }
+        val launchIntent = requireNotNull(
+            core.getLaunchIntent(contract.packageName, environmentId),
+        ) { "找不到 Play 商店啟動入口" }
+            .addFlags(contract.flags)
+        val resultCode = VActivityManager.get().startActivity(launchIntent, environmentId)
+        check(resultCode >= 0) { "Play 商店啟動失敗：$resultCode" }
+
+        val dataDirectory = VEnvironment.getDataUserPackageDirectory(
+            environmentId,
+            contract.packageName,
+        )
+        Log.i(
+            TAG,
+            "group-play-store-start groupId=${group.id} environmentId=$environmentId " +
+                "package=${contract.packageName} data=${dataDirectory.absolutePath}",
+        )
+        RuntimeLaunchResult.Started(
+            packageName = contract.packageName,
+            processPrefix = "${appContext.packageName}:p",
+            dataDirectory = dataDirectory.absolutePath,
+        )
+    }.getOrElse { error ->
+        Log.e(TAG, "Group Play Store launch failed for ${group.id}", error)
+        RuntimeLaunchResult.Failed(error.message ?: error.javaClass.simpleName, error)
+    }
+
+    /** Returns the user-visible packages currently installed in this Group's virtual user. */
+    fun installedPackages(group: Group): Result<List<VirtualPackageSummary>> = runCatching {
+        val binding = requireHealthyEnvironment(group)
+        val core = VirtualCore.get()
+        core.waitForEngine()
+        VPackageManager.get().getInstalledPackages(0, binding.internalId)
+            .asSequence()
+            .filter { info ->
+                GroupVirtualPackageInventory.shouldExpose(
+                    packageName = info.packageName,
+                    hostPackageName = appContext.packageName,
+                )
+            }
+            .filter { info -> core.getLaunchIntent(info.packageName, binding.internalId) != null }
+            .map { info ->
+                VirtualPackageSummary(
+                    packageName = info.packageName,
+                    label = runCatching {
+                        info.applicationInfo?.loadLabel(appContext.packageManager)?.toString()
+                    }.getOrNull()
+                        ?.takeIf(String::isNotBlank)
+                        ?: info.packageName,
+                    versionName = info.versionName.orEmpty(),
+                    versionCode = info.versionCodeCompat(),
+                )
+            }
+            .sortedBy(VirtualPackageSummary::packageName)
+            .toList()
+    }
+
+    /** Launches code already installed by this Group's Play Store without importing host code. */
+    fun launchInstalledPackage(group: Group, packageName: String): RuntimeLaunchResult =
+        runCatching {
+            require(group.contains(packageName)) { "GroupApp does not belong to this Group" }
+            require(
+                GroupVirtualPackageInventory.shouldExpose(packageName, appContext.packageName),
+            ) { "群組服務套件不可從一般 App 入口啟動" }
+            val binding = requireHealthyEnvironment(group)
+            val environmentId = binding.internalId
+            val core = VirtualCore.get()
+            core.waitForEngine()
+            check(core.isAppInstalledAsUser(environmentId, packageName)) {
+                "$packageName 已不在這個群組中"
+            }
+            val launchIntent = requireNotNull(core.getLaunchIntent(packageName, environmentId)) {
+                "找不到群組 App 啟動入口"
+            }.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            val resultCode = VActivityManager.get().startActivity(launchIntent, environmentId)
+            check(resultCode >= 0) { "群組 App 啟動失敗：$resultCode" }
+            val dataDirectory = VEnvironment.getDataUserPackageDirectory(environmentId, packageName)
+            val app = requireNotNull(group.apps.firstOrNull { it.packageName == packageName })
+            persistRuntimeDiagnostics(group, app, binding, dataDirectory)
+            RuntimeLaunchResult.Started(
+                packageName = packageName,
+                processPrefix = "${appContext.packageName}:p",
+                dataDirectory = dataDirectory.absolutePath,
+            )
+        }.getOrElse { error ->
+            Log.e(TAG, "Installed GroupApp launch failed for $packageName/${group.id}", error)
+            RuntimeLaunchResult.Failed(error.message ?: error.javaClass.simpleName, error)
+        }
 
     private fun requireHealthyEnvironment(group: Group): EnvironmentBinding {
         require(group.health == GroupHealth.HEALTHY) { "群組環境目前無法使用" }
