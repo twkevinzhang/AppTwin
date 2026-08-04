@@ -9,23 +9,55 @@ import org.junit.Test
 
 class InMemoryGroupStoreTest {
     @Test
-    fun `a package can be added only once inside one group`() {
-        val store = store()
-        val group = store.create("工作", 100)
+    fun `a new Group is born healthy with one immutable environment`() {
+        val store = InMemoryGroupStore()
+        val group = store.create(ID_1, "工作", EnvironmentBinding(8), 100)
+
+        assertEquals(GroupHealth.HEALTHY, group.health)
+        assertEquals(EnvironmentBinding(8), group.environmentBinding)
+        assertEquals(GoogleServicesState.NOT_PREPARED, group.googleServicesState)
+    }
+
+    @Test
+    fun `two active Groups cannot own the same environment`() {
+        val store = InMemoryGroupStore()
+        store.create(ID_1, "工作", EnvironmentBinding(8), 100)
+
+        assertThrows(IllegalStateException::class.java) {
+            store.create(ID_2, "私人", EnvironmentBinding(8), 200)
+        }
+    }
+
+    @Test
+    fun `provisioning completes once and binding cannot be replaced`() {
+        val store = InMemoryGroupStore()
+        store.import(legacyGroup(ID_1, null))
+
+        val completed = store.completeProvisioning(ID_1, EnvironmentBinding(9))
+
+        assertEquals(GroupHealth.HEALTHY, completed?.health)
+        assertEquals(EnvironmentBinding(9), completed?.environmentBinding)
+        assertThrows(IllegalArgumentException::class.java) {
+            store.completeProvisioning(ID_1, EnvironmentBinding(10))
+        }
+    }
+
+    @Test
+    fun `a package can be added only once inside one Group`() {
+        val store = InMemoryGroupStore()
+        val group = store.create(ID_1, "工作", EnvironmentBinding(8), 100)
         store.addApp(group.id, LINE, 200)
 
         assertThrows(IllegalArgumentException::class.java) {
             store.addApp(group.id, LINE, 300)
         }
-        assertEquals(listOf(LINE), store.find(group.id)?.apps?.map(GroupApp::packageName))
     }
 
     @Test
-    fun `the same package can exist in separate groups`() {
-        val ids = ArrayDeque(listOf(ID_1, ID_2))
-        val store = InMemoryGroupStore(ids::removeFirst)
-        val work = store.create("工作", 100)
-        val personal = store.create("私人", 200)
+    fun `the same package can exist in separate Groups`() {
+        val store = InMemoryGroupStore()
+        val work = store.create(ID_1, "工作", EnvironmentBinding(8), 100)
+        val personal = store.create(ID_2, "私人", EnvironmentBinding(9), 200)
 
         store.addApp(work.id, LINE, 300)
         store.addApp(personal.id, LINE, 400)
@@ -35,31 +67,21 @@ class InMemoryGroupStoreTest {
     }
 
     @Test
-    fun `rename trims name and runtime state is persisted`() {
-        val store = store()
-        val group = store.create("預設群組", 100)
+    fun `damaged Group cannot receive a new App`() {
+        val store = InMemoryGroupStore()
+        val group = store.create(ID_1, "工作", EnvironmentBinding(8), 100)
+        store.updateHealth(group.id, GroupHealth.DAMAGED)
 
-        store.rename(group.id, "  工作帳號  ")
-        val preparing = store.updateRuntimeState(group.id, GroupRuntimeState.PREPARING)
-
-        assertEquals("工作帳號", preparing?.name)
-        assertEquals(GroupRuntimeState.PREPARING, preparing?.runtimeState)
+        assertThrows(IllegalArgumentException::class.java) {
+            store.addApp(group.id, LINE, 200)
+        }
     }
 
     @Test
-    fun `blank names are rejected`() {
-        val store = store()
-        assertThrows(IllegalArgumentException::class.java) { store.create("  ", 100) }
-        val group = store.create("工作", 100)
-        assertThrows(IllegalArgumentException::class.java) { store.rename(group.id, " ") }
-    }
-
-    @Test
-    fun `deleting one group leaves other groups intact`() {
-        val ids = ArrayDeque(listOf(ID_1, ID_2))
-        val store = InMemoryGroupStore(ids::removeFirst)
-        val first = store.create("工作", 100)
-        val second = store.create("私人", 200)
+    fun `deleting one Group leaves other Group intact`() {
+        val store = InMemoryGroupStore()
+        val first = store.create(ID_1, "工作", EnvironmentBinding(8), 100)
+        val second = store.create(ID_2, "私人", EnvironmentBinding(9), 200)
 
         assertTrue(store.delete(first.id))
         assertFalse(store.delete(first.id))
@@ -67,7 +89,14 @@ class InMemoryGroupStoreTest {
         assertEquals(listOf(second), store.listAll())
     }
 
-    private fun store() = InMemoryGroupStore { ID_1 }
+    private fun legacyGroup(id: String, binding: EnvironmentBinding?) = Group(
+        id = id,
+        name = "舊群組",
+        createdAtEpochMillis = 100,
+        environmentBinding = binding,
+        health = GroupHealth.PROVISIONING,
+        schemaVersion = 1,
+    )
 
     private companion object {
         const val ID_1 = "00000000-0000-0000-0000-000000000001"

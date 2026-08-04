@@ -22,6 +22,7 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.Error
 import androidx.compose.material.icons.filled.HourglassTop
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Refresh
@@ -56,8 +57,8 @@ import androidx.compose.ui.unit.dp
 import org.maskaccounts.GroupAppItem
 import org.maskaccounts.GroupItem
 import org.maskaccounts.MainUiState
-import org.maskaccounts.groups.AppGroup
-import org.maskaccounts.groups.GroupRuntimeState
+import org.maskaccounts.groups.GoogleServicesState
+import org.maskaccounts.groups.GroupHealth
 
 @Composable
 fun HomeScreen(
@@ -69,8 +70,8 @@ fun HomeScreen(
     onDeleteGroup: (String) -> Unit,
     onCreateGroup: () -> Unit,
 ) {
-    var renameTarget by remember { mutableStateOf<AppGroup?>(null) }
-    var deleteTarget by remember { mutableStateOf<AppGroup?>(null) }
+    var renameTarget by remember { mutableStateOf<GroupItem?>(null) }
+    var deleteTarget by remember { mutableStateOf<GroupItem?>(null) }
 
     if (state.groups.isEmpty() && !state.isRefreshing) {
         EmptyGroups(onCreateGroup)
@@ -81,16 +82,16 @@ fun HomeScreen(
             verticalArrangement = Arrangement.spacedBy(18.dp),
         ) {
             item { HomeSummary(groupCount = state.groups.size) }
-            items(state.groups, key = { it.group.id }) { item ->
+            items(state.groups, key = GroupItem::groupId) { item ->
                 GroupCard(
                     item = item,
                     launchingAppKey = state.launchingAppKey,
-                    isBusy = state.busyGroupId == item.group.id,
+                    isBusy = state.busyGroupId == item.groupId,
                     onLaunch = onLaunch,
-                    onAddApp = { onAddApp(item.group.id) },
-                    onPrepare = { onPrepareGroup(item.group.id) },
-                    onRename = { renameTarget = item.group },
-                    onDelete = { deleteTarget = item.group },
+                    onAddApp = { onAddApp(item.groupId) },
+                    onPrepare = { onPrepareGroup(item.groupId) },
+                    onRename = { renameTarget = item },
+                    onDelete = { deleteTarget = item },
                 )
             }
         }
@@ -101,7 +102,7 @@ fun HomeScreen(
             group = group,
             onDismiss = { renameTarget = null },
             onConfirm = { name ->
-                onRenameGroup(group.id, name)
+                onRenameGroup(group.groupId, name)
                 renameTarget = null
             },
         )
@@ -118,7 +119,7 @@ fun HomeScreen(
             confirmButton = {
                 Button(
                     onClick = {
-                        onDeleteGroup(group.id)
+                        onDeleteGroup(group.groupId)
                         deleteTarget = null
                     },
                 ) { Text("永久刪除") }
@@ -201,15 +202,16 @@ private fun GroupCard(
             ) {
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
-                        item.group.name,
+                        item.name,
                         style = MaterialTheme.typography.titleLarge,
                         fontWeight = FontWeight.Bold,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
                     )
                     GroupStatusChip(
-                        state = item.group.runtimeState,
-                        canPrepare = item.apps.isNotEmpty(),
+                        health = item.health,
+                        googleServicesState = item.googleServicesState,
+                        canPrepare = item.health == GroupHealth.HEALTHY && item.apps.isNotEmpty(),
                         onPrepare = onPrepare,
                     )
                 }
@@ -259,6 +261,7 @@ private fun GroupCard(
                 modifier = Modifier.padding(start = 12.dp, top = 12.dp, end = 12.dp),
                 apps = item.apps,
                 launchingAppKey = launchingAppKey,
+                enabled = item.health == GroupHealth.HEALTHY && !isBusy,
                 onLaunch = onLaunch,
                 onAddApp = onAddApp,
             )
@@ -268,38 +271,64 @@ private fun GroupCard(
 
 @Composable
 private fun GroupStatusChip(
-    state: GroupRuntimeState,
+    health: GroupHealth,
+    googleServicesState: GoogleServicesState,
     canPrepare: Boolean,
     onPrepare: () -> Unit,
 ) {
-    val visual = when (state) {
-        GroupRuntimeState.NOT_PREPARED -> StatusVisual(
+    val visual = when (health) {
+        GroupHealth.PROVISIONING -> StatusVisual(
+            "正在建立隔離環境",
+            Icons.Default.HourglassTop,
+        )
+        GroupHealth.DAMAGED -> StatusVisual(
+            "隔離環境已損毀",
+            Icons.Default.Error,
+        )
+        GroupHealth.DELETING -> StatusVisual(
+            "正在刪除群組",
+            Icons.Default.HourglassTop,
+        )
+        GroupHealth.HEALTHY -> when (googleServicesState) {
+            GoogleServicesState.NOT_PREPARED -> StatusVisual(
             "Google 服務尚未準備",
             Icons.Default.HourglassTop,
         )
-        GroupRuntimeState.PREPARING -> StatusVisual(
+            GoogleServicesState.PREPARING -> StatusVisual(
             "正在準備 Google 服務",
             Icons.Default.HourglassTop,
         )
-        GroupRuntimeState.READY -> StatusVisual(
+            GoogleServicesState.READY -> StatusVisual(
             "Google 服務就緒",
             Icons.Default.CheckCircle,
         )
-        GroupRuntimeState.FAILED -> StatusVisual(
+            GoogleServicesState.FAILED -> StatusVisual(
             "準備失敗 · 點此重試",
             Icons.Default.Refresh,
         )
+        }
     }
     AssistChip(
         modifier = Modifier.padding(top = 8.dp),
         onClick = {
-            if (canPrepare && state in setOf(GroupRuntimeState.NOT_PREPARED, GroupRuntimeState.FAILED)) {
+            if (
+                canPrepare &&
+                googleServicesState in setOf(
+                    GoogleServicesState.NOT_PREPARED,
+                    GoogleServicesState.FAILED,
+                )
+            ) {
                 onPrepare()
             }
         },
-        enabled = state != GroupRuntimeState.PREPARING,
+        enabled = health == GroupHealth.HEALTHY &&
+            googleServicesState != GoogleServicesState.PREPARING,
         leadingIcon = {
-            if (state == GroupRuntimeState.PREPARING) {
+            if (
+                health == GroupHealth.PROVISIONING ||
+                health == GroupHealth.DELETING ||
+                googleServicesState == GoogleServicesState.PREPARING
+            ) {
                 CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
             } else {
                 Icon(visual.icon, contentDescription = null, modifier = Modifier.size(18.dp))
@@ -314,6 +343,7 @@ private fun AppGrid(
     modifier: Modifier,
     apps: List<GroupAppItem>,
     launchingAppKey: String?,
+    enabled: Boolean,
     onLaunch: (GroupAppItem) -> Unit,
     onAddApp: () -> Unit,
 ) {
@@ -328,10 +358,11 @@ private fun AppGrid(
                 AppGridTile(
                     app = app,
                     isLaunching = launchingAppKey == app.launchKey,
+                    enabled = enabled,
                     onClick = { onLaunch(app) },
                 )
             }
-        } + listOf<@Composable () -> Unit>({ AddAppTile(onAddApp) })
+        } + listOf<@Composable () -> Unit>({ AddAppTile(enabled, onAddApp) })
         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
             cells.chunked(columns).forEach { rowCells ->
                 Row(
@@ -352,6 +383,7 @@ private fun AppGrid(
 private fun AppGridTile(
     app: GroupAppItem,
     isLaunching: Boolean,
+    enabled: Boolean,
     onClick: () -> Unit,
 ) {
     Column(
@@ -359,7 +391,7 @@ private fun AppGridTile(
             .fillMaxWidth()
             .aspectRatio(0.82f)
             .clip(MaterialTheme.shapes.medium)
-            .clickable(onClick = onClick)
+            .clickable(enabled = enabled, onClick = onClick)
             .padding(horizontal = 6.dp, vertical = 10.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center,
@@ -395,13 +427,13 @@ private fun AppGridTile(
 }
 
 @Composable
-private fun AddAppTile(onClick: () -> Unit) {
+private fun AddAppTile(enabled: Boolean, onClick: () -> Unit) {
     Column(
         modifier = Modifier
             .fillMaxWidth()
             .aspectRatio(0.82f)
             .clip(MaterialTheme.shapes.medium)
-            .clickable(onClick = onClick)
+            .clickable(enabled = enabled, onClick = onClick)
             .padding(horizontal = 6.dp, vertical = 10.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center,
@@ -476,11 +508,11 @@ private fun EmptyGroups(onCreateGroup: () -> Unit) {
 
 @Composable
 private fun RenameGroupDialog(
-    group: AppGroup,
+    group: GroupItem,
     onDismiss: () -> Unit,
     onConfirm: (String) -> Unit,
 ) {
-    var name by remember(group.id) { mutableStateOf(group.name) }
+    var name by remember(group.groupId) { mutableStateOf(group.name) }
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("重新命名群組") },

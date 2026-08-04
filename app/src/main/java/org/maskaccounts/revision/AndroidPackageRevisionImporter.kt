@@ -50,7 +50,7 @@ sealed interface RevisionImportResult {
  *
  * The source is queried both before and after copying. A Play update that replaces any base/split
  * path while a copy is running invalidates the staging directory instead of producing a mixed
- * revision. Instance data is deliberately outside this directory and is never touched here.
+ * revision. GroupApp data is deliberately outside this directory and is never touched here.
  */
 class AndroidPackageRevisionImporter(context: Context) {
     private val appContext = context.applicationContext

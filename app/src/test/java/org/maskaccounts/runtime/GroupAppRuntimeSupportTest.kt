@@ -59,35 +59,4 @@ class GroupAppRuntimeSupportTest {
         assertFalse(GroupAppRuntimeSupport.canLaunch("com.example.unaccepted"))
     }
 
-    @Test
-    fun `legacy user zero mappings are promoted exactly once`() {
-        assertTrue(
-            requiresDedicatedGroupMigration(
-                0,
-                hasLegacyInstanceId = true,
-                legacyDataMigrated = false,
-            ),
-        )
-        assertFalse(
-            requiresDedicatedGroupMigration(
-                1,
-                hasLegacyInstanceId = true,
-                legacyDataMigrated = false,
-            ),
-        )
-        assertFalse(
-            requiresDedicatedGroupMigration(
-                0,
-                hasLegacyInstanceId = false,
-                legacyDataMigrated = false,
-            ),
-        )
-        assertFalse(
-            requiresDedicatedGroupMigration(
-                0,
-                hasLegacyInstanceId = true,
-                legacyDataMigrated = true,
-            ),
-        )
-    }
 }

@@ -15,15 +15,15 @@ internal object GoogleRuntimeBootstrap {
     internal const val CHECKIN_OPERATION_CATEGORY =
         "targeted_intent_op_prefix:.checkin.CheckinIntentOperation"
 
-    fun prewarmCheckin(virtualUserId: Int) {
+    fun prewarmCheckin(environmentId: Int) {
         val component = VActivityManager.get().startService(
             null,
             checkinIntent(),
             null,
-            virtualUserId,
+            environmentId,
         )
         check(component != null) { "無法啟動虛擬 Google Checkin" }
-        Log.i(TAG, "google-checkin-prewarm-started user=$virtualUserId component=$component")
+        Log.i(TAG, "google-checkin-prewarm-started environment=$environmentId component=$component")
     }
 
     internal fun checkinIntent(): Intent = Intent(CHECKIN_ACTION)

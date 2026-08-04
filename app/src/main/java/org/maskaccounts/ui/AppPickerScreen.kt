@@ -45,10 +45,10 @@ fun AppPickerScreen(
     onSelect: (AppItem) -> Unit,
 ) {
     var query by remember { mutableStateOf("") }
-    val filteredApps = remember(state.apps, group.group.apps, query) {
+    val filteredApps = remember(state.apps, group.apps, query) {
         val needle = query.trim()
         state.apps.filter { app ->
-            !group.group.contains(app.entry.packageName) &&
+            !group.contains(app.entry.packageName) &&
                 (
                     needle.isEmpty() ||
                         app.entry.label.contains(needle, ignoreCase = true) ||
@@ -70,7 +70,7 @@ fun AppPickerScreen(
             ) {
                 Column(modifier = Modifier.padding(20.dp)) {
                     Text(
-                        "加入「${group.group.name}」",
+                        "加入「${group.name}」",
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.Bold,
                     )
