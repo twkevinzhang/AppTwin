@@ -26,6 +26,7 @@ import androidx.compose.material.icons.filled.Error
 import androidx.compose.material.icons.filled.HourglassTop
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Storefront
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Button
@@ -64,6 +65,7 @@ import org.maskaccounts.groups.GroupHealth
 fun HomeScreen(
     state: MainUiState,
     onLaunch: (GroupAppItem) -> Unit,
+    onLaunchPlayStore: (String) -> Unit,
     onAddApp: (String) -> Unit,
     onPrepareGroup: (String) -> Unit,
     onRenameGroup: (String, String) -> Unit,
@@ -86,8 +88,12 @@ fun HomeScreen(
                 GroupCard(
                     item = item,
                     launchingAppKey = state.launchingAppKey,
+                    isPlayStoreLaunching = state.launchingPlayStoreGroupId == item.groupId,
+                    isAnyLaunchBusy = state.launchingAppKey != null ||
+                        state.launchingPlayStoreGroupId != null,
                     isBusy = state.busyGroupId == item.groupId,
                     onLaunch = onLaunch,
+                    onLaunchPlayStore = { onLaunchPlayStore(item.groupId) },
                     onAddApp = { onAddApp(item.groupId) },
                     onPrepare = { onPrepareGroup(item.groupId) },
                     onRename = { renameTarget = item },
@@ -180,8 +186,11 @@ private fun HomeSummary(groupCount: Int) {
 private fun GroupCard(
     item: GroupItem,
     launchingAppKey: String?,
+    isPlayStoreLaunching: Boolean,
+    isAnyLaunchBusy: Boolean,
     isBusy: Boolean,
     onLaunch: (GroupAppItem) -> Unit,
+    onLaunchPlayStore: () -> Unit,
     onAddApp: () -> Unit,
     onPrepare: () -> Unit,
     onRename: () -> Unit,
@@ -211,7 +220,7 @@ private fun GroupCard(
                     GroupStatusChip(
                         health = item.health,
                         googleServicesState = item.googleServicesState,
-                        canPrepare = item.health == GroupHealth.HEALTHY && item.apps.isNotEmpty(),
+                        canPrepare = item.health == GroupHealth.HEALTHY,
                         onPrepare = onPrepare,
                     )
                 }
@@ -257,15 +266,49 @@ private fun GroupCard(
                     }
                 }
             }
+            PlayStoreButton(
+                modifier = Modifier.padding(start = 18.dp, top = 14.dp, end = 18.dp),
+                isLaunching = isPlayStoreLaunching,
+                enabled = item.health == GroupHealth.HEALTHY && !isBusy && !isAnyLaunchBusy,
+                onClick = onLaunchPlayStore,
+            )
             AppGrid(
                 modifier = Modifier.padding(start = 12.dp, top = 12.dp, end = 12.dp),
                 apps = item.apps,
                 launchingAppKey = launchingAppKey,
-                enabled = item.health == GroupHealth.HEALTHY && !isBusy,
+                enabled = item.health == GroupHealth.HEALTHY && !isBusy && !isAnyLaunchBusy,
                 onLaunch = onLaunch,
                 onAddApp = onAddApp,
             )
         }
+    }
+}
+
+@Composable
+private fun PlayStoreButton(
+    modifier: Modifier,
+    isLaunching: Boolean,
+    enabled: Boolean,
+    onClick: () -> Unit,
+) {
+    Button(
+        modifier = modifier.fillMaxWidth(),
+        enabled = enabled,
+        onClick = onClick,
+    ) {
+        if (isLaunching) {
+            CircularProgressIndicator(
+                modifier = Modifier.size(20.dp),
+                strokeWidth = 2.dp,
+                color = MaterialTheme.colorScheme.onPrimary,
+            )
+        } else {
+            Icon(Icons.Default.Storefront, contentDescription = null)
+        }
+        Text(
+            if (isLaunching) "正在開啟 Play 商店…" else "開啟 Play 商店",
+            modifier = Modifier.padding(start = 10.dp),
+        )
     }
 }
 

@@ -20,6 +20,7 @@ import android.text.TextUtils;
 
 import com.lody.virtual.helper.utils.FileUtils;
 import com.lody.virtual.helper.utils.VLog;
+import com.lody.virtual.client.core.InstallStrategy;
 import com.lody.virtual.remote.InstallResult;
 import com.lody.virtual.server.pm.VAppManagerService;
 
@@ -83,6 +84,7 @@ public class PackageInstallerSession extends IPackageInstallerSession.Stub {
     private String mFinalMessage;
 
     private IPackageInstallObserver2 mRemoteObserver;
+    private final PackageInstallerSessionState mSessionState = new PackageInstallerSessionState();
 
     private ArrayList<FileBridge> mBridges = new ArrayList<>();
 
@@ -161,28 +163,19 @@ public class PackageInstallerSession extends IPackageInstallerSession.Stub {
         try {
             resolveStageDir();
         } catch (IOException e) {
-            e.printStackTrace();
+            throw new PackageManagerException(INSTALL_FAILED_INTERNAL_ERROR,
+                    "Unable to resolve stage directory: " + e.getMessage());
         }
         validateInstallLocked();
         mInternalProgress = 0.5f;
         computeProgressLocked(true);
-        // We've reached point of no return; call into PMS to install the stage.
-        // Regardless of success or failure we always destroy session.
-        final IPackageInstallObserver2 localObserver = new IPackageInstallObserver2.Stub() {
-            @Override
-            public void onUserActionRequired(Intent intent) {
-                throw new IllegalStateException();
-            }
-
-            @Override
-            public void onPackageInstalled(String basePackageName, int returnCode, String msg,
-                                           Bundle extras) {
-                destroyInternal();
-                dispatchSessionFinished(returnCode, msg, extras);
-            }
-        };
-
-        InstallResult installResult = VAppManagerService.get().installPackage(stageDir.getPath(), 0);
+        // Package code is shared, but PackageInstaller sessions are scoped to their originating
+        // virtual user. COMPARE_VERSION permits upgrades while rejecting a downgrade.
+        InstallResult installResult = VAppManagerService.get().installPackageForUser(
+                stageDir.getPath(), InstallStrategy.COMPARE_VERSION, userId);
+        if (installResult.packageName != null) {
+            mPackageName = installResult.packageName;
+        }
         destroyInternal();
         dispatchSessionFinished(installResult.isSuccess ? INSTALL_SUCCEEDED : INSTALL_FAILED_INTERNAL_ERROR, installResult.toString(), null);
     }
@@ -403,8 +396,10 @@ public class PackageInstallerSession extends IPackageInstallerSession.Stub {
                         throw new SecurityException("Files still open");
                     }
                 }
-                mSealed = true;
             }
+            // Only consume the one allowed commit after all retryable preconditions pass.
+            mSessionState.requestCommit(mDestroyed);
+            mSealed = true;
 
             // Client staging is fully done at this point
             mClientProgress = 1f;
@@ -450,8 +445,13 @@ public class PackageInstallerSession extends IPackageInstallerSession.Stub {
     }
 
     private void dispatchSessionFinished(int returnCode, String msg, Bundle extras) {
-        mFinalStatus = returnCode;
-        mFinalMessage = msg;
+        synchronized (mLock) {
+            if (!mSessionState.markFinished()) {
+                return;
+            }
+            mFinalStatus = returnCode;
+            mFinalMessage = msg;
+        }
 
         if (mRemoteObserver != null) {
             try {

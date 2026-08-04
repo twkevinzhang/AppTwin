@@ -142,6 +142,99 @@ public class VAppManagerService extends IAppManager.Stub {
     }
 
     public synchronized InstallResult installPackage(String path, int flags, boolean notify) {
+        return installPackageInternal(path, flags, notify, PackageInstallScope.GLOBAL_USER_ID);
+    }
+
+    /**
+     * Installs or updates shared package code and exposes it only to the requested virtual user.
+     * Existing users keep their installed state when the shared code is updated.
+     */
+    public synchronized InstallResult installPackageForUser(String path, int flags, int userId) {
+        if (!VUserManagerService.get().exists(userId)) {
+            return InstallResult.makeFailure("User " + userId + " does not exist.");
+        }
+
+        VPackage stagedPackage = parseStagedPackage(path);
+        VPackage existingPackage = stagedPackage == null
+                ? null : PackageCacheManager.get(stagedPackage.packageName);
+        PackageSettingSnapshot settingSnapshot = existingPackage == null
+                ? null : new PackageSettingSnapshot((PackageSetting) existingPackage.mExtras, userId);
+        PackageCodeRollback codeRollback = null;
+        try {
+            if (existingPackage != null && PackageInstallScope.requiresCodeSnapshot(
+                    existingPackage.mVersionCode, stagedPackage.mVersionCode)) {
+                File appDir = VEnvironment.getDataAppPackageDirectory(existingPackage.packageName);
+                File odexFile = VEnvironment.getOdexFile(existingPackage.packageName);
+                if (isOutsideDirectory(odexFile, appDir)) {
+                    codeRollback = PackageCodeRollback.begin(appDir, odexFile);
+                } else {
+                    codeRollback = PackageCodeRollback.begin(appDir);
+                }
+            }
+
+            InstallResult result = installPackageInternal(path, flags, true, userId);
+            if (result.isSuccess) {
+                if (codeRollback != null) {
+                    codeRollback.commit();
+                }
+                return result;
+            }
+            restoreFailedScopedUpdate(codeRollback, existingPackage, settingSnapshot);
+            return result;
+        } catch (Throwable failure) {
+            try {
+                restoreFailedScopedUpdate(codeRollback, existingPackage, settingSnapshot);
+            } catch (Throwable rollbackFailure) {
+                failure.addSuppressed(rollbackFailure);
+            }
+            VLog.e(TAG, "Scoped package install failed: %s", failure.getMessage());
+            VLog.e(TAG, failure);
+            return InstallResult.makeFailure("Scoped install failed: " + failure.getMessage());
+        }
+    }
+
+    private VPackage parseStagedPackage(String path) {
+        if (path == null) {
+            return null;
+        }
+        try {
+            return PackageParserEx.parsePackage(new File(path));
+        } catch (Throwable ignored) {
+            // The normal install path will return the canonical parse error.
+            return null;
+        }
+    }
+
+    private static boolean isOutsideDirectory(File file, File directory) throws IOException {
+        String filePath = file.getCanonicalPath();
+        String directoryPath = directory.getCanonicalPath() + File.separator;
+        return !filePath.startsWith(directoryPath);
+    }
+
+    private void restoreFailedScopedUpdate(PackageCodeRollback codeRollback,
+                                           VPackage existingPackage,
+                                           PackageSettingSnapshot settingSnapshot)
+            throws IOException {
+        if (existingPackage == null || settingSnapshot == null) {
+            return;
+        }
+        if (codeRollback != null) {
+            codeRollback.rollback();
+        }
+        PackageSetting setting = (PackageSetting) existingPackage.mExtras;
+        settingSnapshot.restore(setting);
+        boolean cacheChanged = PackageCacheManager.get(existingPackage.packageName) != existingPackage;
+        if (cacheChanged) {
+            BroadcastSystem.get().stopApp(existingPackage.packageName);
+            PackageCacheManager.remove(existingPackage.packageName);
+            PackageCacheManager.put(existingPackage, setting);
+            BroadcastSystem.get().startApp(existingPackage);
+        }
+        mPersistenceLayer.save();
+    }
+
+    private InstallResult installPackageInternal(String path, int flags, boolean notify,
+                                                 int requestedUserId) {
         long installTime = System.currentTimeMillis();
         if (path == null) {
             return InstallResult.makeFailure("path = NULL");
@@ -165,6 +258,27 @@ public class VAppManagerService extends IAppManager.Stub {
         VPackage existOne = PackageCacheManager.get(pkg.packageName);
         PackageSetting existSetting = existOne != null ? (PackageSetting) existOne.mExtras : null;
         if (existOne != null) {
+            if (!PackageSignaturePolicy.isCompatible(existOne.mSignatures, pkg.mSignatures)) {
+                return InstallResult.makeFailure(
+                        "Can not update the package because its signing certificates differ.");
+            }
+            // A second user installing the exact shared revision only needs a user binding. Avoid
+            // rewriting code (and rejecting an equal version) for that common Play Store flow.
+            if (PackageInstallScope.isUserScoped(requestedUserId)
+                    && existOne.mVersionCode == pkg.mVersionCode) {
+                if (!existSetting.isInstalled(requestedUserId)) {
+                    existSetting.setInstalled(requestedUserId, true);
+                    mPersistenceLayer.save();
+                    if (notify) {
+                        notifyAppInstalled(existSetting, requestedUserId);
+                    }
+                }
+                InstallResult existingResult = new InstallResult();
+                existingResult.packageName = pkg.packageName;
+                existingResult.isSuccess = true;
+                existingResult.isUpdate = true;
+                return existingResult;
+            }
             if ((flags & InstallStrategy.IGNORE_NEW_VERSION) != 0) {
                 res.isUpdate = true;
                 return res;
@@ -255,9 +369,15 @@ public class VAppManagerService extends IAppManager.Stub {
             ps.firstInstallTime = installTime;
             ps.lastUpdateTime = installTime;
             for (int userId : VUserManagerService.get().getUserIds()) {
-                boolean installed = userId == 0;
+                boolean installed = PackageInstallScope.isInstalledOnFirstInstall(
+                        userId, requestedUserId);
                 ps.setUserState(userId, false/*launched*/, false/*hidden*/, installed);
             }
+        }
+        if (PackageInstallScope.isUserScoped(requestedUserId)) {
+            // This happens after all code copying/parsing succeeds, so a failed commit cannot make
+            // the package visible to the initiating user.
+            ps.setInstalled(requestedUserId, true);
         }
         ps.splitCodePaths = splitCodePaths;
         PackageParserEx.savePackageCache(pkg);
@@ -265,7 +385,7 @@ public class VAppManagerService extends IAppManager.Stub {
         mPersistenceLayer.save();
         BroadcastSystem.get().startApp(pkg);
         if (notify) {
-            notifyAppInstalled(ps, -1);
+            notifyAppInstalled(ps, PackageInstallScope.notificationUserId(requestedUserId));
         }
         res.isSuccess = true;
         return res;
@@ -381,20 +501,52 @@ public class VAppManagerService extends IAppManager.Stub {
             if (!ArrayUtils.contains(userIds, userId)) {
                 return false;
             }
-            if (userIds.length == 1) {
-                uninstallPackageFully(ps);
-            } else {
-                // Just hidden it
-                VActivityManagerService.get().killAppByPkg(packageName, userId);
-                ps.setInstalled(userId, false);
-                notifyAppUninstalled(ps, userId);
-                mPersistenceLayer.save();
-                FileUtils.deleteDir(VEnvironment.getDataUserPackageDirectory(userId, packageName));
-                FileUtils.deleteDir(VEnvironment.getVirtualPrivateStorageDir(userId, packageName));
-            }
+            // User-scoped uninstall only removes the binding and private data. Shared code remains
+            // available as a revision cache even when this was the last installed user.
+            VActivityManagerService.get().killAppByPkg(packageName, userId);
+            ps.setInstalled(userId, false);
+            notifyAppUninstalled(ps, userId);
+            mPersistenceLayer.save();
+            FileUtils.deleteDir(VEnvironment.getDataUserPackageDirectory(userId, packageName));
+            FileUtils.deleteDir(VEnvironment.getVirtualPrivateStorageDir(userId, packageName));
             return true;
         }
         return false;
+    }
+
+    private static final class PackageSettingSnapshot {
+        private final String apkPath;
+        private final String libPath;
+        private final boolean dependSystem;
+        private final int appId;
+        private final long firstInstallTime;
+        private final long lastUpdateTime;
+        private final String[] splitCodePaths;
+        private final int userId;
+        private final boolean userInstalled;
+
+        PackageSettingSnapshot(PackageSetting setting, int userId) {
+            apkPath = setting.apkPath;
+            libPath = setting.libPath;
+            dependSystem = setting.dependSystem;
+            appId = setting.appId;
+            firstInstallTime = setting.firstInstallTime;
+            lastUpdateTime = setting.lastUpdateTime;
+            splitCodePaths = setting.splitCodePaths == null ? null : setting.splitCodePaths.clone();
+            this.userId = userId;
+            userInstalled = setting.isInstalled(userId);
+        }
+
+        void restore(PackageSetting setting) {
+            setting.apkPath = apkPath;
+            setting.libPath = libPath;
+            setting.dependSystem = dependSystem;
+            setting.appId = appId;
+            setting.firstInstallTime = firstInstallTime;
+            setting.lastUpdateTime = lastUpdateTime;
+            setting.splitCodePaths = splitCodePaths == null ? null : splitCodePaths.clone();
+            setting.setInstalled(userId, userInstalled);
+        }
     }
 
     private void uninstallPackageFully(PackageSetting ps) {

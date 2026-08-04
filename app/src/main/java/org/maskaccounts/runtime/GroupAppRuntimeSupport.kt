@@ -1,5 +1,7 @@
 package org.maskaccounts.runtime
 
+import android.content.Intent
+
 enum class RuntimeCompatibility {
     VERIFIED,
     EXPERIMENTAL,
@@ -49,3 +51,29 @@ object GroupAppRuntimeSupport {
         GOOGLE_PLAY_STORE_PACKAGE,
     )
 }
+
+/**
+ * Play Store is a Group-owned service entry point, not a removable [GroupApp].
+ *
+ * Keep its launcher contract in one place so the UI, picker filtering, and runtime cannot drift
+ * onto different package identities.
+ */
+object GroupPlayStoreLaunchContract {
+    const val PACKAGE_NAME = GroupAppRuntimeSupport.GOOGLE_PLAY_STORE_PACKAGE
+
+    val launcher = VirtualLauncherContract(
+        packageName = PACKAGE_NAME,
+        action = Intent.ACTION_MAIN,
+        category = Intent.CATEGORY_LAUNCHER,
+        flags = Intent.FLAG_ACTIVITY_NEW_TASK,
+    )
+
+    fun isReservedGroupService(packageName: String): Boolean = packageName == PACKAGE_NAME
+}
+
+data class VirtualLauncherContract(
+    val packageName: String,
+    val action: String,
+    val category: String,
+    val flags: Int,
+)

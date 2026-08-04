@@ -16,6 +16,7 @@ import org.maskaccounts.groups.FileGroupStore
 import org.maskaccounts.groups.GoogleServicesState
 import org.maskaccounts.groups.Group
 import org.maskaccounts.groups.GroupApp
+import org.maskaccounts.groups.GroupAppOrigin
 import org.maskaccounts.groups.GroupAppState
 import org.maskaccounts.groups.GroupHealth
 import org.maskaccounts.groups.GroupLifecycleCoordinator
@@ -24,9 +25,12 @@ import org.maskaccounts.revision.InstalledAppEntry
 import org.maskaccounts.revision.RevisionImportResult
 import org.maskaccounts.runtime.GroupAppRuntimeSupport
 import org.maskaccounts.runtime.GroupPreparationResult
+import org.maskaccounts.runtime.GroupPlayStoreLaunchContract
+import org.maskaccounts.runtime.GroupPlayStoreAppReconciler
 import org.maskaccounts.runtime.RuntimeCompatibility
 import org.maskaccounts.runtime.RuntimeLaunchResult
 import org.maskaccounts.runtime.VirtualRuntimeController
+import org.maskaccounts.runtime.VirtualPackageSummary
 
 enum class MainDestination { HOME, SETTINGS }
 
@@ -72,6 +76,7 @@ data class MainUiState(
     val busyPackageName: String? = null,
     val busyGroupId: String? = null,
     val launchingAppKey: String? = null,
+    val launchingPlayStoreGroupId: String? = null,
     val allFilesGranted: Boolean = false,
     val downloadCount: Int = 0,
     val photoCount: Int = 0,
@@ -129,7 +134,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         )
         worker.execute {
             val entries = runCatching(importer::listCloneableApps).getOrDefault(emptyList())
-            val groups = runCatching(groupStore::listAll).getOrDefault(emptyList())
+                .filterNot { GroupPlayStoreLaunchContract.isReservedGroupService(it.packageName) }
+            val storedGroups = runCatching(groupStore::listAll).getOrDefault(emptyList())
+            val virtualPackagesByGroup = reconcilePlayStoreApps(storedGroups)
+            val groups = runCatching(groupStore::listAll).getOrDefault(storedGroups)
             val entriesByPackage = entries.associateBy(InstalledAppEntry::packageName)
             val appItems = entries.map { entry ->
                 val active = importer.active(entry.packageName)
@@ -146,22 +154,42 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     name = group.name,
                     health = group.health,
                     googleServicesState = group.googleServicesState,
-                    apps = group.apps.map { app ->
-                        val source = entriesByPackage[app.packageName]
-                        GroupAppItem(
-                            groupId = group.id,
-                            groupName = group.name,
-                            groupHealth = group.health,
-                            googleServicesState = group.googleServicesState,
-                            app = app,
-                            appLabel = source?.label ?: app.packageName,
-                            versionName = source?.versionName.orEmpty(),
-                            sourceInstalled = source != null,
-                            launchSupported = source != null &&
-                                GroupAppRuntimeSupport.canLaunch(app.packageName),
-                            launchStatus = launchStatus(app.packageName, source != null),
-                        )
-                    },
+                    apps = group.apps
+                        .filterNot {
+                            GroupPlayStoreLaunchContract.isReservedGroupService(it.packageName)
+                        }
+                        .map { app ->
+                            val source = entriesByPackage[app.packageName]
+                            val virtual = virtualPackagesByGroup[group.id]?.get(app.packageName)
+                            val isPlayStoreApp = app.origin == GroupAppOrigin.PLAY_STORE
+                            GroupAppItem(
+                                groupId = group.id,
+                                groupName = group.name,
+                                groupHealth = group.health,
+                                googleServicesState = group.googleServicesState,
+                                app = app,
+                                appLabel = if (isPlayStoreApp) {
+                                    virtual?.label ?: app.packageName
+                                } else {
+                                    source?.label ?: app.packageName
+                                },
+                                versionName = if (isPlayStoreApp) {
+                                    virtual?.versionName.orEmpty()
+                                } else {
+                                    source?.versionName.orEmpty()
+                                },
+                                sourceInstalled = isPlayStoreApp || source != null,
+                                launchSupported = isPlayStoreApp || (
+                                    source != null &&
+                                        GroupAppRuntimeSupport.canLaunch(app.packageName)
+                                    ),
+                                launchStatus = if (isPlayStoreApp) {
+                                    "由此群組的 Play 商店安裝"
+                                } else {
+                                    launchStatus(app.packageName, source != null)
+                                },
+                            )
+                        },
                 )
             }
             post {
@@ -239,6 +267,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             showMessage("這個群組目前無法加入 App")
             return
         }
+        if (GroupPlayStoreLaunchContract.isReservedGroupService(app.entry.packageName)) {
+            showMessage("Play 商店是群組服務，請直接從群組卡片開啟")
+            return
+        }
         if (group.contains(app.entry.packageName)) {
             showMessage("${app.entry.label} 已在「${group.name}」中")
             return
@@ -313,7 +345,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun launchGroupApp(item: GroupAppItem) {
-        if (uiState.launchingAppKey != null) return
+        if (uiState.launchingAppKey != null || uiState.launchingPlayStoreGroupId != null) return
         if (item.groupId in activePreparations) {
             showMessage("「${item.groupName}」正在準備，請稍候")
             return
@@ -328,11 +360,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             )
             return
         }
-        if (!item.sourceInstalled) {
+        if (item.app.origin == GroupAppOrigin.SYSTEM_IMPORT && !item.sourceInstalled) {
             showMessage("來源 App 已移除，暫時無法啟動")
             return
         }
-        if (!item.launchSupported) {
+        if (item.app.origin == GroupAppOrigin.SYSTEM_IMPORT && !item.launchSupported) {
             showMessage("目前實機啟動驗證僅支援 LINE、蝦皮、YouTube 與 Maps")
             return
         }
@@ -360,22 +392,31 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                             currentGroup.id,
                             GoogleServicesState.READY,
                         )
-                        groupStore.updateAppState(
-                            currentGroup.id,
-                            item.app.packageName,
-                            GroupAppState.INSTALLING,
-                        )
-                        runtimeController.installAndLaunch(currentGroup, item.app).also { launch ->
+                        if (item.app.origin == GroupAppOrigin.SYSTEM_IMPORT) {
                             groupStore.updateAppState(
                                 currentGroup.id,
                                 item.app.packageName,
-                                if (launch is RuntimeLaunchResult.Started) {
-                                    GroupAppState.ENABLED
-                                } else {
-                                    GroupAppState.FAILED
-                                },
+                                GroupAppState.INSTALLING,
                             )
                         }
+                        val launch = if (item.app.origin == GroupAppOrigin.PLAY_STORE) {
+                            runtimeController.launchInstalledPackage(
+                                currentGroup,
+                                item.app.packageName,
+                            )
+                        } else {
+                            runtimeController.installAndLaunch(currentGroup, item.app)
+                        }
+                        groupStore.updateAppState(
+                            currentGroup.id,
+                            item.app.packageName,
+                            if (launch is RuntimeLaunchResult.Started) {
+                                GroupAppState.ENABLED
+                            } else {
+                                GroupAppState.FAILED
+                            },
+                        )
+                        launch
                     }
                     is GroupPreparationResult.Failed -> {
                         groupStore.updateGoogleServicesState(
@@ -393,6 +434,81 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     is RuntimeLaunchResult.Started ->
                         showMessage("${item.appLabel} 已從「${item.groupName}」啟動")
                     is RuntimeLaunchResult.Failed -> showMessage("啟動失敗：${result.reason}")
+                }
+                refresh()
+            }
+        }
+    }
+
+    fun launchPlayStore(groupId: String) {
+        if (uiState.launchingAppKey != null || uiState.launchingPlayStoreGroupId != null) return
+        if (groupId in activePreparations) {
+            val groupName = uiState.groups.firstOrNull { it.groupId == groupId }?.name ?: "群組"
+            showMessage("「$groupName」正在準備，請稍候")
+            return
+        }
+        val group = groupStore.find(groupId) ?: run {
+            showMessage("找不到這個群組")
+            return
+        }
+        if (group.health != GroupHealth.HEALTHY) {
+            showMessage(
+                if (group.health == GroupHealth.DAMAGED) {
+                    "「${group.name}」的隔離環境已損毀"
+                } else {
+                    "「${group.name}」目前無法開啟 Play 商店"
+                },
+            )
+            return
+        }
+
+        activePreparations += groupId
+        uiState = uiState.copy(launchingPlayStoreGroupId = groupId)
+        worker.execute {
+            val result = runCatching {
+                val currentGroup = groupStore.find(groupId)
+                if (currentGroup == null || currentGroup.health != GroupHealth.HEALTHY) {
+                    RuntimeLaunchResult.Failed("群組環境目前無法使用")
+                } else {
+                    val preparation = if (
+                        currentGroup.googleServicesState == GoogleServicesState.READY
+                    ) {
+                        GroupPreparationResult.Ready
+                    } else {
+                        groupStore.updateGoogleServicesState(
+                            currentGroup.id,
+                            GoogleServicesState.PREPARING,
+                        )
+                        runtimeController.prepareGroup(currentGroup)
+                    }
+                    when (preparation) {
+                        is GroupPreparationResult.Ready -> {
+                            groupStore.updateGoogleServicesState(
+                                currentGroup.id,
+                                GoogleServicesState.READY,
+                            )
+                            runtimeController.launchPlayStore(currentGroup)
+                        }
+                        is GroupPreparationResult.Failed -> {
+                            groupStore.updateGoogleServicesState(
+                                currentGroup.id,
+                                GoogleServicesState.FAILED,
+                            )
+                            RuntimeLaunchResult.Failed(preparation.reason, preparation.error)
+                        }
+                    }
+                }
+            }.getOrElse { error ->
+                RuntimeLaunchResult.Failed(error.userMessage(), error)
+            }
+            post {
+                activePreparations -= groupId
+                uiState = uiState.copy(launchingPlayStoreGroupId = null)
+                when (result) {
+                    is RuntimeLaunchResult.Started ->
+                        showMessage("已從「${group.name}」開啟 Play 商店")
+                    is RuntimeLaunchResult.Failed ->
+                        showMessage("Play 商店啟動失敗：${result.reason}")
                 }
                 refresh()
             }
@@ -421,6 +537,36 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 refresh()
             }
         }
+    }
+
+    private fun reconcilePlayStoreApps(
+        groups: List<Group>,
+    ): Map<String, Map<String, VirtualPackageSummary>> {
+        val snapshots = linkedMapOf<String, Map<String, VirtualPackageSummary>>()
+        groups.filter { it.health == GroupHealth.HEALTHY }.forEach { group ->
+            val installed = runtimeController.installedPackages(group).getOrNull()
+                ?: return@forEach
+            snapshots[group.id] = installed.associateBy(VirtualPackageSummary::packageName)
+            runCatching {
+                val plan = GroupPlayStoreAppReconciler.plan(
+                    existingApps = group.apps,
+                    installedPackages = installed.map(VirtualPackageSummary::packageName),
+                )
+                plan.removals.forEach { packageName ->
+                    groupStore.removeApp(group.id, packageName)
+                }
+                plan.additions.forEachIndexed { index, packageName ->
+                    groupStore.addApp(
+                        groupId = group.id,
+                        packageName = packageName,
+                        addedAtEpochMillis = System.currentTimeMillis() + index,
+                        origin = GroupAppOrigin.PLAY_STORE,
+                    )
+                    groupStore.updateAppState(group.id, packageName, GroupAppState.ENABLED)
+                }
+            }
+        }
+        return snapshots
     }
 
     private fun launchStatus(packageName: String, sourceInstalled: Boolean): String = when {
