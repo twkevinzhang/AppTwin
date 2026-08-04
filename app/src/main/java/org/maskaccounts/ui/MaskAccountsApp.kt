@@ -1,5 +1,6 @@
 package org.maskaccounts.ui
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -7,8 +8,8 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.Apps
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.AlertDialog
@@ -16,6 +17,7 @@ import androidx.compose.material3.CenterAlignedTopAppBar
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExtendedFloatingActionButton
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
@@ -38,9 +40,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.unit.dp
-import org.maskaccounts.CreateDraft
 import org.maskaccounts.MainDestination
-import org.maskaccounts.MainUiState
 import org.maskaccounts.MainViewModel
 import org.maskaccounts.ui.theme.MaskAccountsTheme
 
@@ -51,8 +51,7 @@ private data class DestinationItem(
 )
 
 private val destinations = listOf(
-    DestinationItem(MainDestination.INSTANCES, "分身", Icons.Default.Home),
-    DestinationItem(MainDestination.APPS, "App", Icons.Default.Apps),
+    DestinationItem(MainDestination.HOME, "首頁", Icons.Default.Home),
     DestinationItem(MainDestination.SETTINGS, "設定", Icons.Default.Settings),
 )
 
@@ -64,6 +63,14 @@ fun MaskAccountsApp(
 ) {
     val state = viewModel.uiState
     val snackbarHostState = remember { SnackbarHostState() }
+    var showCreateGroup by remember { mutableStateOf(false) }
+    val pickerGroup = state.appPickerGroupId?.let { selectedId ->
+        state.groups.firstOrNull { it.group.id == selectedId }
+    }
+
+    BackHandler(enabled = pickerGroup != null) {
+        viewModel.closeAppPicker()
+    }
 
     LaunchedEffect(state.messageId) {
         val message = state.message ?: return@LaunchedEffect
@@ -76,7 +83,7 @@ fun MaskAccountsApp(
             BoxWithConstraints {
                 val useNavigationRail = maxWidth >= 720.dp
                 Row(modifier = Modifier.fillMaxSize()) {
-                    if (useNavigationRail) {
+                    if (useNavigationRail && pickerGroup == null) {
                         AppNavigationRail(
                             selected = state.destination,
                             onSelect = viewModel::navigate,
@@ -86,19 +93,29 @@ fun MaskAccountsApp(
                         modifier = Modifier.weight(1f),
                         topBar = {
                             CenterAlignedTopAppBar(
+                                navigationIcon = {
+                                    if (pickerGroup != null) {
+                                        IconButton(onClick = viewModel::closeAppPicker) {
+                                            Icon(
+                                                Icons.AutoMirrored.Filled.ArrowBack,
+                                                contentDescription = "返回首頁",
+                                            )
+                                        }
+                                    }
+                                },
                                 title = {
                                     Text(
-                                        when (state.destination) {
-                                            MainDestination.INSTANCES -> "我的分身"
-                                            MainDestination.APPS -> "選擇 App"
-                                            MainDestination.SETTINGS -> "設定"
+                                        when {
+                                            pickerGroup != null -> "加入 App"
+                                            state.destination == MainDestination.HOME -> "MaskAccounts"
+                                            else -> "設定"
                                         },
                                     )
                                 },
                             )
                         },
                         bottomBar = {
-                            if (!useNavigationRail) {
+                            if (!useNavigationRail && pickerGroup == null) {
                                 AppNavigationBar(
                                     selected = state.destination,
                                     onSelect = viewModel::navigate,
@@ -106,11 +123,11 @@ fun MaskAccountsApp(
                             }
                         },
                         floatingActionButton = {
-                            if (state.destination == MainDestination.INSTANCES) {
+                            if (state.destination == MainDestination.HOME && pickerGroup == null) {
                                 ExtendedFloatingActionButton(
-                                    onClick = { viewModel.navigate(MainDestination.APPS) },
+                                    onClick = { showCreateGroup = true },
                                     icon = { Icon(Icons.Default.Add, contentDescription = null) },
-                                    text = { Text("新增分身") },
+                                    text = { Text("新增群組") },
                                 )
                             }
                         },
@@ -121,22 +138,29 @@ fun MaskAccountsApp(
                                 .fillMaxSize()
                                 .padding(innerPadding),
                         ) {
-                            if (state.busyPackageName != null || state.launchingInstanceId != null) {
+                            if (
+                                state.busyPackageName != null ||
+                                state.busyGroupId != null ||
+                                state.launchingAppKey != null
+                            ) {
                                 LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
                             }
-                            when (state.destination) {
-                                MainDestination.INSTANCES -> InstancesScreen(
+                            when {
+                                pickerGroup != null -> AppPickerScreen(
                                     state = state,
-                                    onLaunch = viewModel::launchInstance,
-                                    onRename = viewModel::renameInstance,
-                                    onDelete = viewModel::deleteInstance,
-                                    onAdd = { viewModel.navigate(MainDestination.APPS) },
-                                )
-                                MainDestination.APPS -> AppPickerScreen(
-                                    state = state,
+                                    group = pickerGroup,
                                     onSelect = viewModel::selectApp,
                                 )
-                                MainDestination.SETTINGS -> SettingsScreen(
+                                state.destination == MainDestination.HOME -> HomeScreen(
+                                    state = state,
+                                    onLaunch = viewModel::launchGroupApp,
+                                    onAddApp = viewModel::openAppPicker,
+                                    onPrepareGroup = viewModel::prepareGroup,
+                                    onRenameGroup = viewModel::renameGroup,
+                                    onDeleteGroup = viewModel::deleteGroup,
+                                    onCreateGroup = { showCreateGroup = true },
+                                )
+                                else -> SettingsScreen(
                                     state = state,
                                     onOpenStorageSettings = onOpenStorageSettings,
                                 )
@@ -145,11 +169,13 @@ fun MaskAccountsApp(
                     }
                 }
             }
-            state.createDraft?.let { draft ->
-                CreateInstanceDialog(
-                    draft = draft,
-                    onDismiss = viewModel::dismissCreateDraft,
-                    onConfirm = viewModel::createInstance,
+            if (showCreateGroup) {
+                CreateGroupDialog(
+                    onDismiss = { showCreateGroup = false },
+                    onConfirm = { name ->
+                        viewModel.createGroup(name)
+                        showCreateGroup = false
+                    },
                 )
             }
         }
@@ -191,44 +217,37 @@ private fun AppNavigationRail(
 }
 
 @Composable
-private fun CreateInstanceDialog(
-    draft: CreateDraft,
+private fun CreateGroupDialog(
     onDismiss: () -> Unit,
     onConfirm: (String) -> Unit,
 ) {
-    var displayName by remember(draft.app.packageName, draft.suggestedName) {
-        mutableStateOf(draft.suggestedName)
-    }
+    var name by remember { mutableStateOf("") }
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("建立 ${draft.app.label} 分身") },
+        title = { Text("新增群組") },
         text = {
             Column {
                 Text(
-                    "這個名稱只會顯示在 MaskAccounts 裡。",
+                    "每個群組會在需要時建立獨立的 Google 服務、帳戶與 App 資料。",
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
                 OutlinedTextField(
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(top = 16.dp),
-                    value = displayName,
-                    onValueChange = { displayName = it },
+                    value = name,
+                    onValueChange = { name = it },
                     singleLine = true,
-                    label = { Text("分身名稱") },
+                    label = { Text("群組名稱") },
+                    placeholder = { Text("例如：工作、私人") },
                 )
             }
         },
         confirmButton = {
-            TextButton(
-                enabled = displayName.isNotBlank(),
-                onClick = { onConfirm(displayName) },
-            ) {
+            TextButton(enabled = name.isNotBlank(), onClick = { onConfirm(name) }) {
                 Text("建立")
             }
         },
-        dismissButton = {
-            TextButton(onClick = onDismiss) { Text("取消") }
-        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("取消") } },
     )
 }

@@ -73,7 +73,7 @@ fun SettingsScreen(
                 title = "執行環境",
             ) {
                 Text(
-                    "LINE 與蝦皮已完成實機 clone 啟動驗證。YouTube 與 Google Maps 會同步 Google 依賴套件，但仍在相容性實驗中；其他 App 可以建立分身記錄，啟動相容性需逐一驗證。",
+                    "LINE 與蝦皮已完成實機啟動驗證。YouTube 與 Google Maps 仍在相容性實驗中；每個群組都使用自己的 virtual user 與 Google 服務資料。",
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
@@ -81,10 +81,10 @@ fun SettingsScreen(
         item {
             SettingsCard(
                 icon = { Icon(Icons.Default.Info, contentDescription = null) },
-                title = "M0 多實例邊界",
+                title = "群組隔離邊界",
             ) {
                 Text(
-                    "多張卡片目前共用 virtual user 0；它們是可管理的分身入口，尚不代表彼此已有獨立登入資料。",
+                    "同一群組內的 App 共用帳戶環境；不同群組使用不同 virtual user。這是 MaskAccounts app-level runtime，不是 Android Work Profile 或系統使用者。",
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
