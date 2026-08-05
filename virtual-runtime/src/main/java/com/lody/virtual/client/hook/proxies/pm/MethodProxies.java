@@ -1142,8 +1142,8 @@ class MethodProxies {
                 packageInfos = VirtualCore.get().getUnHookPackageManager().getInstalledPackages(flags);
             }
             packageInfos.addAll(VPackageManager.get().getInstalledPackages(flags, userId));
-            if (ParceledListSliceCompat.isReturnParceledListSlice(method)) {
-                return ParceledListSliceCompat.create(packageInfos);
+            if (ParceledListSliceCompat.isReturnListContainer(method)) {
+                return ParceledListSliceCompat.createForReturnType(method, packageInfos);
             } else {
                 return packageInfos;
             }

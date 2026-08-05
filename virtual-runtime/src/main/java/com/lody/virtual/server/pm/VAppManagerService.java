@@ -323,7 +323,10 @@ public class VAppManagerService extends IAppManager.Stub {
                 return InstallResult.makeFailure("Unable to copy the package file.");
             }
             // copy lib in base apk
-            NativeLibraryHelperCompat.copyNativeBinaries(baseApkFile, libDir);
+            if (NativeLibraryHelperCompat.copyNativeBinaries(baseApkFile, libDir) < 0) {
+                privatePackageFile.delete();
+                return InstallResult.makeFailure("Unable to extract native libraries from base APK.");
+            }
 
             packageFile = privatePackageFile;
 
@@ -338,7 +341,12 @@ public class VAppManagerService extends IAppManager.Stub {
                         FileUtils.copyFile(new File(pkg.splitCodePaths[i]), privateSplitFile);
 
                         // copy lib in split apk
-                        NativeLibraryHelperCompat.copyNativeBinaries(privateSplitFile, libDir);
+                        if (NativeLibraryHelperCompat.copyNativeBinaries(
+                                privateSplitFile, libDir) < 0) {
+                            privateSplitFile.delete();
+                            return InstallResult.makeFailure(
+                                    "Unable to extract native libraries from split: " + splitName);
+                        }
                     } catch (IOException e) {
                         privateSplitFile.delete();
                         return InstallResult.makeFailure("Unable to copy split: " + splitName);
@@ -398,6 +406,11 @@ public class VAppManagerService extends IAppManager.Stub {
             PackageSetting ps = PackageCacheManager.getSetting(packageName);
             if (ps != null) {
                 if (!ps.isInstalled(userId)) {
+                    if (!ensureNativeLibraries(ps)) {
+                        VLog.e(TAG, "Unable to repair native libraries before adding %s to user %d",
+                                packageName, userId);
+                        return false;
+                    }
                     ps.setInstalled(userId, true);
                     notifyAppInstalled(ps, userId);
                     mPersistenceLayer.save();
@@ -406,6 +419,26 @@ public class VAppManagerService extends IAppManager.Stub {
             }
         }
         return false;
+    }
+
+    private boolean ensureNativeLibraries(PackageSetting setting) {
+        if (setting.dependSystem) {
+            return true;
+        }
+        File libraryDirectory = new File(setting.libPath);
+        if (NativeLibraryHelperCompat.copyNativeBinaries(
+                new File(setting.apkPath), libraryDirectory) < 0) {
+            return false;
+        }
+        if (setting.splitCodePaths != null) {
+            for (String splitCodePath : setting.splitCodePaths) {
+                if (NativeLibraryHelperCompat.copyNativeBinaries(
+                        new File(splitCodePath), libraryDirectory) < 0) {
+                    return false;
+                }
+            }
+        }
+        return true;
     }
 
     private void chmodPackageDictionary(File packageFile) {
