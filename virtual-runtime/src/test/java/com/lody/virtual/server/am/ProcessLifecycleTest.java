@@ -175,6 +175,8 @@ public class ProcessLifecycleTest {
         assertEquals(Collections.singletonList("first"), delivered);
         assertEquals(ProcessLifecycle.State.FAILED, lifecycle.state());
         assertEquals(ProcessLifecycle.TerminalReason.DISPATCH_FAILED, lifecycle.terminalReason());
+        assertEquals("BIND", lifecycle.failedOperation());
+        assertEquals("binder died", lifecycle.dispatchFailure().getMessage());
         assertTrue(tail.isCancelled());
         assertEquals(Collections.singletonList(ProcessLifecycle.TerminalReason.DISPATCH_FAILED),
                 cancellations);

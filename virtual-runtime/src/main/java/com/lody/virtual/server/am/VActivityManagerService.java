@@ -44,7 +44,7 @@ import com.lody.virtual.helper.collection.SparseArray;
 import com.lody.virtual.helper.compat.ActivityManagerCompat;
 import com.lody.virtual.helper.compat.ApplicationThreadCompat;
 import com.lody.virtual.helper.compat.BundleCompat;
-import com.lody.virtual.helper.compat.IApplicationThreadCompat;
+import com.lody.virtual.helper.compat.ServiceConnectionCompat;
 import com.lody.virtual.helper.utils.ComponentUtils;
 import com.lody.virtual.helper.utils.VLog;
 import com.lody.virtual.os.VBinder;
@@ -71,8 +71,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicReference;
-
-import mirror.android.app.IServiceConnectionO;
 
 import static android.os.Process.killProcess;
 import static com.lody.virtual.os.VUserHandle.getUserId;
@@ -413,8 +411,8 @@ public class VActivityManagerService extends IActivityManager.Stub {
                                     + ComponentUtils.toComponentName(serviceInfo)
                                     + " pid=" + targetApp.pid + " startId=" + startId
                                     + " token=" + dispatchRecord);
-                            IApplicationThreadCompat.scheduleServiceArgs(
-                                    targetApp.appThread, dispatchRecord, taskRemoved,
+                            targetApp.client.scheduleServiceArgs(
+                                    dispatchRecord, taskRemoved,
                                     startId, 0, dispatchIntent);
                         },
                         null);
@@ -426,8 +424,7 @@ public class VActivityManagerService extends IActivityManager.Stub {
         if (retiredRecord != null) {
             if (retiredRecord.process.lifecycle.state() == ProcessLifecycle.State.READY) {
                 try {
-                    IApplicationThreadCompat.scheduleStopService(
-                            retiredRecord.process.appThread, retiredRecord);
+                    retiredRecord.process.client.scheduleStopService(retiredRecord);
                 } catch (RemoteException e) {
                     failProcessGeneration(retiredRecord.process,
                             ProcessLifecycle.TerminalReason.DISPATCH_FAILED,
@@ -512,8 +509,7 @@ public class VActivityManagerService extends IActivityManager.Stub {
         for (ServiceRecord.IntentBindRecord binding : bindingsToUnbind) {
             enqueueServiceOperation(r.process, PendingServiceOperation.Type.UNBIND,
                     "unbind-stopped " + className,
-                    () -> IApplicationThreadCompat.scheduleUnbindService(
-                            r.process.appThread, r, binding.intent), null);
+                    () -> r.process.client.scheduleUnbindService(r, binding.intent), null);
         }
         enqueueStopOperation(r, "stop-service");
         drainProcessLifecycle(r.process);
@@ -564,8 +560,8 @@ public class VActivityManagerService extends IActivityManager.Stub {
                                 if (!isServiceDispatchValid(targetRecord.process, targetRecord)) {
                                     return;
                                 }
-                                IApplicationThreadCompat.scheduleBindService(
-                                        targetRecord.process.appThread, targetRecord,
+                                targetRecord.process.client.scheduleBindService(
+                                        targetRecord,
                                         boundRecord.intent, true, 0);
                             }, reason -> boundRecord.setDoRebind(true));
                 }
@@ -588,8 +584,8 @@ public class VActivityManagerService extends IActivityManager.Stub {
                                     || !boundRecord.shouldDispatchBind()) {
                                 return;
                             }
-                            IApplicationThreadCompat.scheduleBindService(
-                                    targetRecord.process.appThread, targetRecord,
+                            targetRecord.process.client.scheduleBindService(
+                                    targetRecord,
                                     boundRecord.intent, false, 0);
                         }, reason -> boundRecord.bindRequestFailed());
             }
@@ -622,8 +618,8 @@ public class VActivityManagerService extends IActivityManager.Stub {
                         queuedWork |= enqueueServiceOperation(r.process,
                                 PendingServiceOperation.Type.UNBIND,
                                 "unbind " + ComponentUtils.toComponentName(r.serviceInfo),
-                                () -> IApplicationThreadCompat.scheduleUnbindService(
-                                        r.process.appThread, r, bindRecord.intent), null);
+                                () -> r.process.client.scheduleUnbindService(
+                                        r, bindRecord.intent), null);
                     }
                 }
             }
@@ -663,8 +659,8 @@ public class VActivityManagerService extends IActivityManager.Stub {
                         () -> {
                             if (isServiceDispatchValid(r.process, r)
                                     && boundRecord.hasPublishedBinder()) {
-                                IApplicationThreadCompat.scheduleBindService(
-                                        r.process.appThread, r, boundRecord.intent, true, 0);
+                                r.process.client.scheduleBindService(
+                                        r, boundRecord.intent, true, 0);
                             }
                         }, reason -> boundRecord.setDoRebind(true));
                 final ComponentName component = ComponentUtils.toComponentName(r.serviceInfo);
@@ -686,8 +682,8 @@ public class VActivityManagerService extends IActivityManager.Stub {
                         () -> {
                             if (isServiceDispatchValid(r.process, r)
                                     && boundRecord.shouldDispatchBind()) {
-                                IApplicationThreadCompat.scheduleBindService(
-                                        r.process.appThread, r, boundRecord.intent, false, 0);
+                                r.process.client.scheduleBindService(
+                                        r, boundRecord.intent, false, 0);
                             }
                         }, reason -> boundRecord.bindRequestFailed());
             }
@@ -764,11 +760,7 @@ public class VActivityManagerService extends IActivityManager.Stub {
     private void connectService(IServiceConnection conn, ComponentName component, ServiceRecord.IntentBindRecord r,boolean dead) {
         try {
             BinderDelegateService delegateService = new BinderDelegateService(component, r.binder);
-            if (Build.VERSION.SDK_INT >= 26) {
-                IServiceConnectionO.connected.call(conn, component, delegateService, dead);
-            } else {
-                conn.connected(component, delegateService);
-            }
+            ServiceConnectionCompat.connected(conn, component, delegateService, dead);
         } catch (RemoteException e) {
             e.printStackTrace();
         }
@@ -776,11 +768,7 @@ public class VActivityManagerService extends IActivityManager.Stub {
 
     private void notifyServiceDisconnected(IServiceConnection connection, ComponentName component) {
         try {
-            if (Build.VERSION.SDK_INT >= 26) {
-                IServiceConnectionO.connected.call(connection, component, null, true);
-            } else {
-                connection.connected(component, null);
-            }
+            ServiceConnectionCompat.connected(connection, component, null, true);
         } catch (RemoteException e) {
             VLog.w(TAG, "Unable to disconnect service client " + component, e);
         }
@@ -800,8 +788,7 @@ public class VActivityManagerService extends IActivityManager.Stub {
                 () -> {
                     if (record.process.appThread != null
                             && record.process.appThread.asBinder().isBinderAlive()) {
-                        IApplicationThreadCompat.scheduleStopService(
-                                record.process.appThread, record);
+                        record.process.client.scheduleStopService(record);
                     }
                 }, null);
     }
@@ -825,8 +812,7 @@ public class VActivityManagerService extends IActivityManager.Stub {
             }
         }
         try {
-            IApplicationThreadCompat.scheduleCreateService(
-                    process.appThread, record, record.serviceInfo, 0);
+            process.client.scheduleCreateService(record, record.serviceInfo, 0);
             return true;
         } catch (RemoteException e) {
             VLog.e(TAG, "scheduleCreateService failed for "
@@ -857,6 +843,9 @@ public class VActivityManagerService extends IActivityManager.Stub {
         if (process.lifecycle.state() == ProcessLifecycle.State.FAILED
                 && process.lifecycle.terminalReason()
                 == ProcessLifecycle.TerminalReason.DISPATCH_FAILED) {
+            VLog.e(TAG, "service-dispatch-failed pid=" + process.pid
+                    + " operation=" + process.lifecycle.failedOperation());
+            VLog.e(TAG, process.lifecycle.dispatchFailure());
             cleanupProcessGeneration(process, "service-dispatch-failed", true);
         }
     }
@@ -958,8 +947,8 @@ public class VActivityManagerService extends IActivityManager.Stub {
                 queuedWork |= enqueueServiceOperation(service.process,
                         PendingServiceOperation.Type.UNBIND,
                         "unbind-dead-client " + ComponentUtils.toComponentName(service.serviceInfo),
-                        () -> IApplicationThreadCompat.scheduleUnbindService(
-                                service.process.appThread, service, binding.intent), null);
+                        () -> service.process.client.scheduleUnbindService(
+                                service, binding.intent), null);
             }
             if (service.startId <= 0 && service.getConnectionCount() <= 0) {
                 service.retire();

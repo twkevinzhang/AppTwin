@@ -41,6 +41,8 @@ public class UserManagerStub extends BinderInvocationProxy {
         addMethodProxy(new ResultStaticMethodProxy("createUser", null));
         addMethodProxy(new ResultStaticMethodProxy("createProfileForUser", null));
         addMethodProxy(new ResultStaticMethodProxy("getProfiles", Collections.EMPTY_LIST));
+        // A Group is an app-level virtual secondary user, not Android's privileged main user.
+        addMethodProxy(new ResultStaticMethodProxy("isMainUser", false));
         // Seed-account APIs are privileged OS-user provisioning state. A virtual user starts with
         // no seed account and must never inherit the host user's setup/account metadata.
         addMethodProxy(new ResultStaticMethodProxy("getSeedAccountName", null));
