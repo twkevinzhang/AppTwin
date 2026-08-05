@@ -158,9 +158,25 @@ public final class AppInstrumentation extends InstrumentationDelegate implements
 
     @Override
     public void callActivityOnDestroy(Activity activity) {
-        VirtualCore.get().getComponentDelegate().beforeActivityDestroy(activity);
-        super.callActivityOnDestroy(activity);
-        VirtualCore.get().getComponentDelegate().afterActivityDestroy(activity);
+        IBinder token = mirror.android.app.Activity.mToken.get(activity);
+        try {
+            VirtualCore.get().getComponentDelegate().beforeActivityDestroy(activity);
+            super.callActivityOnDestroy(activity);
+            VirtualCore.get().getComponentDelegate().afterActivityDestroy(activity);
+        } finally {
+            // Recent Android releases no longer reliably report activityDestroyed through the
+            // legacy ActivityTaskManager binder callback. Keeping cleanup at the lifecycle
+            // boundary prevents stale singleTask records from poisoning later clear-top starts.
+            if (token != null) {
+                try {
+                    VActivityManager.get().onActivityDestroy(token);
+                } catch (Throwable error) {
+                    // A dead engine will rebuild its ActivityStack on restart. Do not turn a
+                    // best-effort teardown notification into a guest lifecycle crash.
+                    VLog.e(TAG, "Unable to report destroyed activity", error);
+                }
+            }
+        }
     }
 
     @Override
