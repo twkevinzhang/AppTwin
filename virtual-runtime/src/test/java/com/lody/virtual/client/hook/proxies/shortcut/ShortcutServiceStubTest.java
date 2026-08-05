@@ -3,6 +3,7 @@ package com.lody.virtual.client.hook.proxies.shortcut;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertNull;
+import static org.junit.Assert.assertSame;
 
 import android.os.IBinder;
 import android.os.IInterface;
@@ -87,6 +88,48 @@ public class ShortcutServiceStubTest {
                 "findFirstShortcutList"));
         assertNull(invokeShortcutFinder("ReplacePkgAndShortcutMethodProxy",
                 "findFirstShortcutInfo"));
+    }
+
+    @Test
+    public void usesRenderedHostIconWithoutCreatingFallback() {
+        Object renderedHostIcon = new Object();
+        int[] fallbackCalls = {0};
+
+        Object selected = ShortcutServiceStub.selectHostIcon(
+                () -> renderedHostIcon,
+                () -> {
+                    fallbackCalls[0]++;
+                    return new Object();
+                });
+
+        assertSame(renderedHostIcon, selected);
+        assertEquals(0, fallbackCalls[0]);
+    }
+
+    @Test
+    public void replacesUnrenderableHostIconWithBitmapFallback() {
+        Object fallbackBitmapIcon = new Object();
+
+        Object selected = ShortcutServiceStub.selectHostIcon(
+                () -> {
+                    throw new ClassCastException("VectorDrawable is not a BitmapDrawable");
+                },
+                () -> fallbackBitmapIcon);
+
+        assertSame(fallbackBitmapIcon, selected);
+    }
+
+    @Test
+    public void removesGuestIconWhenHostAndFallbackRenderingBothFail() {
+        Object selected = ShortcutServiceStub.selectHostIcon(
+                () -> {
+                    throw new IllegalArgumentException("host icon");
+                },
+                () -> {
+                    throw new IllegalStateException("fallback icon");
+                });
+
+        assertNull(selected);
     }
 
     private static Object invokeShortcutFinder(String proxySimpleName, String finderName)

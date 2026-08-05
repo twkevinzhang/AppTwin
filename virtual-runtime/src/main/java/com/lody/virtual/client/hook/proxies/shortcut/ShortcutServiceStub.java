@@ -4,7 +4,7 @@ import android.annotation.TargetApi;
 import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.content.pm.ShortcutInfo;
-import android.graphics.drawable.BitmapDrawable;
+import android.graphics.Bitmap;
 import android.graphics.drawable.Drawable;
 import android.graphics.drawable.Icon;
 import android.os.Build;
@@ -15,6 +15,8 @@ import com.lody.virtual.client.hook.base.BinderInvocationStub;
 import com.lody.virtual.client.hook.base.BinderInvocationProxy;
 import com.lody.virtual.client.hook.base.ReplaceCallingPkgMethodProxy;
 import com.lody.virtual.helper.compat.ParceledListSliceCompat;
+import com.lody.virtual.helper.utils.BitmapUtils;
+import com.lody.virtual.helper.utils.VLog;
 
 import java.lang.reflect.Method;
 import java.util.List;
@@ -27,6 +29,8 @@ import mirror.android.content.pm.ParceledListSlice;
  */
 public class ShortcutServiceStub extends BinderInvocationProxy {
 
+    private static final String TAG = "ShortcutServiceStub";
+    private static final int FALLBACK_ICON_SIZE_PX = 1;
 
     public ShortcutServiceStub() {
         super(IShortcutService.Stub.asInterface, "shortcut");
@@ -79,12 +83,14 @@ public class ShortcutServiceStub extends BinderInvocationProxy {
         }
 
         mirror.android.content.pm.ShortcutInfo.mPackageName.set(shortcutInfo, hostPackage);
-        try {
-            Drawable applicationIcon = pm.getApplicationIcon(hostPackage);
-            Icon icon = Icon.createWithBitmap(((BitmapDrawable) applicationIcon).getBitmap());
-            mirror.android.content.pm.ShortcutInfo.mIcon.set(shortcutInfo, icon);
-        } catch (Throwable ignored) {
-        }
+        Icon icon = selectHostIcon(
+                () -> createBitmapIcon(pm.getApplicationIcon(hostPackage)),
+                ShortcutServiceStub::createFallbackIcon,
+                (message, error) -> VLog.w(TAG, "%s: %s", message, error));
+        // This assignment must be unconditional. After changing the owner package, retaining a
+        // resource icon from the guest package makes Android 12's ShortcutService reject the
+        // ShortcutInfo with "Icon resource must reside in shortcut owner package".
+        mirror.android.content.pm.ShortcutInfo.mIcon.set(shortcutInfo, icon);
 
         Intent[] intents = mirror.android.content.pm.ShortcutInfo.mIntents.get(shortcutInfo);
 
@@ -116,6 +122,62 @@ public class ShortcutServiceStub extends BinderInvocationProxy {
             System.arraycopy(swap, 0, intents, 0, length);
             mirror.android.content.pm.ShortcutInfo.mIntentPersistableExtrases.set(shortcutInfo, persistableBundles);
         }
+    }
+
+    @TargetApi(Build.VERSION_CODES.M)
+    private static Icon createBitmapIcon(Drawable drawable) {
+        Bitmap bitmap = BitmapUtils.drawableToBitmap(drawable);
+        if (bitmap == null || bitmap.isRecycled() || bitmap.getWidth() <= 0 || bitmap.getHeight() <= 0) {
+            throw new IllegalArgumentException("Host application icon could not be rendered");
+        }
+        return Icon.createWithBitmap(bitmap);
+    }
+
+    @TargetApi(Build.VERSION_CODES.M)
+    private static Icon createFallbackIcon() {
+        Bitmap bitmap = Bitmap.createBitmap(
+                FALLBACK_ICON_SIZE_PX,
+                FALLBACK_ICON_SIZE_PX,
+                Bitmap.Config.ARGB_8888);
+        return Icon.createWithBitmap(bitmap);
+    }
+
+    static <T> T selectHostIcon(IconProvider<T> applicationIcon, IconProvider<T> fallbackIcon) {
+        return selectHostIcon(applicationIcon, fallbackIcon, (message, error) -> { });
+    }
+
+    private static <T> T selectHostIcon(IconProvider<T> applicationIcon,
+                                        IconProvider<T> fallbackIcon,
+                                        IconFailureReporter failureReporter) {
+        try {
+            T icon = applicationIcon.get();
+            if (icon != null) {
+                return icon;
+            }
+            failureReporter.report(
+                    "Host application icon provider returned null; using fallback icon",
+                    new IllegalStateException("null host icon"));
+        } catch (Throwable error) {
+            failureReporter.report(
+                    "Unable to render host application icon; using fallback icon", error);
+        }
+
+        try {
+            return fallbackIcon.get();
+        } catch (Throwable error) {
+            // Returning null is intentional: an icon-less shortcut is valid, while retaining the
+            // guest's resource icon after rewriting mPackageName is fatal on Android 12.
+            failureReporter.report("Unable to create fallback shortcut icon; removing icon", error);
+            return null;
+        }
+    }
+
+    interface IconProvider<T> {
+        T get() throws Throwable;
+    }
+
+    private interface IconFailureReporter {
+        void report(String message, Throwable error);
     }
 
     private static class ReplacePkgAndShortcutListMethodProxy extends ReplaceCallingPkgMethodProxy {
