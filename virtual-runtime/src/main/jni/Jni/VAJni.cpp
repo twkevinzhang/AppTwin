@@ -20,10 +20,24 @@ static void jni_disableJit(alias_ref<jclass> clazz, jint apiLevel) {
     disableJit(apiLevel);
 }
 
-static void jni_nativeEnableIORedirect(alias_ref<jclass>, jstring selfSoPath, jint apiLevel,
-                                       jint preview_api_level) {
+static void jni_nativeEnableIORedirect(alias_ref<jclass>, jstring selfSoPath, jstring hostPackage,
+                                       jint apiLevel, jint preview_api_level) {
     ScopeUtfString so_path(selfSoPath);
-    IOUniformer::startUniformer(so_path.c_str(), apiLevel, preview_api_level);
+    ScopeUtfString host_package(hostPackage);
+    IOUniformer::startUniformer(so_path.c_str(), host_package.c_str(), apiLevel,
+                               preview_api_level);
+}
+
+static void jni_nativeConfigureUidOverride(alias_ref<jclass>, jint uidOverride) {
+    IOUniformer::configureUidOverride(uidOverride);
+}
+
+static jint jni_nativeReadUidForProbe(alias_ref<jclass>) {
+    return IOUniformer::readUidForProbe();
+}
+
+static jint jni_nativeCountProcMapsLeaksForProbe(alias_ref<jclass>) {
+    return IOUniformer::countProcMapsLeaksForProbe();
 }
 
 static void jni_nativeIOWhitelist(alias_ref<jclass> jclazz, jstring _path) {
@@ -76,6 +90,12 @@ JNIEXPORT jint JNICALL JNI_OnLoad(JavaVM *vm, void *) {
         nativeEngineClass->registerNatives({
                         makeNativeMethod("nativeEnableIORedirect",
                                          jni_nativeEnableIORedirect),
+                        makeNativeMethod("nativeConfigureUidOverride",
+                                         jni_nativeConfigureUidOverride),
+                        makeNativeMethod("nativeReadUidForProbe",
+                                         jni_nativeReadUidForProbe),
+                        makeNativeMethod("nativeCountProcMapsLeaksForProbe",
+                                         jni_nativeCountProcMapsLeaksForProbe),
                         makeNativeMethod("nativeIOWhitelist",
                                          jni_nativeIOWhitelist),
                         makeNativeMethod("nativeIOForbid",
@@ -97,5 +117,3 @@ JNIEXPORT jint JNICALL JNI_OnLoad(JavaVM *vm, void *) {
 extern "C" __attribute__((constructor)) void _init(void) {
     IOUniformer::init_env_before_all();
 }
-
-

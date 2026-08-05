@@ -23,17 +23,28 @@ final class ProcessRecord extends Binder implements Comparable<ProcessRecord> {
 	public int vuid;
 	public int vpid;
 	public int userId;
+	final int reportedUidOverride;
 	boolean startupWatchdogScheduled;
 	boolean terminalCleanupStarted;
+	boolean osIsolatedWorker;
+	LogicalProcessKey isolatedOwnerKey;
+	int physicalUid = -1;
     int priority;
 
 	ProcessRecord(ApplicationInfo info, String processName, int vuid, int vpid, long generation) {
+		this(info, processName, vuid, vpid, generation,
+				IsolatedProcessUidPolicy.NO_OVERRIDE);
+	}
+
+	ProcessRecord(ApplicationInfo info, String processName, int vuid, int vpid, long generation,
+			int reportedUidOverride) {
 		this.info = info;
 		this.vuid = vuid;
 		this.vpid = vpid;
 		this.userId = VUserHandle.getUserId(vuid);
 		this.processName = processName;
 		this.generation = generation;
+		this.reportedUidOverride = reportedUidOverride;
 		this.lifecycle = new ProcessLifecycle(generation);
 	}
 

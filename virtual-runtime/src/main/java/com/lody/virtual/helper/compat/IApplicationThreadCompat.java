@@ -39,11 +39,12 @@ public class IApplicationThreadCompat {
 
     }
 
-    public static void scheduleBindService(IInterface appThread, IBinder token, Intent intent, boolean rebind,
-                                           int processState) throws RemoteException {
+    public static void scheduleBindService(IInterface appThread, IBinder token, IBinder bindToken,
+                                           Intent intent, boolean rebind, int processState,
+                                           long bindSeq) throws RemoteException {
         if (usesBindSequence(Build.VERSION.SDK_INT)) {
             invokeAndroid17ScheduleBindService(
-                    appThread, token, intent, rebind, processState, 0L);
+                    appThread, token, bindToken, intent, rebind, processState, bindSeq);
         } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.KITKAT) {
             IApplicationThreadKitkat.scheduleBindService.call(appThread, token, intent, rebind, processState);
         } else {
@@ -56,16 +57,18 @@ public class IApplicationThreadCompat {
     }
 
     private static void invokeAndroid17ScheduleBindService(IInterface appThread, IBinder token,
-                                                            Intent intent, boolean rebind,
-                                                            int processState, long bindSeq)
+                                                            IBinder bindToken, Intent intent,
+                                                            boolean rebind, int processState,
+                                                            long bindSeq)
             throws RemoteException {
         try {
             Method method = findScheduleBindServiceMethod(appThread.getClass());
             if (method == null) {
-                throw new NoSuchMethodException("scheduleBindService(IBinder, Intent, boolean, int, long)");
+                throw new NoSuchMethodException(
+                        "scheduleBindService(IBinder, IBinder, Intent, boolean, int, long)");
             }
             method.setAccessible(true);
-            method.invoke(appThread, token, intent, rebind, processState, bindSeq);
+            method.invoke(appThread, token, bindToken, intent, rebind, processState, bindSeq);
         } catch (InvocationTargetException e) {
             throwAsRemoteException(e.getCause() != null ? e.getCause() : e);
         } catch (Throwable e) {
@@ -78,12 +81,13 @@ public class IApplicationThreadCompat {
             for (Method method : current.getDeclaredMethods()) {
                 Class<?>[] parameters = method.getParameterTypes();
                 if ("scheduleBindService".equals(method.getName())
-                        && parameters.length == 5
+                        && parameters.length == 6
                         && IBinder.class.isAssignableFrom(parameters[0])
-                        && Intent.class.isAssignableFrom(parameters[1])
-                        && parameters[2] == boolean.class
-                        && parameters[3] == int.class
-                        && parameters[4] == long.class) {
+                        && IBinder.class.isAssignableFrom(parameters[1])
+                        && Intent.class.isAssignableFrom(parameters[2])
+                        && parameters[3] == boolean.class
+                        && parameters[4] == int.class
+                        && parameters[5] == long.class) {
                     return method;
                 }
             }
@@ -107,8 +111,48 @@ public class IApplicationThreadCompat {
         throw remoteException;
     }
 
-    public static void scheduleUnbindService(IInterface appThread, IBinder token, Intent intent) throws RemoteException {
-        IApplicationThread.scheduleUnbindService.call(appThread, token, intent);
+    public static void scheduleUnbindService(IInterface appThread, IBinder token,
+                                             IBinder bindToken, Intent intent)
+            throws RemoteException {
+        if (usesBindSequence(Build.VERSION.SDK_INT)) {
+            invokeAndroid17ScheduleUnbindService(appThread, token, bindToken, intent);
+        } else {
+            IApplicationThread.scheduleUnbindService.call(appThread, token, intent);
+        }
+    }
+
+    private static void invokeAndroid17ScheduleUnbindService(IInterface appThread, IBinder token,
+                                                              IBinder bindToken, Intent intent)
+            throws RemoteException {
+        try {
+            Method method = findScheduleUnbindServiceMethod(appThread.getClass());
+            if (method == null) {
+                throw new NoSuchMethodException(
+                        "scheduleUnbindService(IBinder, IBinder, Intent)");
+            }
+            method.setAccessible(true);
+            method.invoke(appThread, token, bindToken, intent);
+        } catch (InvocationTargetException e) {
+            throwAsRemoteException(e.getCause() != null ? e.getCause() : e);
+        } catch (Throwable e) {
+            throwAsRemoteException(e);
+        }
+    }
+
+    static Method findScheduleUnbindServiceMethod(Class<?> type) {
+        for (Class<?> current = type; current != null; current = current.getSuperclass()) {
+            for (Method method : current.getDeclaredMethods()) {
+                Class<?>[] parameters = method.getParameterTypes();
+                if ("scheduleUnbindService".equals(method.getName())
+                        && parameters.length == 3
+                        && IBinder.class.isAssignableFrom(parameters[0])
+                        && IBinder.class.isAssignableFrom(parameters[1])
+                        && Intent.class.isAssignableFrom(parameters[2])) {
+                    return method;
+                }
+            }
+        }
+        return null;
     }
 
     public static void scheduleServiceArgs(IInterface appThread, IBinder token, boolean taskRemoved,

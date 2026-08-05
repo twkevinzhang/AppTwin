@@ -26,5 +26,6 @@ public class ISubStub extends BinderInvocationProxy {
         addMethodProxy(new ReplaceLastPkgMethodProxy("getActiveSubscriptionInfoList"));
         addMethodProxy(new ReplaceLastPkgMethodProxy("getActiveSubInfoCount"));
         addMethodProxy(new ReplaceLastPkgMethodProxy("getSubscriptionProperty"));
+        addMethodProxy(new EmptyActiveSubIdListMethodProxy());
     }
 }

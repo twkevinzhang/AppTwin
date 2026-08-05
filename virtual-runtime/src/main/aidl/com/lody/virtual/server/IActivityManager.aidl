@@ -88,13 +88,15 @@ interface IActivityManager {
 
     boolean unbindService(in IServiceConnection connection, int userId);
 
-    void unbindFinished(in IBinder token, in Intent service, in boolean doRebind, int userId);
+    void unbindFinished(in IBinder token, in IBinder bindToken, in Intent service,
+                        in boolean doRebind, int userId);
 
     void serviceDoneExecuting(in IBinder token, in int type, in int startId, in int res, int userId);
 
     IBinder peekService(in Intent service, String resolvedType, int userId);
 
-    void publishService(in IBinder token, in Intent intent, in IBinder service, int userId);
+    void publishService(in IBinder token, in IBinder bindToken, in Intent intent,
+                        in IBinder service, int userId);
 
     VParceledListSlice getServices(int maxNum, int flags, int userId);
 

@@ -11,6 +11,7 @@ import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.Set;
 
 /**
  * @author Lody
@@ -32,6 +33,10 @@ public class SettingsProviderHook extends ExternalProviderHook {
         // a guest it cannot read DeviceConfig, so keep its legacy local Gservices storage path.
         // This avoids asking the host Settings provider for READ_DEVICE_CONFIG during Maps M1.
         PRE_SET_VALUES.put("enable_gmscore_gservices_storage", "false");
+        // Android 17 rejects this secure setting for non-system callers targeting API > 33.
+        // An empty virtual value means no enabled input methods and keeps GMS' optional autofill
+        // initialization from terminating the shared Google service process.
+        PRE_SET_VALUES.put("enabled_input_methods", "");
     }
 
 
@@ -64,7 +69,7 @@ public class SettingsProviderHook extends ExternalProviderHook {
         }
         int methodType = getMethodType(method);
         if (METHOD_GET == methodType) {
-            String presetValue = PRE_SET_VALUES.get(arg);
+            String presetValue = presetValue(arg);
             if (presetValue != null) {
                 return wrapBundle(arg, presetValue);
             }
@@ -85,6 +90,31 @@ public class SettingsProviderHook extends ExternalProviderHook {
             }
             throw e;
         }
+    }
+
+    static String presetValue(String key) {
+        return PRE_SET_VALUES.get(key);
+    }
+
+    /**
+     * API 37 enforces hidden/readable Settings metadata before contacting IContentProvider.
+     * Add only keys that the virtual provider layer supplies without reading host secure state.
+     */
+    @SuppressWarnings("unchecked")
+    public static boolean allowClientSideRead(Object readableFields, String key) {
+        if (!(readableFields instanceof Set) || !PRE_SET_VALUES.containsKey(key)) {
+            return false;
+        }
+        return ((Set<String>) readableFields).add(key);
+    }
+
+    @SuppressWarnings("unchecked")
+    public static boolean removeClientSideTargetSdkLimit(Object restrictedFields, String key) {
+        if (!(restrictedFields instanceof Map) || !PRE_SET_VALUES.containsKey(key)) {
+            return false;
+        }
+        Object previous = ((Map<String, Object>) restrictedFields).put(key, Integer.MAX_VALUE);
+        return !Integer.valueOf(Integer.MAX_VALUE).equals(previous);
     }
 
     private Bundle wrapBundle(String name, String value) {

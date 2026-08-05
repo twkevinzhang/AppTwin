@@ -14,6 +14,8 @@ import java.util.List;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertNotSame;
+import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertSame;
 import static org.junit.Assert.assertTrue;
 
@@ -192,6 +194,45 @@ public class ServiceRecordTest {
         assertFalse(binding.hasConnections());
         assertEquals(1, connectionBinder.unlinkCount);
         assertTrue(callbacks.isEmpty());
+    }
+
+    @Test
+    public void bindTokenIsStableAcrossBindAndRebindSequences() {
+        ServiceRecord.IntentBindRecord binding = new ServiceRecord.IntentBindRecord(31);
+        IBinder bindToken = binding.getBindToken();
+
+        assertSame(bindToken, binding.getBindToken());
+        assertEquals(1L, binding.nextBindSequence());
+        assertEquals(2L, binding.nextBindSequence());
+        assertSame(bindToken, binding.getBindToken());
+    }
+
+    @Test
+    public void clonedAccountsUseIndependentBindTokensAndRetirement() {
+        ServiceRecord firstAccount = new ServiceRecord(41);
+        ServiceRecord.IntentBindRecord firstBinding =
+                new ServiceRecord.IntentBindRecord(41);
+        firstAccount.bindings.add(firstBinding);
+        ServiceRecord secondAccount = new ServiceRecord(42);
+        ServiceRecord.IntentBindRecord secondBinding =
+                new ServiceRecord.IntentBindRecord(42);
+        secondAccount.bindings.add(secondBinding);
+
+        assertNotSame(firstBinding.getBindToken(), secondBinding.getBindToken());
+        assertSame(firstBinding,
+                firstAccount.peekBinding(firstBinding.getBindToken()));
+        assertNull(firstAccount.peekBinding(secondBinding.getBindToken()));
+        assertSame(secondBinding,
+                secondAccount.peekBinding(secondBinding.getBindToken()));
+
+        firstAccount.retire();
+
+        assertTrue(firstBinding.isRetired());
+        assertFalse(secondBinding.isRetired());
+        assertNull(firstAccount.peekBinding(firstBinding.getBindToken()));
+        assertSame(secondBinding,
+                secondAccount.peekBinding(secondBinding.getBindToken()));
+        assertEquals(1L, secondBinding.nextBindSequence());
     }
 
     private static IServiceConnection connection() {

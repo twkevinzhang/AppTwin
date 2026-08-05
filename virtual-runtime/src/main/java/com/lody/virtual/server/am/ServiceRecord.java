@@ -138,6 +138,37 @@ public class ServiceRecord extends Binder {
 		return null;
 	}
 
+	IntentBindRecord peekBinding(IBinder bindToken) {
+		if (bindToken == null) {
+			return null;
+		}
+		synchronized (bindings) {
+			if (isRetired()) {
+				return null;
+			}
+			for (IntentBindRecord bindRecord : bindings) {
+				if (bindRecord.matchesBindToken(bindToken)) {
+					return bindRecord;
+				}
+			}
+		}
+		return null;
+	}
+
+	IntentBindRecord peekUnbindInFlight() {
+		synchronized (bindings) {
+			if (isRetired()) {
+				return null;
+			}
+			for (IntentBindRecord bindRecord : bindings) {
+				if (bindRecord.isUnbindInFlight()) {
+					return bindRecord;
+				}
+			}
+		}
+		return null;
+	}
+
 	IntentBindRecord addToBoundIntent(Intent intent, IServiceConnection connection) {
 		synchronized (bindings) {
 			if (isRetired()) {
@@ -168,7 +199,9 @@ public class ServiceRecord extends Binder {
 
 		public  final List<IServiceConnection> connections = Collections.synchronizedList(new ArrayList<IServiceConnection>());
 		public IBinder binder;
+		private final IBinder bindToken = new Binder();
 		private final long generation;
+		private long bindSequence;
 		Intent intent;
 		private boolean bindRequested;
 		private boolean doRebind = false;
@@ -187,6 +220,19 @@ public class ServiceRecord extends Binder {
 
 		public long getGeneration() {
 			return generation;
+		}
+
+		public IBinder getBindToken() {
+			return bindToken;
+		}
+
+		public boolean matchesBindToken(IBinder candidate) {
+			return candidate != null && bindToken == candidate;
+		}
+
+		/** Returns the sequence for the next bind or rebind dispatch of this binding. */
+		public synchronized long nextBindSequence() {
+			return ++bindSequence;
 		}
 
 		public boolean containConnection(IServiceConnection connection) {

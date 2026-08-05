@@ -78,7 +78,8 @@ import static com.lody.virtual.os.VUserHandle.getUserId;
 /**
  * @author Lody
  */
-public class VActivityManagerService extends IActivityManager.Stub {
+public class VActivityManagerService extends IActivityManager.Stub
+        implements IsolatedGuestClient.Listener {
 
     private static final boolean BROADCAST_NOT_STARTED_PKG = false;
     private static final long SERVICE_STARTUP_TIMEOUT_MS = 15_000L;
@@ -94,6 +95,10 @@ public class VActivityManagerService extends IActivityManager.Stub {
     private final ProcessMap<ProcessRecord> mProcessNames = new ProcessMap<ProcessRecord>();
     private final LogicalProcessOwnerRegistry<ProcessRecord> mLogicalProcessOwners =
             new LogicalProcessOwnerRegistry<>(VActivityManagerService::isLogicalOwnerAlive);
+    private final LogicalProcessOwnerRegistry<ProcessRecord> mIsolatedServiceOwners =
+            new LogicalProcessOwnerRegistry<>(VActivityManagerService::isIsolatedOwnerAlive);
+    private final Map<IsolatedGuestClient, ProcessRecord> mIsolatedClients =
+            new IdentityHashMap<>();
     private final PendingIntents mPendingIntents = new PendingIntents();
     private Handler mServiceHandler;
     private ActivityManager am = (ActivityManager) VirtualCore.get().getContext()
@@ -335,11 +340,17 @@ public class VActivityManagerService extends IActivityManager.Stub {
         }
         VLog.i(TAG, "startService " + service + " resolved="
                 + ComponentUtils.toComponentName(serviceInfo) + " user=" + userId);
-        final ProcessRecord targetApp = scheduleServiceArgs
+        final boolean isolatedProcess = isIsolatedProcess(serviceInfo);
+        // Isolated services commonly provide an app's anti-abuse identity and are often bound
+        // only once. Dropping that first BIND_AUTO_CREATE request leaves the app permanently
+        // without the service, so serialize this rare path instead of failing fast on contention.
+        final ProcessRecord targetApp = isolatedProcess
+                ? startIsolatedServiceProcess(serviceInfo, userId)
+                : scheduleServiceArgs
                 ? startProcessIfNeedLocked(ComponentUtils.getProcessName(serviceInfo), userId,
-                serviceInfo.packageName)
+                serviceInfo.packageName, false)
                 : tryStartProcessForBinding(ComponentUtils.getProcessName(serviceInfo), userId,
-                serviceInfo.packageName);
+                serviceInfo.packageName, false);
         if (targetApp == null) {
             VLog.e(TAG, "Unable to start new Process for : "
                     + ComponentUtils.toComponentName(serviceInfo));
@@ -365,8 +376,7 @@ public class VActivityManagerService extends IActivityManager.Stub {
                 record = null;
             }
             if (record != null && (record.process != targetApp
-                    || record.process.appThread == null
-                    || !record.process.appThread.asBinder().isBinderAlive())) {
+                    || !isProcessEndpointActive(record.process))) {
                 VLog.w(TAG, "Discarding stale service record "
                         + ComponentUtils.toComponentName(serviceInfo)
                         + " oldPid=" + (record.process == null ? -1 : record.process.pid)
@@ -512,7 +522,8 @@ public class VActivityManagerService extends IActivityManager.Stub {
         for (ServiceRecord.IntentBindRecord binding : bindingsToUnbind) {
             enqueueServiceOperation(r.process, PendingServiceOperation.Type.UNBIND,
                     "unbind-stopped " + className,
-                    () -> r.process.client.scheduleUnbindService(r, binding.intent), null);
+                    () -> r.process.client.scheduleUnbindService(
+                            r, binding.getBindToken(), binding.intent), null);
         }
         enqueueStopOperation(r, "stop-service");
         drainProcessLifecycle(r.process);
@@ -564,8 +575,9 @@ public class VActivityManagerService extends IActivityManager.Stub {
                                     return;
                                 }
                                 targetRecord.process.client.scheduleBindService(
-                                        targetRecord,
-                                        boundRecord.intent, true, 0);
+                                        targetRecord, boundRecord.getBindToken(),
+                                        boundRecord.intent, true, 0,
+                                        boundRecord.nextBindSequence());
                             }, reason -> boundRecord.setDoRebind(true));
                 }
                 final ComponentName componentName = ComponentUtils.toComponentName(serviceInfo);
@@ -588,8 +600,9 @@ public class VActivityManagerService extends IActivityManager.Stub {
                                 return;
                             }
                             targetRecord.process.client.scheduleBindService(
-                                    targetRecord,
-                                    boundRecord.intent, false, 0);
+                                    targetRecord, boundRecord.getBindToken(),
+                                    boundRecord.intent, false, 0,
+                                    boundRecord.nextBindSequence());
                         }, reason -> boundRecord.bindRequestFailed());
             }
             targetRecord.lastActivityTime = SystemClock.uptimeMillis();
@@ -622,7 +635,7 @@ public class VActivityManagerService extends IActivityManager.Stub {
                                 PendingServiceOperation.Type.UNBIND,
                                 "unbind " + ComponentUtils.toComponentName(r.serviceInfo),
                                 () -> r.process.client.scheduleUnbindService(
-                                        r, bindRecord.intent), null);
+                                        r, bindRecord.getBindToken(), bindRecord.intent), null);
                     }
                 }
             }
@@ -640,60 +653,80 @@ public class VActivityManagerService extends IActivityManager.Stub {
     }
 
     @Override
-    public void unbindFinished(IBinder token, Intent service, boolean doRebind, int userId) {
+    public void unbindFinished(IBinder token, IBinder bindToken, Intent service,
+                               boolean doRebind, int userId) {
         final ServiceRecord r;
         final ServiceRecord.IntentBindRecord boundRecord;
-        final ServiceRecord.IntentBindRecord.UnbindResult result;
         boolean queuedWork = false;
         synchronized (this) {
             r = token instanceof ServiceRecord ? (ServiceRecord) token : null;
-            if (r == null || !containsServiceRecordLocked(r) || r.isRetired()) {
+            if (r == null || !containsServiceRecordLocked(r) || r.isRetired()
+                    || r.process.userId != userId) {
                 return;
             }
-            boundRecord = r.peekBinding(service);
+            boundRecord = resolveBinding(r, bindToken, service);
             if (boundRecord == null) {
                 return;
             }
-            result = boundRecord.finishUnbind(doRebind);
-            if (result == ServiceRecord.IntentBindRecord.UnbindResult.REBIND) {
-                queuedWork |= enqueueServiceOperation(r.process,
-                        PendingServiceOperation.Type.REBIND,
-                        "rebind-finished " + ComponentUtils.toComponentName(r.serviceInfo),
-                        () -> {
-                            if (isServiceDispatchValid(r.process, r)
-                                    && boundRecord.hasPublishedBinder()) {
-                                r.process.client.scheduleBindService(
-                                        r, boundRecord.intent, true, 0);
-                            }
-                        }, reason -> boundRecord.setDoRebind(true));
-                final ComponentName component = ComponentUtils.toComponentName(r.serviceInfo);
-                for (IServiceConnection connection : boundRecord.snapshotConnections()) {
-                    queuedWork |= enqueueServiceOperation(r.process,
-                            PendingServiceOperation.Type.CONNECT,
-                            "reconnect " + component,
-                            () -> {
-                                if (boundRecord.hasPublishedBinder()
-                                        && boundRecord.containConnection(connection)) {
-                                    connectService(connection, component, boundRecord, false);
-                                }
-                            }, null);
-                }
-            } else if (result == ServiceRecord.IntentBindRecord.UnbindResult.BIND) {
-                queuedWork |= enqueueServiceOperation(r.process,
-                        PendingServiceOperation.Type.BIND,
-                        "bind-after-unbind " + ComponentUtils.toComponentName(r.serviceInfo),
-                        () -> {
-                            if (isServiceDispatchValid(r.process, r)
-                                    && boundRecord.shouldDispatchBind()) {
-                                r.process.client.scheduleBindService(
-                                        r, boundRecord.intent, false, 0);
-                            }
-                        }, reason -> boundRecord.bindRequestFailed());
-            }
+            queuedWork = finishUnbindLocked(r, boundRecord, doRebind);
         }
         if (queuedWork) {
             drainProcessLifecycle(r.process);
         }
+    }
+
+    private ServiceRecord.IntentBindRecord resolveBinding(ServiceRecord service,
+                                                           IBinder bindToken,
+                                                           Intent intent) {
+        if (bindToken != null) {
+            return service.peekBinding(bindToken);
+        }
+        return intent != null ? service.peekBinding(intent) : null;
+    }
+
+    private boolean finishUnbindLocked(ServiceRecord service,
+                                       ServiceRecord.IntentBindRecord binding,
+                                       boolean doRebind) {
+        boolean queuedWork = false;
+        ServiceRecord.IntentBindRecord.UnbindResult result = binding.finishUnbind(doRebind);
+        if (result == ServiceRecord.IntentBindRecord.UnbindResult.REBIND) {
+            queuedWork |= enqueueServiceOperation(service.process,
+                    PendingServiceOperation.Type.REBIND,
+                    "rebind-finished " + ComponentUtils.toComponentName(service.serviceInfo),
+                    () -> {
+                        if (isServiceDispatchValid(service.process, service)
+                                && binding.hasPublishedBinder()) {
+                            service.process.client.scheduleBindService(
+                                    service, binding.getBindToken(), binding.intent,
+                                    true, 0, binding.nextBindSequence());
+                        }
+                    }, reason -> binding.setDoRebind(true));
+            final ComponentName component = ComponentUtils.toComponentName(service.serviceInfo);
+            for (IServiceConnection connection : binding.snapshotConnections()) {
+                queuedWork |= enqueueServiceOperation(service.process,
+                        PendingServiceOperation.Type.CONNECT,
+                        "reconnect " + component,
+                        () -> {
+                            if (binding.hasPublishedBinder()
+                                    && binding.containConnection(connection)) {
+                                connectService(connection, component, binding, false);
+                            }
+                        }, null);
+            }
+        } else if (result == ServiceRecord.IntentBindRecord.UnbindResult.BIND) {
+            queuedWork |= enqueueServiceOperation(service.process,
+                    PendingServiceOperation.Type.BIND,
+                    "bind-after-unbind " + ComponentUtils.toComponentName(service.serviceInfo),
+                    () -> {
+                        if (isServiceDispatchValid(service.process, service)
+                                && binding.shouldDispatchBind()) {
+                            service.process.client.scheduleBindService(
+                                    service, binding.getBindToken(), binding.intent,
+                                    false, 0, binding.nextBindSequence());
+                        }
+                    }, reason -> binding.bindRequestFailed());
+        }
+        return queuedWork;
     }
 
 
@@ -705,15 +738,26 @@ public class VActivityManagerService extends IActivityManager.Stub {
 
     @Override
     public void serviceDoneExecuting(IBinder token, int type, int startId, int res, int userId) {
+        ServiceRecord r;
+        boolean queuedWork = false;
         synchronized (this) {
-            ServiceRecord r = token instanceof ServiceRecord ? (ServiceRecord) token : null;
-            if (r == null) {
+            r = token instanceof ServiceRecord ? (ServiceRecord) token : null;
+            if (r == null || r.process.userId != userId) {
                 return;
             }
             if (ActivityManagerCompat.SERVICE_DONE_EXECUTING_STOP == type) {
                 r.retire();
                 removeRecord(r);
+            } else if (ActivityManagerCompat.SERVICE_DONE_EXECUTING_UNBIND == type
+                    && containsServiceRecordLocked(r) && !r.isRetired()) {
+                ServiceRecord.IntentBindRecord binding = r.peekUnbindInFlight();
+                if (binding != null) {
+                    queuedWork = finishUnbindLocked(r, binding, false);
+                }
             }
+        }
+        if (queuedWork) {
+            drainProcessLifecycle(r.process);
         }
     }
 
@@ -736,17 +780,19 @@ public class VActivityManagerService extends IActivityManager.Stub {
     }
 
     @Override
-    public void publishService(IBinder token, Intent intent, IBinder service, int userId) {
+    public void publishService(IBinder token, IBinder bindToken, Intent intent,
+                               IBinder service, int userId) {
         final ServiceRecord r;
         final ServiceRecord.IntentBindRecord boundRecord;
         final List<IServiceConnection> connections;
         final ComponentName component;
         synchronized (this) {
             r = token instanceof ServiceRecord ? (ServiceRecord) token : null;
-            if (r == null || !containsServiceRecordLocked(r) || r.isRetired()) {
+            if (r == null || !containsServiceRecordLocked(r) || r.isRetired()
+                    || r.process.userId != userId) {
                 return;
             }
-            boundRecord = r.peekBinding(intent);
+            boundRecord = resolveBinding(r, bindToken, intent);
             if (boundRecord == null) {
                 return;
             }
@@ -789,8 +835,7 @@ public class VActivityManagerService extends IActivityManager.Stub {
         return enqueueServiceOperation(record.process, PendingServiceOperation.Type.STOP,
                 "stop " + ComponentUtils.toComponentName(record.serviceInfo) + " reason=" + reason,
                 () -> {
-                    if (record.process.appThread != null
-                            && record.process.appThread.asBinder().isBinderAlive()) {
+                    if (isProcessEndpointAlive(record.process)) {
                         record.process.client.scheduleStopService(record);
                     }
                 }, null);
@@ -809,8 +854,7 @@ public class VActivityManagerService extends IActivityManager.Stub {
             if ((state != ProcessLifecycle.State.STARTING
                     && state != ProcessLifecycle.State.READY)
                     || !containsServiceRecordLocked(record) || record.isRetired()
-                    || record.process != process || process.appThread == null
-                    || !process.appThread.asBinder().isBinderAlive()) {
+                    || record.process != process || !isProcessEndpointActive(process)) {
                 return false;
             }
         }
@@ -827,8 +871,7 @@ public class VActivityManagerService extends IActivityManager.Stub {
     private boolean isServiceDispatchValid(ProcessRecord process, ServiceRecord record) {
         synchronized (this) {
             return process.lifecycle.state() == ProcessLifecycle.State.READY
-                    && process.appThread != null
-                    && process.appThread.asBinder().isBinderAlive()
+                    && isProcessEndpointAlive(process)
                     && record.process == process
                     && !record.isRetired()
                     && containsServiceRecordLocked(record);
@@ -890,7 +933,15 @@ public class VActivityManagerService extends IActivityManager.Stub {
                 return;
             }
             process.terminalCleanupStarted = true;
-            mLogicalProcessOwners.remove(logicalKey(process), process.generation, process);
+            if (process.osIsolatedWorker) {
+                mIsolatedServiceOwners.remove(process.isolatedOwnerKey,
+                        process.generation, process);
+                if (process.client instanceof IsolatedGuestClient) {
+                    mIsolatedClients.remove((IsolatedGuestClient) process.client);
+                }
+            } else {
+                mLogicalProcessOwners.remove(logicalKey(process), process.generation, process);
+            }
             synchronized (mProcessNames) {
                 if (mProcessNames.get(process.processName, process.vuid) == process) {
                     mProcessNames.remove(process.processName, process.vuid);
@@ -925,11 +976,15 @@ public class VActivityManagerService extends IActivityManager.Stub {
                 notifyServiceDisconnected(connection, component);
             }
         }
-        mMainStack.processDied(process);
+        if (!process.osIsolatedWorker) {
+            mMainStack.processDied(process);
+        }
         VLog.w(TAG, "process-lifecycle-cleanup pid=" + process.pid
                 + " generation=" + process.generation + " reason=" + reason
                 + " services=" + ownedServices.size());
-        if (terminateProcess && process.pid > 0) {
+        if (process.osIsolatedWorker && process.client instanceof IsolatedGuestClient) {
+            ((IsolatedGuestClient) process.client).close();
+        } else if (terminateProcess && process.pid > 0) {
             killProcess(process.pid);
         }
     }
@@ -951,7 +1006,7 @@ public class VActivityManagerService extends IActivityManager.Stub {
                         PendingServiceOperation.Type.UNBIND,
                         "unbind-dead-client " + ComponentUtils.toComponentName(service.serviceInfo),
                         () -> service.process.client.scheduleUnbindService(
-                                service, binding.intent), null);
+                                service, binding.getBindToken(), binding.intent), null);
             }
             if (service.startId <= 0 && service.getConnectionCount() <= 0) {
                 service.retire();
@@ -1001,7 +1056,7 @@ public class VActivityManagerService extends IActivityManager.Stub {
         synchronized (this) {
             r = token instanceof ServiceRecord ? (ServiceRecord) token : null;
             if (r == null || r.isRetired() || !containsServiceRecordLocked(r)
-                    || mProcessNames.get(r.process.processName, r.process.vuid) != r.process) {
+                    || !isCurrentProcessOwner(r.process)) {
                 return;
             }
             packageName = r.serviceInfo.packageName;
@@ -1263,30 +1318,104 @@ public class VActivityManagerService extends IActivityManager.Stub {
     }
 
     ProcessRecord startProcessIfNeedLocked(String processName, int userId, String packageName) {
+        return startProcessIfNeedLocked(processName, userId, packageName, false);
+    }
+
+    private ProcessRecord startProcessIfNeedLocked(String processName, int userId,
+                                                    String packageName,
+                                                    boolean isolatedProcess) {
         mProcessStartGate.enter();
         try {
-            return startProcessWithGateHeld(processName, userId, packageName);
+            return startProcessWithGateHeld(processName, userId, packageName, isolatedProcess);
         } finally {
             mProcessStartGate.exit();
         }
     }
 
     private ProcessRecord tryStartProcessForBinding(String processName, int userId,
-                                                     String packageName) {
+                                                     String packageName,
+                                                     boolean isolatedProcess) {
         if (!mProcessStartGate.tryEnter()) {
             VLog.d(TAG, "Skipping contended service process start package=" + packageName
                     + " process=" + processName + " user=" + userId);
             return null;
         }
         try {
-            return startProcessWithGateHeld(processName, userId, packageName);
+            return startProcessWithGateHeld(processName, userId, packageName, isolatedProcess);
         } finally {
             mProcessStartGate.exit();
         }
     }
 
+    private ProcessRecord startIsolatedServiceProcess(ServiceInfo serviceInfo, int userId) {
+        PackageSetting setting = PackageCacheManager.getSetting(serviceInfo.packageName);
+        ApplicationInfo info = VPackageManagerService.get().getApplicationInfo(
+                serviceInfo.packageName, 0, userId);
+        if (setting == null || info == null) {
+            return null;
+        }
+        int vuid = VUserHandle.getUid(userId, setting.appId);
+        LogicalProcessKey key = isolatedServiceKey(vuid, serviceInfo);
+        synchronized (this) {
+            LogicalProcessOwnerRegistry.OwnerSnapshot<ProcessRecord> existing =
+                    mIsolatedServiceOwners.find(key);
+            if (existing != null && isIsolatedOwnerAlive(existing.owner())) {
+                return existing.owner();
+            }
+            LogicalProcessOwnerRegistry.ReservationResult<ProcessRecord> reserved = null;
+            for (int slot = 0;
+                    slot < com.lody.virtual.client.isolated.IsolatedWorkerSlots.SLOT_COUNT;
+                    slot++) {
+                LogicalProcessOwnerRegistry.ReservationResult<ProcessRecord> candidate =
+                        mIsolatedServiceOwners.reserve(key, slot);
+                if (candidate.status()
+                        == LogicalProcessOwnerRegistry.ReservationStatus.EXISTING_OWNER) {
+                    return candidate.existingOwner().owner();
+                }
+                if (candidate.status()
+                        == LogicalProcessOwnerRegistry.ReservationStatus.RESERVED) {
+                    reserved = candidate;
+                    break;
+                }
+            }
+            if (reserved == null) {
+                VLog.e(TAG, "No real isolated worker slot available for " + key);
+                return null;
+            }
+            LogicalProcessOwnerRegistry.Reservation reservation = reserved.reservation();
+            ProcessRecord process = new ProcessRecord(info, serviceInfo.processName, vuid,
+                    reservation.slot(), reservation.generation());
+            process.osIsolatedWorker = true;
+            process.isolatedOwnerKey = key;
+            process.pkgList.add(info.packageName);
+            IsolatedGuestClient client = new IsolatedGuestClient(
+                    VirtualCore.get().getContext(), reservation.slot(), userId, this);
+            process.client = client;
+            process.appThread = client;
+            LogicalProcessOwnerRegistry.ClaimResult<ProcessRecord> claim =
+                    mIsolatedServiceOwners.claim(reservation, process);
+            if (claim.status() != LogicalProcessOwnerRegistry.ClaimStatus.CLAIMED
+                    && claim.status()
+                    != LogicalProcessOwnerRegistry.ClaimStatus.ALREADY_OWNED) {
+                mIsolatedServiceOwners.cancel(reservation);
+                return null;
+            }
+            mIsolatedClients.put(client, process);
+            if (!client.start()) {
+                mIsolatedClients.remove(client);
+                mIsolatedServiceOwners.remove(key, process.generation, process);
+                return null;
+            }
+            VLog.i(TAG, "isolated-worker-reserved key=" + key
+                    + " slot=" + reservation.slot()
+                    + " generation=" + reservation.generation());
+            return process;
+        }
+    }
+
     private ProcessRecord startProcessWithGateHeld(String processName, int userId,
-                                                    String packageName) {
+                                                    String packageName,
+                                                    boolean isolatedProcess) {
         PackageSetting ps = PackageCacheManager.getSetting(packageName);
         ApplicationInfo info = VPackageManagerService.get().getApplicationInfo(
                 packageName, 0, userId);
@@ -1315,8 +1444,15 @@ public class VActivityManagerService extends IActivityManager.Stub {
             return null;
         }
         int vpid = reserved.reservation().slot();
+        int reportedUidOverride = IsolatedProcessUidPolicy.reportedUidOverride(
+                uid, isolatedProcess);
+        if (isolatedProcess) {
+            VLog.i(TAG, "starting isolated guest process=" + processName
+                    + " package=" + packageName + " user=" + userId
+                    + " reportedUid=" + reportedUidOverride);
+        }
         ProcessRecord app = performStartProcessLocked(uid, vpid, info, processName,
-                reserved.reservation());
+                reportedUidOverride, reserved.reservation());
         if (app != null) {
             app.pkgList.add(info.packageName);
         }
@@ -1345,14 +1481,22 @@ public class VActivityManagerService extends IActivityManager.Stub {
 
     private ProcessRecord performStartProcessLocked(int vuid, int vpid, ApplicationInfo info,
             String processName, LogicalProcessOwnerRegistry.Reservation reservation) {
+        return performStartProcessLocked(vuid, vpid, info, processName,
+                IsolatedProcessUidPolicy.reportedUidOverride(vuid, false), reservation);
+    }
+
+    private ProcessRecord performStartProcessLocked(int vuid, int vpid, ApplicationInfo info,
+            String processName, int reportedUidOverride,
+            LogicalProcessOwnerRegistry.Reservation reservation) {
         ProcessRecord app = new ProcessRecord(info, processName, vuid, vpid,
-                reservation.generation());
+                reservation.generation(), reportedUidOverride);
         Bundle extras = new Bundle();
         BundleCompat.putBinder(extras, StubProcessContract.KEY_SERVER_TOKEN, app);
         extras.putInt(StubProcessContract.KEY_VUID, vuid);
         extras.putString(StubProcessContract.KEY_PROCESS_NAME, processName);
         extras.putString(StubProcessContract.KEY_PACKAGE_NAME, info.packageName);
         extras.putLong(StubProcessContract.KEY_GENERATION, reservation.generation());
+        extras.putInt(StubProcessContract.KEY_REPORTED_UID_OVERRIDE, reportedUidOverride);
         Bundle res = callStubProcessInitWithRetry(vpid, reservation, app, extras);
         if (res == null || !res.getBoolean(StubProcessContract.KEY_ACCEPTED, false)) {
             mLogicalProcessOwners.cancel(reservation);
@@ -1513,7 +1657,9 @@ public class VActivityManagerService extends IActivityManager.Stub {
                 || !reservation.key().processName().equals(
                 response.getString(StubProcessContract.KEY_PROCESS_NAME))
                 || response.getLong(StubProcessContract.KEY_GENERATION, -1)
-                != reservation.generation()) {
+                != reservation.generation()
+                || response.getInt(StubProcessContract.KEY_REPORTED_UID_OVERRIDE,
+                IsolatedProcessUidPolicy.NO_OVERRIDE) != record.reportedUidOverride) {
             VLog.e(TAG, "Rejecting inconsistent Stub init response key=" + reservation.key()
                     + " slot=" + reservation.slot() + " pid=" + pid);
             return false;
@@ -1539,7 +1685,15 @@ public class VActivityManagerService extends IActivityManager.Stub {
                 && record.processName.equals(
                 response.getString(StubProcessContract.KEY_PROCESS_NAME))
                 && record.generation
-                == response.getLong(StubProcessContract.KEY_GENERATION, -1);
+                == response.getLong(StubProcessContract.KEY_GENERATION, -1)
+                && record.reportedUidOverride == response.getInt(
+                StubProcessContract.KEY_REPORTED_UID_OVERRIDE,
+                IsolatedProcessUidPolicy.NO_OVERRIDE);
+    }
+
+    private static boolean isIsolatedProcess(ServiceInfo serviceInfo) {
+        return serviceInfo != null
+                && (serviceInfo.flags & ServiceInfo.FLAG_ISOLATED_PROCESS) != 0;
     }
 
     private boolean isExpectedRunningStub(int pid, int vpid) {
@@ -1564,6 +1718,40 @@ public class VActivityManagerService extends IActivityManager.Stub {
         return new LogicalProcessKey(record.vuid, record.info.packageName, record.processName);
     }
 
+    private static LogicalProcessKey isolatedServiceKey(int vuid, ServiceInfo serviceInfo) {
+        return new LogicalProcessKey(vuid, serviceInfo.packageName,
+                serviceInfo.processName + "#" + serviceInfo.name);
+    }
+
+    private boolean isCurrentProcessOwner(ProcessRecord record) {
+        if (record.osIsolatedWorker) {
+            LogicalProcessOwnerRegistry.OwnerSnapshot<ProcessRecord> owner =
+                    mIsolatedServiceOwners.find(record.isolatedOwnerKey);
+            return owner != null && owner.owner() == record
+                    && owner.generation() == record.generation;
+        }
+        return mProcessNames.get(record.processName, record.vuid) == record;
+    }
+
+    private static boolean isProcessEndpointAlive(ProcessRecord process) {
+        if (process == null || process.appThread == null) {
+            return false;
+        }
+        if (process.osIsolatedWorker) {
+            return process.client instanceof IsolatedGuestClient
+                    && ((IsolatedGuestClient) process.client).isWorkerAlive();
+        }
+        return process.appThread.asBinder().isBinderAlive();
+    }
+
+    private static boolean isProcessEndpointActive(ProcessRecord process) {
+        if (process != null && process.osIsolatedWorker
+                && process.client instanceof IsolatedGuestClient) {
+            return ((IsolatedGuestClient) process.client).isEndpointActive();
+        }
+        return isProcessEndpointAlive(process);
+    }
+
     private static boolean isLogicalOwnerAlive(ProcessRecord record) {
         if (record == null || record.terminalCleanupStarted || record.client == null) {
             return false;
@@ -1572,6 +1760,89 @@ public class VActivityManagerService extends IActivityManager.Stub {
         IBinder binder = record.client.asBinder();
         return (state == ProcessLifecycle.State.STARTING || state == ProcessLifecycle.State.READY)
                 && binder != null && binder.isBinderAlive() && binder.pingBinder();
+    }
+
+    private static boolean isIsolatedOwnerAlive(ProcessRecord record) {
+        if (record == null || record.terminalCleanupStarted
+                || !(record.client instanceof IsolatedGuestClient)) {
+            return false;
+        }
+        ProcessLifecycle.State state = record.lifecycle.state();
+        return (state == ProcessLifecycle.State.STARTING || state == ProcessLifecycle.State.READY)
+                && ((IsolatedGuestClient) record.client).isEndpointActive();
+    }
+
+    @Override
+    public void onReady(IsolatedGuestClient client, int pid, int uid) {
+        ProcessRecord process;
+        synchronized (this) {
+            process = mIsolatedClients.get(client);
+            if (process == null || process.client != client || process.terminalCleanupStarted) {
+                return;
+            }
+            process.pid = pid;
+            process.physicalUid = uid;
+        }
+        if (process.lifecycle.markReady(process.generation)) {
+            VLog.i(TAG, "isolated-worker-ready key=" + process.isolatedOwnerKey
+                    + " slot=" + process.vpid + " pid=" + pid + " uid=" + uid
+                    + " generation=" + process.generation);
+            drainProcessLifecycle(process);
+        }
+    }
+
+    @Override
+    public void onCreateFailed(IsolatedGuestClient client, String detail) {
+        ProcessRecord process;
+        synchronized (this) {
+            process = mIsolatedClients.get(client);
+        }
+        if (process != null) {
+            VLog.e(TAG, "isolated-worker-create-failed key=" + process.isolatedOwnerKey
+                    + " detail=" + detail);
+            failProcessGeneration(process,
+                    ProcessLifecycle.TerminalReason.APPLICATION_BIND_FAILED,
+                    "isolated-service-create-failed");
+        }
+    }
+
+    @Override
+    public void onWorkerDied(IsolatedGuestClient client) {
+        ProcessRecord process;
+        synchronized (this) {
+            process = mIsolatedClients.get(client);
+        }
+        if (process != null && process.lifecycle.markDead(process.generation,
+                ProcessLifecycle.TerminalReason.PROCESS_DIED)) {
+            cleanupProcessGeneration(process, "isolated-worker-died", false);
+        }
+    }
+
+    @Override
+    public void onServicePublished(IBinder token, IBinder bindToken, Intent intent,
+            IBinder service, int userId) {
+        publishService(token, bindToken, intent, service, userId);
+    }
+
+    @Override
+    public void onServiceUnbound(IBinder token, IBinder bindToken, Intent intent,
+            boolean doRebind, int userId) {
+        unbindFinished(token, bindToken, intent, doRebind, userId);
+    }
+
+    @Override
+    public void onServiceStopped(IBinder token, int userId) {
+        ProcessRecord process = null;
+        if (token instanceof ServiceRecord) {
+            process = ((ServiceRecord) token).process;
+        }
+        serviceDoneExecuting(token, ActivityManagerCompat.SERVICE_DONE_EXECUTING_STOP,
+                0, 0, userId);
+        if (process != null && process.osIsolatedWorker
+                && process.lifecycle.markDead(process.generation,
+                ProcessLifecycle.TerminalReason.PROCESS_DIED)) {
+            cleanupProcessGeneration(process, "isolated-service-stopped", false);
+        }
     }
 
     @Override

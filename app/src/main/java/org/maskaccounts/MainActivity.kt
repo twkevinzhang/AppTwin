@@ -12,6 +12,7 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.lifecycle.ViewModelProvider
+import com.lody.virtual.client.isolated.IsolatedWorkerProbe
 import org.maskaccounts.runtime.GroupAppRuntimeSupport
 import org.maskaccounts.ui.MaskAccountsApp
 
@@ -38,6 +39,16 @@ class MainActivity : ComponentActivity() {
             )
         }
         if (BuildConfig.DEBUG) {
+            if (intent.action == ACTION_PROBE_ISOLATED_WORKER) {
+                IsolatedWorkerProbe.run(
+                    this,
+                    SHOPEE_PACKAGE,
+                    SHOPEE_ISOLATED_SERVICE,
+                    SHOPEE_NATIVE_LIBRARY,
+                    intent.getBooleanExtra(EXTRA_LOAD_NATIVE, false),
+                    intent.getBooleanExtra(EXTRA_CREATE_GUEST_SERVICE, false),
+                )
+            }
             val debugPackage = when (intent.action) {
                 ACTION_LAUNCH_LINE_CLONE -> GroupAppRuntimeSupport.LINE_PACKAGE
                 ACTION_LAUNCH_CLONE -> intent.getStringExtra(EXTRA_PACKAGE_NAME)
@@ -91,7 +102,13 @@ class MainActivity : ComponentActivity() {
     private companion object {
         const val ACTION_LAUNCH_LINE_CLONE = "org.maskaccounts.action.LAUNCH_LINE_CLONE"
         const val ACTION_LAUNCH_CLONE = "org.maskaccounts.action.LAUNCH_CLONE"
+        const val ACTION_PROBE_ISOLATED_WORKER = "org.maskaccounts.action.PROBE_ISOLATED_WORKER"
         const val EXTRA_PACKAGE_NAME = "packageName"
+        const val EXTRA_LOAD_NATIVE = "loadNative"
+        const val EXTRA_CREATE_GUEST_SERVICE = "createGuestService"
+        const val SHOPEE_PACKAGE = "com.shopee.tw"
+        const val SHOPEE_ISOLATED_SERVICE = "com.shopee.shpssdk.wvvvuvww"
+        const val SHOPEE_NATIVE_LIBRARY = "libshpssdk.so"
         val PACKAGE_CHANGE_ACTIONS = setOf(
             Intent.ACTION_PACKAGE_ADDED,
             Intent.ACTION_PACKAGE_REPLACED,

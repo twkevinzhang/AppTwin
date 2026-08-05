@@ -32,11 +32,11 @@ import com.lody.virtual.client.core.CrashHandler;
 import com.lody.virtual.client.core.InvocationStubManager;
 import com.lody.virtual.client.core.VirtualCore;
 import com.lody.virtual.client.env.SpecialComponentList;
-import com.lody.virtual.client.stub.StubProcessKeepAliveService;
 import com.lody.virtual.client.env.VirtualRuntime;
 import com.lody.virtual.client.fixer.ContextFixer;
 import com.lody.virtual.client.hook.delegate.AppInstrumentation;
 import com.lody.virtual.client.hook.providers.ProviderHook;
+import com.lody.virtual.client.hook.providers.SettingsProviderHook;
 import com.lody.virtual.client.hook.proxies.am.HCallbackStub;
 import com.lody.virtual.client.hook.secondary.ProxyServiceFactory;
 import com.lody.virtual.client.ipc.VActivityManager;
@@ -113,6 +113,7 @@ public final class VClientImpl extends IVClient.Stub {
     private Instrumentation mInstrumentation = AppInstrumentation.getDefault();
     private IBinder token;
     private int vuid;
+    private int reportedUidOverride = -1;
     private VDeviceInfo deviceInfo;
     private AppBindData mBoundApplication;
     private Application mInitialApplication;
@@ -167,6 +168,10 @@ public final class VClientImpl extends IVClient.Stub {
         return VUserHandle.getAppId(vuid);
     }
 
+    public int getBaseReportedUid() {
+        return reportedUidOverride >= 0 ? reportedUidOverride : getBaseVUid();
+    }
+
     public ClassLoader getClassLoader(ApplicationInfo appInfo) {
         Context context = createPackageContext(appInfo.packageName);
         return context.getClassLoader();
@@ -206,17 +211,19 @@ public final class VClientImpl extends IVClient.Stub {
     }
 
     @Override
-    public void scheduleBindService(IBinder serviceToken, Intent intent, boolean rebind,
-                                    int processState) throws RemoteException {
+    public void scheduleBindService(IBinder serviceToken, IBinder bindToken, Intent intent,
+                                    boolean rebind, int processState, long bindSeq)
+            throws RemoteException {
         IApplicationThreadCompat.scheduleBindService(
-                localApplicationThread(), serviceToken, intent, rebind, processState);
+                localApplicationThread(), serviceToken, bindToken, intent, rebind,
+                processState, bindSeq);
     }
 
     @Override
-    public void scheduleUnbindService(IBinder serviceToken, Intent intent)
+    public void scheduleUnbindService(IBinder serviceToken, IBinder bindToken, Intent intent)
             throws RemoteException {
         IApplicationThreadCompat.scheduleUnbindService(
-                localApplicationThread(), serviceToken, intent);
+                localApplicationThread(), serviceToken, bindToken, intent);
     }
 
     @Override
@@ -232,13 +239,16 @@ public final class VClientImpl extends IVClient.Stub {
     }
 
     public StubProcessOwner.ClaimResult claimProcess(IBinder token, int vuid, String packageName,
-                                                     String processName, long generation) {
+                                                     String processName, long generation,
+                                                     int reportedUidOverride) {
         StubProcessOwner.ClaimResult result = mProcessOwner.claim(vuid, packageName, processName,
-                generation, token);
+                generation, reportedUidOverride, token);
         if (result.isAccepted()) {
             StubProcessOwner.Identity identity = result.getCurrentIdentity();
             this.token = (IBinder) identity.getServerToken();
             this.vuid = identity.getVuid();
+            this.reportedUidOverride = identity.getReportedUidOverride();
+            NativeEngine.configureUidOverride(this.reportedUidOverride);
         }
         return result;
     }
@@ -345,6 +355,11 @@ public final class VClientImpl extends IVClient.Stub {
         }
         if (VASettings.ENABLE_IO_REDIRECT) {
             startIOUniformer();
+        }
+        if (reportedUidOverride >= 0) {
+            VLog.i(TAG, "native UID emulation process=" + processName
+                    + " reported=" + reportedUidOverride
+                    + " nativeProbe=" + NativeEngine.readUidForProbe());
         }
         NativeEngine.launchEngine();
         Object mainThread = VirtualCore.mainThread();
@@ -459,19 +474,28 @@ public final class VClientImpl extends IVClient.Stub {
             }
         }
         VirtualCore.get().getComponentDelegate().afterApplicationCreate(mInitialApplication);
-        ensureGoogleMainProcessKeepAlive(packageName, processName);
+        ensureGoogleServiceProcessKeepAlive(packageName, processName);
         VActivityManager.get().appDoneExecuting(token, true);
     }
 
-    private void ensureGoogleMainProcessKeepAlive(String packageName, String processName) {
+    private void ensureGoogleServiceProcessKeepAlive(String packageName, String processName) {
         if (!GoogleProcessKeepAlivePolicy.shouldKeepAlive(packageName, processName)) {
             return;
         }
+        String hostPackage = VirtualCore.get().getHostPkg();
+        String serviceClassName = GoogleProcessKeepAlivePolicy.serviceClassNameForProcess(
+                hostPackage, VirtualCore.get().getProcessName(), VASettings.STUB_COUNT);
+        if (serviceClassName == null) {
+            VLog.e(TAG, "Unable to resolve keep-alive service for host process "
+                    + VirtualCore.get().getProcessName());
+            return;
+        }
         Intent keepAlive = new Intent()
-                .setClassName(VirtualCore.get().getHostPkg(),
-                        StubProcessKeepAliveService.C0.class.getName());
+                .setClassName(hostPackage, serviceClassName);
         ComponentName started = VirtualCore.get().getContext().startService(keepAlive);
-        VLog.i(TAG, "Google main-process keep-alive started: " + started);
+        VLog.i(TAG, "Google service-process keep-alive started guest=" + packageName
+                + "/" + processName + " host=" + VirtualCore.get().getProcessName()
+                + " component=" + started);
     }
 
     private void fixWeChatRecovery(Application app) {
@@ -786,6 +810,18 @@ public final class VClientImpl extends IVClient.Stub {
         }
         cache = Settings.Secure.sNameValueCache.get();
         if (cache != null) {
+            Object readableFields = Settings.NameValueCache.mReadableFields != null
+                    ? Settings.NameValueCache.mReadableFields.get(cache) : null;
+            boolean allowed = SettingsProviderHook.allowClientSideRead(
+                    readableFields, "enabled_input_methods");
+            Object maxTargetFields = Settings.NameValueCache.mReadableFieldsWithMaxTargetSdk != null
+                    ? Settings.NameValueCache.mReadableFieldsWithMaxTargetSdk.get(cache) : null;
+            boolean targetLimitRaised = SettingsProviderHook.removeClientSideTargetSdkLimit(
+                    maxTargetFields, "enabled_input_methods");
+            VLog.i(TAG, "Android17 secure-setting readable override fields="
+                    + (readableFields == null ? "null" : readableFields.getClass().getName())
+                    + " readableChanged=" + allowed
+                    + " maxTargetChanged=" + targetLimitRaised);
             clearContentProvider(cache);
         }
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.JELLY_BEAN_MR1 && Settings.Global.TYPE != null) {

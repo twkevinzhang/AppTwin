@@ -26,14 +26,16 @@ public final class StubProcessOwner {
         private final String packageName;
         private final String processName;
         private final long generation;
+        private final int reportedUidOverride;
         private final Object serverToken;
 
         private Identity(int vuid, String packageName, String processName, long generation,
-                         Object serverToken) {
+                         int reportedUidOverride, Object serverToken) {
             this.vuid = vuid;
             this.packageName = packageName;
             this.processName = processName;
             this.generation = generation;
+            this.reportedUidOverride = reportedUidOverride;
             this.serverToken = serverToken;
         }
 
@@ -53,6 +55,10 @@ public final class StubProcessOwner {
             return generation;
         }
 
+        public int getReportedUidOverride() {
+            return reportedUidOverride;
+        }
+
         public Object getServerToken() {
             return serverToken;
         }
@@ -66,9 +72,10 @@ public final class StubProcessOwner {
 
         private boolean exactlyMatches(int requestedVuid, String requestedPackage,
                                        String requestedProcess, long requestedGeneration,
-                                       Object requestedToken) {
+                                       int requestedReportedUidOverride, Object requestedToken) {
             return hasSameLogicalProcess(requestedVuid, requestedPackage, requestedProcess)
                     && generation == requestedGeneration
+                    && reportedUidOverride == requestedReportedUidOverride
                     && tokensEqual(serverToken, requestedToken);
         }
     }
@@ -110,17 +117,24 @@ public final class StubProcessOwner {
 
     public synchronized ClaimResult claim(int vuid, String packageName, String processName,
                                           long generation, Object serverToken) {
+        return claim(vuid, packageName, processName, generation, -1, serverToken);
+    }
+
+    public synchronized ClaimResult claim(int vuid, String packageName, String processName,
+                                          long generation, int reportedUidOverride,
+                                          Object serverToken) {
         if (serverToken == null || isEmpty(packageName) || isEmpty(processName)) {
             return result(false, REASON_INVALID_REQUEST);
         }
 
         if (currentIdentity == null) {
-            currentIdentity = new Identity(vuid, packageName, processName, generation, serverToken);
+            currentIdentity = new Identity(vuid, packageName, processName, generation,
+                    reportedUidOverride, serverToken);
             return result(true, REASON_ACCEPTED);
         }
 
         if (currentIdentity.exactlyMatches(vuid, packageName, processName, generation,
-                serverToken)) {
+                reportedUidOverride, serverToken)) {
             return result(true, REASON_IDEMPOTENT);
         }
 
@@ -136,7 +150,8 @@ public final class StubProcessOwner {
             return result(false, REASON_TOKEN_STILL_ALIVE);
         }
 
-        currentIdentity = new Identity(vuid, packageName, processName, generation, serverToken);
+        currentIdentity = new Identity(vuid, packageName, processName, generation,
+                reportedUidOverride, serverToken);
         return result(true, REASON_REATTACHED);
     }
 

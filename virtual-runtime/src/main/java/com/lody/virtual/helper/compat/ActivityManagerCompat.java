@@ -20,6 +20,10 @@ public class ActivityManagerCompat {
 	public static final int SERVICE_DONE_EXECUTING_START = 1;
 	/** Type for IActivityManager.serviceDoneExecuting: done stopping (destroying) service */
 	public static final int SERVICE_DONE_EXECUTING_STOP = 2;
+	/** Type for IActivityManager.serviceDoneExecuting: done with an onRebind call. */
+	public static final int SERVICE_DONE_EXECUTING_REBIND = 3;
+	/** Type for IActivityManager.serviceDoneExecuting: onUnbind returned false. */
+	public static final int SERVICE_DONE_EXECUTING_UNBIND = 4;
 
 	/**
 	 * Result for IActivityManager.startActivity: an error where the

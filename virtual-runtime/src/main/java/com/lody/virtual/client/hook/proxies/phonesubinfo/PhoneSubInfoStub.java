@@ -23,8 +23,6 @@ public class PhoneSubInfoStub extends BinderInvocationProxy {
 		addMethodProxy(new ReplaceLastPkgMethodProxy("getImeiForSubscriber"));
 		addMethodProxy(new ReplaceCallingPkgMethodProxy("getDeviceSvn"));
 		addMethodProxy(new ReplaceLastPkgMethodProxy("getDeviceSvnUsingSubId"));
-		addMethodProxy(new ReplaceCallingPkgMethodProxy("getSubscriberId"));
-		addMethodProxy(new ReplaceLastPkgMethodProxy("getSubscriberIdForSubscriber"));
 		addMethodProxy(new ReplaceCallingPkgMethodProxy("getGroupIdLevel1"));
 		addMethodProxy(new ReplaceLastPkgMethodProxy("getGroupIdLevel1ForSubscriber"));
 		addMethodProxy(new ReplaceCallingPkgMethodProxy("getLine1Number"));
