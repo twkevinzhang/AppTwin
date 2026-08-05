@@ -96,6 +96,16 @@ public final class VClientImpl extends IVClient.Stub {
     @SuppressLint("StaticFieldLeak")
     private static final VClientImpl gClient = new VClientImpl();
     private final H mH = new H();
+    private final StubProcessOwner mProcessOwner = new StubProcessOwner(new StubProcessOwner.TokenLiveness() {
+        @Override
+        public boolean isAlive(Object token) {
+            if (!(token instanceof IBinder)) {
+                return false;
+            }
+            IBinder binder = (IBinder) token;
+            return binder.isBinderAlive() && binder.pingBinder();
+        }
+    });
     private ConditionVariable mTempLock;
     private Instrumentation mInstrumentation = AppInstrumentation.getDefault();
     private IBinder token;
@@ -181,9 +191,24 @@ public final class VClientImpl extends IVClient.Stub {
         return token;
     }
 
-    public void initProcess(IBinder token, int vuid) {
-        this.token = token;
-        this.vuid = vuid;
+    public StubProcessOwner.ClaimResult claimProcess(IBinder token, int vuid, String packageName,
+                                                     String processName, long generation) {
+        StubProcessOwner.ClaimResult result = mProcessOwner.claim(vuid, packageName, processName,
+                generation, token);
+        if (result.isAccepted()) {
+            StubProcessOwner.Identity identity = result.getCurrentIdentity();
+            this.token = (IBinder) identity.getServerToken();
+            this.vuid = identity.getVuid();
+        }
+        return result;
+    }
+
+    public StubProcessOwner.Identity getProcessOwner() {
+        return mProcessOwner.snapshot();
+    }
+
+    public boolean isGuestBindingStarted() {
+        return mProcessOwner.isGuestBound();
     }
 
     private void handleNewIntent(NewIntentData data) {
@@ -234,6 +259,7 @@ public final class VClientImpl extends IVClient.Stub {
     }
 
     private void bindApplicationNoCheck(String packageName, String processName, ConditionVariable lock) {
+        mProcessOwner.markGuestBound();
         VDeviceInfo deviceInfo = getDeviceInfo();
         if (processName == null) {
             processName = packageName;

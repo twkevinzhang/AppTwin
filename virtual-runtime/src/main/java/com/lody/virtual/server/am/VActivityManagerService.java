@@ -37,6 +37,7 @@ import com.lody.virtual.client.hook.proxies.am.GoogleLocationServicePolicy;
 import com.lody.virtual.client.hook.proxies.location.LocationAccessPolicy;
 import com.lody.virtual.client.ipc.ProviderCall;
 import com.lody.virtual.client.ipc.VNotificationManager;
+import com.lody.virtual.client.stub.StubProcessContract;
 import com.lody.virtual.client.stub.VASettings;
 import com.lody.virtual.helper.collection.ArrayMap;
 import com.lody.virtual.helper.collection.SparseArray;
@@ -83,6 +84,8 @@ public class VActivityManagerService extends IActivityManager.Stub {
 
     private static final boolean BROADCAST_NOT_STARTED_PKG = false;
     private static final long SERVICE_STARTUP_TIMEOUT_MS = 15_000L;
+    private static final int STUB_INIT_MAX_ATTEMPTS = 4;
+    private static final long STUB_INIT_RETRY_DELAY_MS = 100L;
 
     private static final AtomicReference<VActivityManagerService> sService = new AtomicReference<>();
     private static final String TAG = VActivityManagerService.class.getSimpleName();
@@ -91,6 +94,8 @@ public class VActivityManagerService extends IActivityManager.Stub {
     private final ActivityStack mMainStack = new ActivityStack(this);
     private final Set<ServiceRecord> mHistory = new HashSet<ServiceRecord>();
     private final ProcessMap<ProcessRecord> mProcessNames = new ProcessMap<ProcessRecord>();
+    private final LogicalProcessOwnerRegistry<ProcessRecord> mLogicalProcessOwners =
+            new LogicalProcessOwnerRegistry<>(VActivityManagerService::isLogicalOwnerAlive);
     private final PendingIntents mPendingIntents = new PendingIntents();
     private Handler mServiceHandler;
     private ActivityManager am = (ActivityManager) VirtualCore.get().getContext()
@@ -893,6 +898,7 @@ public class VActivityManagerService extends IActivityManager.Stub {
                 return;
             }
             process.terminalCleanupStarted = true;
+            mLogicalProcessOwners.remove(logicalKey(process), process.generation, process);
             synchronized (mProcessNames) {
                 if (mProcessNames.get(process.processName, process.vuid) == process) {
                     mProcessNames.remove(process.processName, process.vuid);
@@ -1057,23 +1063,49 @@ public class VActivityManagerService extends IActivityManager.Stub {
     public void processRestarted(String packageName, String processName, int userId) {
         int callingPid = getCallingPid();
         int appId = VAppManagerService.get().getAppId(packageName);
+        if (appId < 0) {
+            return;
+        }
         int uid = VUserHandle.getUid(userId, appId);
         synchronized (mProcessStartLock) {
-            ProcessRecord app;
-            synchronized (mPidsSelfLocked) {
-                app = findProcessLocked(callingPid);
+            reconcileRunningStubProcessesLocked();
+            int vpid = parseVPid(getProcessName(callingPid));
+            if (vpid < 0 || vpid >= VASettings.STUB_COUNT
+                    || !isExpectedRunningStub(callingPid, vpid)) {
+                VLog.e(TAG, "Rejecting process restart from unexpected pid=" + callingPid
+                        + " process=" + processName);
+                return;
             }
-            if (app == null) {
-                ApplicationInfo appInfo = VPackageManagerService.get().getApplicationInfo(packageName, 0, userId);
-                if (appInfo == null) {
-                    return;
+            LogicalProcessKey key = new LogicalProcessKey(uid, packageName, processName);
+            LogicalProcessOwnerRegistry.OwnerSnapshot<ProcessRecord> existing =
+                    mLogicalProcessOwners.find(key);
+            if (existing != null && isLogicalOwnerAlive(existing.owner())) {
+                if (existing.owner().pid != callingPid) {
+                    VLog.e(TAG, "Killing duplicate process restart key=" + key
+                            + " ownerPid=" + existing.owner().pid
+                            + " newcomerPid=" + callingPid);
+                    killProcess(callingPid);
                 }
-                appInfo.flags |= ApplicationInfo.FLAG_HAS_CODE;
-                String stubProcessName = getProcessName(callingPid);
-                int vpid = parseVPid(stubProcessName);
-                if (vpid != -1) {
-                    performStartProcessLocked(uid, vpid, appInfo, processName);
-                }
+                return;
+            }
+            ApplicationInfo appInfo = VPackageManagerService.get().getApplicationInfo(
+                    packageName, 0, userId);
+            if (appInfo == null) {
+                return;
+            }
+            appInfo.flags |= ApplicationInfo.FLAG_HAS_CODE;
+            LogicalProcessOwnerRegistry.ReservationResult<ProcessRecord> reserved =
+                    mLogicalProcessOwners.reserve(key, vpid);
+            if (reserved.status()
+                    != LogicalProcessOwnerRegistry.ReservationStatus.RESERVED) {
+                VLog.w(TAG, "Rejecting process restart reservation key=" + key
+                        + " slot=" + vpid + " status=" + reserved.status());
+                return;
+            }
+            ProcessRecord app = performStartProcessLocked(uid, vpid, appInfo, processName,
+                    reserved.reservation());
+            if (app != null) {
+                app.pkgList.add(packageName);
             }
         }
     }
@@ -1092,7 +1124,11 @@ public class VActivityManagerService extends IActivityManager.Stub {
 
 
     private String getProcessName(int pid) {
-        for (ActivityManager.RunningAppProcessInfo info : am.getRunningAppProcesses()) {
+        List<ActivityManager.RunningAppProcessInfo> processes = am.getRunningAppProcesses();
+        if (processes == null) {
+            return null;
+        }
+        for (ActivityManager.RunningAppProcessInfo info : processes) {
             if (info.pid == pid) {
                 return info.processName;
             }
@@ -1101,11 +1137,13 @@ public class VActivityManagerService extends IActivityManager.Stub {
     }
 
 
-    private void attachClient(int pid, final IBinder clientBinder) {
+    private ProcessRecord attachClient(int pid, final IBinder clientBinder,
+            LogicalProcessOwnerRegistry.Reservation reservation,
+            ProcessRecord expectedRecord) {
         final IVClient client = IVClient.Stub.asInterface(clientBinder);
         if (client == null) {
             killProcess(pid);
-            return;
+            return null;
         }
         IInterface thread = null;
         try {
@@ -1115,7 +1153,7 @@ public class VActivityManagerService extends IActivityManager.Stub {
         }
         if (thread == null) {
             killProcess(pid);
-            return;
+            return null;
         }
         ProcessRecord app = null;
         try {
@@ -1126,9 +1164,71 @@ public class VActivityManagerService extends IActivityManager.Stub {
         } catch (RemoteException e) {
             // process has dead
         }
-        if (app == null) {
+        if (app == null || (expectedRecord != null && app != expectedRecord)
+                || app.vpid < 0 || app.vpid >= VASettings.STUB_COUNT
+                || !isExpectedRunningStub(pid, app.vpid)) {
             killProcess(pid);
-            return;
+            return null;
+        }
+
+        LogicalProcessKey key = logicalKey(app);
+        if (reservation != null && (!reservation.key().equals(key)
+                || reservation.slot() != app.vpid
+                || reservation.generation() != app.generation)) {
+            mLogicalProcessOwners.cancel(reservation);
+            killProcess(pid);
+            return null;
+        }
+
+        IBinder previousClientBinder = app.client == null ? null : app.client.asBinder();
+        int previousPid = app.pid;
+        app.client = client;
+        app.appThread = thread;
+        app.pid = pid;
+
+        boolean ownerAccepted;
+        if (reservation != null) {
+            LogicalProcessOwnerRegistry.ClaimResult<ProcessRecord> claim =
+                    mLogicalProcessOwners.claim(reservation, app);
+            ownerAccepted = claim.status() == LogicalProcessOwnerRegistry.ClaimStatus.CLAIMED
+                    || claim.status()
+                    == LogicalProcessOwnerRegistry.ClaimStatus.ALREADY_OWNED;
+            if (!ownerAccepted) {
+                VLog.e(TAG, "Rejecting process owner claim key=" + key + " pid=" + pid
+                        + " generation=" + app.generation + " status=" + claim.status());
+            }
+        } else {
+            LogicalProcessOwnerRegistry.ReconcileResult<ProcessRecord> reconciliation =
+                    mLogicalProcessOwners.reconcile(key, app.vpid, app.generation, app);
+            ownerAccepted = reconciliation.status()
+                    == LogicalProcessOwnerRegistry.ReconcileStatus.RECONCILED
+                    || reconciliation.status()
+                    == LogicalProcessOwnerRegistry.ReconcileStatus.ALREADY_OWNED;
+            if (!ownerAccepted) {
+                VLog.e(TAG, "Rejecting reconciled process owner key=" + key + " pid=" + pid
+                        + " generation=" + app.generation
+                        + " status=" + reconciliation.status());
+            }
+        }
+        if (!ownerAccepted) {
+            app.client = null;
+            app.appThread = null;
+            app.pid = previousPid;
+            killProcess(pid);
+            return null;
+        }
+
+        synchronized (mProcessNames) {
+            mProcessNames.put(app.processName, app.vuid, app);
+            synchronized (mPidsSelfLocked) {
+                mPidsSelfLocked.put(app.pid, app);
+            }
+        }
+
+        boolean needsDeathLink = previousClientBinder == null
+                || !previousClientBinder.equals(clientBinder) || previousPid != pid;
+        if (!needsDeathLink) {
+            return app;
         }
         try {
             final ProcessRecord record = app;
@@ -1140,17 +1240,10 @@ public class VActivityManagerService extends IActivityManager.Stub {
                 }
             }, 0);
         } catch (RemoteException e) {
-            e.printStackTrace();
+            onProcessDead(app);
+            return null;
         }
-        app.client = client;
-        app.appThread = thread;
-        app.pid = pid;
-        synchronized (mProcessNames) {
-            mProcessNames.put(app.processName, app.vuid, app);
-            synchronized (mPidsSelfLocked) {
-                mPidsSelfLocked.put(app.pid, app);
-            }
-        }
+        return app;
     }
 
     private void onProcessDead(ProcessRecord record) {
@@ -1176,10 +1269,6 @@ public class VActivityManagerService extends IActivityManager.Stub {
 
     ProcessRecord startProcessIfNeedLocked(String processName, int userId, String packageName) {
         synchronized (mProcessStartLock) {
-            if (getFreeStubCount() < 3) {
-                // run GC
-                killAllApps();
-            }
             PackageSetting ps = PackageCacheManager.getSetting(packageName);
             ApplicationInfo info = VPackageManagerService.get().getApplicationInfo(
                     packageName, 0, userId);
@@ -1192,30 +1281,24 @@ public class VActivityManagerService extends IActivityManager.Stub {
                 VAppManagerService.get().savePersistenceData();
             }
             int uid = VUserHandle.getUid(userId, ps.appId);
-            ProcessRecord app;
-            synchronized (mProcessNames) {
-                app = mProcessNames.get(processName, uid);
+            LogicalProcessKey key = new LogicalProcessKey(uid, packageName, processName);
+            reconcileRunningStubProcessesLocked();
+            LogicalProcessOwnerRegistry.OwnerSnapshot<ProcessRecord> existing =
+                    mLogicalProcessOwners.find(key);
+            if (existing != null && isLogicalOwnerAlive(existing.owner())) {
+                existing.owner().pkgList.add(info.packageName);
+                return existing.owner();
             }
-            if (app != null) {
-                ProcessLifecycle.State state = app.lifecycle.state();
-                if ((state == ProcessLifecycle.State.STARTING
-                        || state == ProcessLifecycle.State.READY)
-                        && app.client != null && app.client.asBinder().pingBinder()) {
-                    return app;
-                }
-                if (state == ProcessLifecycle.State.FAILED
-                        || state == ProcessLifecycle.State.DEAD) {
-                    VLog.w(TAG, "Refusing terminal process generation process=" + processName
-                            + " pid=" + app.pid + " generation=" + app.generation
-                            + " state=" + state);
-                    return null;
-                }
-            }
-            int vpid = queryFreeStubProcessLocked();
-            if (vpid == -1) {
+
+            LogicalProcessOwnerRegistry.ReservationResult<ProcessRecord> reserved =
+                    reserveFreeStubProcessLocked(key);
+            if (reserved == null || reserved.status()
+                    != LogicalProcessOwnerRegistry.ReservationStatus.RESERVED) {
                 return null;
             }
-            app = performStartProcessLocked(uid, vpid, info, processName);
+            int vpid = reserved.reservation().slot();
+            ProcessRecord app = performStartProcessLocked(uid, vpid, info, processName,
+                    reserved.reservation());
             if (app != null) {
                 app.pkgList.add(info.packageName);
             }
@@ -1243,42 +1326,235 @@ public class VActivityManagerService extends IActivityManager.Stub {
         return Process.myUid();
     }
 
-    private ProcessRecord performStartProcessLocked(int vuid, int vpid, ApplicationInfo info, String processName) {
-        ProcessRecord app = new ProcessRecord(info, processName, vuid, vpid);
+    private ProcessRecord performStartProcessLocked(int vuid, int vpid, ApplicationInfo info,
+            String processName, LogicalProcessOwnerRegistry.Reservation reservation) {
+        ProcessRecord app = new ProcessRecord(info, processName, vuid, vpid,
+                reservation.generation());
         Bundle extras = new Bundle();
-        BundleCompat.putBinder(extras, "_VA_|_binder_", app);
-        extras.putInt("_VA_|_vuid_", vuid);
-        extras.putString("_VA_|_process_", processName);
-        extras.putString("_VA_|_pkg_", info.packageName);
-        Bundle res = ProviderCall.call(VASettings.getStubAuthority(vpid), "_VA_|_init_process_", null, extras);
-        if (res == null) {
+        BundleCompat.putBinder(extras, StubProcessContract.KEY_SERVER_TOKEN, app);
+        extras.putInt(StubProcessContract.KEY_VUID, vuid);
+        extras.putString(StubProcessContract.KEY_PROCESS_NAME, processName);
+        extras.putString(StubProcessContract.KEY_PACKAGE_NAME, info.packageName);
+        extras.putLong(StubProcessContract.KEY_GENERATION, reservation.generation());
+        Bundle res = callStubProcessInitWithRetry(vpid, reservation, app, extras);
+        if (res == null || !res.getBoolean(StubProcessContract.KEY_ACCEPTED, false)) {
+            mLogicalProcessOwners.cancel(reservation);
+            VLog.e(TAG, "Stub rejected process owner key=" + reservation.key()
+                    + " slot=" + vpid + " reason="
+                    + (res == null ? "null-response"
+                    : res.getString(StubProcessContract.KEY_REASON)));
             return null;
         }
-        int pid = res.getInt("_VA_|_pid_");
-        IBinder clientBinder = BundleCompat.getBinder(res, "_VA_|_client_");
-        attachClient(pid, clientBinder);
-        return app;
+        int pid = res.getInt(StubProcessContract.KEY_PID, -1);
+        if (!responseMatchesReservation(res, reservation, app, pid)) {
+            mLogicalProcessOwners.cancel(reservation);
+            if (pid > 0 && isExpectedRunningStub(pid, vpid)) {
+                killProcess(pid);
+            }
+            return null;
+        }
+        IBinder clientBinder = BundleCompat.getBinder(res, StubProcessContract.KEY_CLIENT);
+        ProcessRecord attached = attachClient(pid, clientBinder, reservation, app);
+        if (attached == null) {
+            mLogicalProcessOwners.cancel(reservation);
+        }
+        return attached;
     }
 
-    private int queryFreeStubProcessLocked() {
-        synchronized (mPidsSelfLocked) {
-            for (int vpid = 0; vpid < VASettings.STUB_COUNT; vpid++) {
-                int N = mPidsSelfLocked.size();
-                boolean using = false;
-                while (N-- > 0) {
-                    ProcessRecord r = mPidsSelfLocked.valueAt(N);
-                    if (r.vpid == vpid) {
-                        using = true;
-                        break;
-                    }
-                }
-                if (using) {
-                    continue;
-                }
-                return vpid;
+    /**
+     * A stale Stub killed during engine reconciliation can remain addressable briefly while
+     * ActivityManager tears down its provider. Retrying the same record token and generation is
+     * safe because StubProcessOwner treats that exact claim as idempotent.
+     */
+    private Bundle callStubProcessInitWithRetry(int vpid,
+            LogicalProcessOwnerRegistry.Reservation reservation, ProcessRecord app,
+            Bundle extras) {
+        Bundle response = null;
+        RuntimeException lastFailure = null;
+        for (int attempt = 1; attempt <= STUB_INIT_MAX_ATTEMPTS; attempt++) {
+            try {
+                response = ProviderCall.call(VASettings.getStubAuthority(vpid),
+                        StubProcessContract.METHOD_INIT_PROCESS, null, extras);
+                lastFailure = null;
+            } catch (RuntimeException initFailure) {
+                lastFailure = initFailure;
+                response = null;
             }
-            return -1;
+            if (response != null
+                    && response.getBoolean(StubProcessContract.KEY_ACCEPTED, false)) {
+                return response;
+            }
+            if (response != null) {
+                int conflictingPid = response.getInt(StubProcessContract.KEY_PID, -1);
+                IBinder conflictingToken = BundleCompat.getBinder(response,
+                        StubProcessContract.KEY_SERVER_TOKEN);
+                if (conflictingPid > 0 && conflictingToken != app
+                        && isExpectedRunningStub(conflictingPid, vpid)) {
+                    VLog.w(TAG, "Terminating conflicting Stub claim key=" + reservation.key()
+                            + " slot=" + vpid + " pid=" + conflictingPid + " reason="
+                            + response.getString(StubProcessContract.KEY_REASON));
+                    killProcess(conflictingPid);
+                }
+            }
+            if (attempt < STUB_INIT_MAX_ATTEMPTS) {
+                SystemClock.sleep(STUB_INIT_RETRY_DELAY_MS);
+            }
         }
+        if (lastFailure != null) {
+            VLog.e(TAG, "Unable to initialize Stub owner key=" + reservation.key()
+                    + " slot=" + vpid + " error=" + lastFailure);
+        }
+        return response;
+    }
+
+    private LogicalProcessOwnerRegistry.ReservationResult<ProcessRecord>
+            reserveFreeStubProcessLocked(LogicalProcessKey key) {
+        for (int vpid = 0; vpid < VASettings.STUB_COUNT; vpid++) {
+            LogicalProcessOwnerRegistry.ReservationResult<ProcessRecord> result =
+                    mLogicalProcessOwners.reserve(key, vpid);
+            if (result.status() == LogicalProcessOwnerRegistry.ReservationStatus.RESERVED
+                    || result.status()
+                    == LogicalProcessOwnerRegistry.ReservationStatus.EXISTING_OWNER) {
+                return result;
+            }
+        }
+        return null;
+    }
+
+    /**
+     * Rebuilds server bookkeeping only from Stub processes that ActivityManager already reports.
+     * Provider authorities for absent slots are deliberately never queried because doing so would
+     * start an empty Stub as a side effect of reconciliation.
+     */
+    private void reconcileRunningStubProcessesLocked() {
+        List<ActivityManager.RunningAppProcessInfo> processes = am.getRunningAppProcesses();
+        if (processes == null) {
+            return;
+        }
+        List<ActivityManager.RunningAppProcessInfo> snapshot = new ArrayList<>(processes);
+        for (ActivityManager.RunningAppProcessInfo running : snapshot) {
+            int vpid = parseVPid(running.processName);
+            if (vpid < 0 || vpid >= VASettings.STUB_COUNT || running.uid != Process.myUid()) {
+                continue;
+            }
+            if (!isExpectedRunningStub(running.pid, vpid)) {
+                continue;
+            }
+
+            Bundle response;
+            try {
+                response = ProviderCall.call(VASettings.getStubAuthority(vpid),
+                        StubProcessContract.METHOD_QUERY_OWNER, null, null);
+            } catch (RuntimeException queryFailure) {
+                VLog.w(TAG, "Unable to query running Stub owner slot=" + vpid
+                        + " pid=" + running.pid + " error=" + queryFailure);
+                continue;
+            }
+            int queriedPid = response == null ? -1
+                    : response.getInt(StubProcessContract.KEY_PID, -1);
+            if (response == null
+                    || !response.getBoolean(StubProcessContract.KEY_ACCEPTED, false)
+                    || queriedPid != running.pid
+                    || !isExpectedRunningStub(queriedPid, vpid)) {
+                VLog.e(TAG, "Rejecting Stub owner query slot=" + vpid
+                        + " runningPid=" + running.pid + " queriedPid=" + queriedPid);
+                continue;
+            }
+            if (!response.getBoolean(StubProcessContract.KEY_HAS_OWNER, false)) {
+                continue;
+            }
+
+            IBinder serverToken = BundleCompat.getBinder(response,
+                    StubProcessContract.KEY_SERVER_TOKEN);
+            if (!(serverToken instanceof ProcessRecord)) {
+                VLog.e(TAG, "Killing unrecoverable Stub owner slot=" + vpid
+                        + " pid=" + queriedPid + " reason=foreign-server-token");
+                killProcess(queriedPid);
+                continue;
+            }
+            ProcessRecord record = (ProcessRecord) serverToken;
+            if (!responseMatchesRecord(response, record, vpid)) {
+                VLog.e(TAG, "Killing inconsistent Stub owner slot=" + vpid
+                        + " pid=" + queriedPid);
+                killProcess(queriedPid);
+                continue;
+            }
+            IBinder clientBinder = BundleCompat.getBinder(response,
+                    StubProcessContract.KEY_CLIENT);
+            attachClient(queriedPid, clientBinder, null, record);
+        }
+    }
+
+    private boolean responseMatchesReservation(Bundle response,
+            LogicalProcessOwnerRegistry.Reservation reservation, ProcessRecord record, int pid) {
+        if (!response.getBoolean(StubProcessContract.KEY_HAS_OWNER, false)
+                || pid <= 0 || !isExpectedRunningStub(pid, reservation.slot())
+                || response.getInt(StubProcessContract.KEY_VUID, -1)
+                != reservation.key().vuid()
+                || !reservation.key().packageName().equals(
+                response.getString(StubProcessContract.KEY_PACKAGE_NAME))
+                || !reservation.key().processName().equals(
+                response.getString(StubProcessContract.KEY_PROCESS_NAME))
+                || response.getLong(StubProcessContract.KEY_GENERATION, -1)
+                != reservation.generation()) {
+            VLog.e(TAG, "Rejecting inconsistent Stub init response key=" + reservation.key()
+                    + " slot=" + reservation.slot() + " pid=" + pid);
+            return false;
+        }
+        IBinder serverToken = BundleCompat.getBinder(response,
+                StubProcessContract.KEY_SERVER_TOKEN);
+        if (serverToken != record) {
+            VLog.e(TAG, "Rejecting Stub init token mismatch key=" + reservation.key()
+                    + " slot=" + reservation.slot() + " pid=" + pid);
+            return false;
+        }
+        return true;
+    }
+
+    private boolean responseMatchesRecord(Bundle response, ProcessRecord record, int vpid) {
+        if (record.info == null || record.info.packageName == null) {
+            return false;
+        }
+        return record.vpid == vpid
+                && record.vuid == response.getInt(StubProcessContract.KEY_VUID, -1)
+                && record.info.packageName.equals(
+                response.getString(StubProcessContract.KEY_PACKAGE_NAME))
+                && record.processName.equals(
+                response.getString(StubProcessContract.KEY_PROCESS_NAME))
+                && record.generation
+                == response.getLong(StubProcessContract.KEY_GENERATION, -1);
+    }
+
+    private boolean isExpectedRunningStub(int pid, int vpid) {
+        if (pid <= 0 || vpid < 0 || vpid >= VASettings.STUB_COUNT) {
+            return false;
+        }
+        String expectedName = VirtualCore.get().getHostPkg() + ":p" + vpid;
+        List<ActivityManager.RunningAppProcessInfo> processes = am.getRunningAppProcesses();
+        if (processes == null) {
+            return false;
+        }
+        for (ActivityManager.RunningAppProcessInfo process : processes) {
+            if (process.pid == pid && process.uid == Process.myUid()
+                    && expectedName.equals(process.processName)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static LogicalProcessKey logicalKey(ProcessRecord record) {
+        return new LogicalProcessKey(record.vuid, record.info.packageName, record.processName);
+    }
+
+    private static boolean isLogicalOwnerAlive(ProcessRecord record) {
+        if (record == null || record.terminalCleanupStarted || record.client == null) {
+            return false;
+        }
+        ProcessLifecycle.State state = record.lifecycle.state();
+        IBinder binder = record.client.asBinder();
+        return (state == ProcessLifecycle.State.STARTING || state == ProcessLifecycle.State.READY)
+                && binder != null && binder.isBinderAlive() && binder.pingBinder();
     }
 
     @Override

@@ -9,6 +9,7 @@ import android.os.ConditionVariable;
 import android.os.IBinder;
 import android.os.Process;
 
+import com.lody.virtual.client.StubProcessOwner;
 import com.lody.virtual.client.VClientImpl;
 import com.lody.virtual.client.core.VirtualCore;
 import com.lody.virtual.helper.compat.BundleCompat;
@@ -26,8 +27,11 @@ public class StubCP extends ContentProvider {
 
 	@Override
 	public Bundle call(String method, String arg, Bundle extras) {
-		if ("_VA_|_init_process_".equals(method)) {
+		if (StubProcessContract.METHOD_INIT_PROCESS.equals(method)) {
 			return initProcess(extras);
+		}
+		if (StubProcessContract.METHOD_QUERY_OWNER.equals(method)) {
+			return queryProcessOwner();
 		}
 		return null;
 	}
@@ -37,14 +41,49 @@ public class StubCP extends ContentProvider {
 		if (lock != null) {
 			lock.block();
 		}
-		IBinder token = BundleCompat.getBinder(extras,"_VA_|_binder_");
-		int vuid = extras.getInt("_VA_|_vuid_");
 		VClientImpl client = VClientImpl.get();
-		client.initProcess(token, vuid);
-		Bundle res = new Bundle();
-		BundleCompat.putBinder(res, "_VA_|_client_", client.asBinder());
-		res.putInt("_VA_|_pid_", Process.myPid());
-		return res;
+		if (extras == null) {
+			return createResponse(client, false, StubProcessOwner.REASON_INVALID_REQUEST,
+					client.getProcessOwner());
+		}
+		IBinder token = BundleCompat.getBinder(extras, StubProcessContract.KEY_SERVER_TOKEN);
+		int vuid = extras.getInt(StubProcessContract.KEY_VUID);
+		String packageName = extras.getString(StubProcessContract.KEY_PACKAGE_NAME);
+		String processName = extras.getString(StubProcessContract.KEY_PROCESS_NAME);
+		long generation = extras.getLong(StubProcessContract.KEY_GENERATION, 0L);
+		StubProcessOwner.ClaimResult result = client.claimProcess(token, vuid, packageName,
+				processName, generation);
+		return createResponse(client, result.isAccepted(), result.getReason(),
+				result.getCurrentIdentity());
+	}
+
+	private Bundle queryProcessOwner() {
+		VClientImpl client = VClientImpl.get();
+		StubProcessOwner.Identity identity = client.getProcessOwner();
+		return createResponse(client, true,
+				identity == null ? StubProcessContract.REASON_QUERY_EMPTY
+						: StubProcessContract.REASON_QUERY_CURRENT,
+				identity);
+	}
+
+	private Bundle createResponse(VClientImpl client, boolean accepted, String reason,
+			StubProcessOwner.Identity identity) {
+		Bundle response = new Bundle();
+		response.putBoolean(StubProcessContract.KEY_ACCEPTED, accepted);
+		response.putString(StubProcessContract.KEY_REASON, reason);
+		response.putBoolean(StubProcessContract.KEY_HAS_OWNER, identity != null);
+		response.putBoolean(StubProcessContract.KEY_GUEST_BOUND, client.isGuestBindingStarted());
+		BundleCompat.putBinder(response, StubProcessContract.KEY_CLIENT, client.asBinder());
+		response.putInt(StubProcessContract.KEY_PID, Process.myPid());
+		if (identity != null) {
+			response.putInt(StubProcessContract.KEY_VUID, identity.getVuid());
+			response.putString(StubProcessContract.KEY_PACKAGE_NAME, identity.getPackageName());
+			response.putString(StubProcessContract.KEY_PROCESS_NAME, identity.getProcessName());
+			response.putLong(StubProcessContract.KEY_GENERATION, identity.getGeneration());
+			BundleCompat.putBinder(response, StubProcessContract.KEY_SERVER_TOKEN,
+					(IBinder) identity.getServerToken());
+		}
+		return response;
 	}
 
 	@Override
