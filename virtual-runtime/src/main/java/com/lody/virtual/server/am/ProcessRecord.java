@@ -2,7 +2,6 @@ package com.lody.virtual.server.am;
 
 import android.content.pm.ApplicationInfo;
 import android.os.Binder;
-import android.os.ConditionVariable;
 import android.os.IInterface;
 
 import com.lody.virtual.client.IVClient;
@@ -10,10 +9,14 @@ import com.lody.virtual.os.VUserHandle;
 
 import java.util.HashSet;
 import java.util.Set;
+import java.util.concurrent.atomic.AtomicLong;
 
 final class ProcessRecord extends Binder implements Comparable<ProcessRecord> {
 
-	final ConditionVariable lock = new ConditionVariable();
+	private static final AtomicLong NEXT_GENERATION = new AtomicLong(1);
+
+	final long generation;
+	final ProcessLifecycle lifecycle;
 	public final ApplicationInfo info; // all about the first app in the process
 	final public String processName; // name of the process
 	final Set<String> pkgList = new HashSet<>(); // List of packages
@@ -23,15 +26,22 @@ final class ProcessRecord extends Binder implements Comparable<ProcessRecord> {
 	public int vuid;
 	public int vpid;
 	public int userId;
-	boolean doneExecuting;
+	boolean startupWatchdogScheduled;
+	boolean terminalCleanupStarted;
     int priority;
 
 	public ProcessRecord(ApplicationInfo info, String processName, int vuid, int vpid) {
+		this(info, processName, vuid, vpid, NEXT_GENERATION.getAndIncrement());
+	}
+
+	ProcessRecord(ApplicationInfo info, String processName, int vuid, int vpid, long generation) {
 		this.info = info;
 		this.vuid = vuid;
 		this.vpid = vpid;
 		this.userId = VUserHandle.getUserId(vuid);
 		this.processName = processName;
+		this.generation = generation;
+		this.lifecycle = new ProcessLifecycle(generation);
 	}
 
 	@Override
