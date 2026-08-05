@@ -12,6 +12,7 @@ import android.content.Intent;
 import android.content.pm.ApplicationInfo;
 import android.content.pm.PackageManager;
 import android.content.pm.ProviderInfo;
+import android.content.pm.ServiceInfo;
 import android.os.Binder;
 import android.os.Build;
 import android.os.ConditionVariable;
@@ -44,6 +45,8 @@ import com.lody.virtual.client.ipc.VPackageManager;
 import com.lody.virtual.client.ipc.VirtualStorageManager;
 import com.lody.virtual.client.stub.VASettings;
 import com.lody.virtual.helper.compat.BuildCompat;
+import com.lody.virtual.helper.compat.ApplicationThreadCompat;
+import com.lody.virtual.helper.compat.IApplicationThreadCompat;
 import com.lody.virtual.helper.compat.StorageManagerCompat;
 import com.lody.virtual.helper.utils.Reflect;
 import com.lody.virtual.helper.utils.VLog;
@@ -189,6 +192,43 @@ public final class VClientImpl extends IVClient.Stub {
     @Override
     public IBinder getToken() {
         return token;
+    }
+
+    private IInterface localApplicationThread() {
+        return ApplicationThreadCompat.asInterface(getAppThread());
+    }
+
+    @Override
+    public void scheduleCreateService(IBinder serviceToken, ServiceInfo info, int processState)
+            throws RemoteException {
+        IApplicationThreadCompat.scheduleCreateService(
+                localApplicationThread(), serviceToken, info, processState);
+    }
+
+    @Override
+    public void scheduleBindService(IBinder serviceToken, Intent intent, boolean rebind,
+                                    int processState) throws RemoteException {
+        IApplicationThreadCompat.scheduleBindService(
+                localApplicationThread(), serviceToken, intent, rebind, processState);
+    }
+
+    @Override
+    public void scheduleUnbindService(IBinder serviceToken, Intent intent)
+            throws RemoteException {
+        IApplicationThreadCompat.scheduleUnbindService(
+                localApplicationThread(), serviceToken, intent);
+    }
+
+    @Override
+    public void scheduleServiceArgs(IBinder serviceToken, boolean taskRemoved, int startId,
+                                    int flags, Intent intent) throws RemoteException {
+        IApplicationThreadCompat.scheduleServiceArgs(
+                localApplicationThread(), serviceToken, taskRemoved, startId, flags, intent);
+    }
+
+    @Override
+    public void scheduleStopService(IBinder serviceToken) throws RemoteException {
+        IApplicationThreadCompat.scheduleStopService(localApplicationThread(), serviceToken);
     }
 
     public StubProcessOwner.ClaimResult claimProcess(IBinder token, int vuid, String packageName,

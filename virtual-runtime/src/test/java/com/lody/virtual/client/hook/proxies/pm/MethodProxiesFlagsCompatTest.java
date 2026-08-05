@@ -16,11 +16,12 @@ public class MethodProxiesFlagsCompatTest {
     }
 
     @Test
-    public void rejectsFlagsThatWouldLoseHighBits() {
-        assertThrows(IllegalArgumentException.class,
-                () -> MethodProxies.packageManagerFlagsToInt(0x1_0000_0000L));
-        assertThrows(IllegalArgumentException.class,
-                () -> MethodProxies.packageManagerFlagsToInt(-0x8000_0001L));
+    public void ignoresModernFlagsOutsideLegacyIntRange() {
+        assertEquals(0, MethodProxies.packageManagerFlagsToInt(0x1_0000_0000L));
+        assertEquals(0x04000000,
+                MethodProxies.packageManagerFlagsToInt(0x1_0400_0000L));
+        assertEquals(Integer.MAX_VALUE,
+                MethodProxies.packageManagerFlagsToInt(-0x8000_0001L));
     }
 
     @Test

@@ -898,7 +898,7 @@ class MethodProxies {
             Intent service = (Intent) args[2];
             String resolvedType = (String) args[3];
             IServiceConnection conn = (IServiceConnection) args[4];
-            int flags = (int) args[5];
+            int flags = serviceBindFlags(args[5]);
             int userId = VUserHandle.myUserId();
             if (isServerProcess()) {
                 userId = service.getIntExtra("_VA_|_user_id_", VUserHandle.USER_NULL);
@@ -907,6 +907,11 @@ class MethodProxies {
                 return method.invoke(who, args);
             }
             ServiceInfo serviceInfo = VirtualCore.get().resolveServiceInfo(service, userId);
+            if (isGoogleService(service)) {
+                VLog.i("VA-GmsRoute", "bind method=%s user=%d intent=%s resolved=%s",
+                        method.getName(), userId, service,
+                        serviceInfo == null ? "host" : serviceInfo.packageName + "/" + serviceInfo.name);
+            }
             if (serviceInfo != null) {
                 if (PlayStoreServiceBindingPolicy.shouldRejectLocalOnlyBinding(
                         getAppPkg(), serviceInfo.packageName, serviceInfo.name)) {
@@ -930,6 +935,30 @@ class MethodProxies {
         @Override
         public boolean isEnable() {
             return isAppProcess() || isServerProcess();
+        }
+
+        private static boolean isGoogleService(Intent service) {
+            ComponentName component = service.getComponent();
+            return "com.google.android.gms".equals(service.getPackage())
+                    || component != null
+                    && "com.google.android.gms".equals(component.getPackageName());
+        }
+
+        static int serviceBindFlags(Object rawFlags) {
+            return ((Number) rawFlags).intValue();
+        }
+    }
+
+    /**
+     * Android 15+ routes ordinary Context.bindService() calls through this method. Its leading
+     * arguments match bindService(), while newer platform releases append the instance name,
+     * calling package and user id. Reuse the virtual routing above so those calls do not escape
+     * to a host service merely because the platform selected the newer entry point.
+     */
+    static class BindServiceInstance extends BindService {
+        @Override
+        public String getMethodName() {
+            return "bindServiceInstance";
         }
     }
 

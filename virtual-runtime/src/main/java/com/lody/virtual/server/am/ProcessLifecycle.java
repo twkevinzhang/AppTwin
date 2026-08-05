@@ -32,6 +32,8 @@ final class ProcessLifecycle {
     private final ArrayDeque<PendingServiceOperation> pending = new ArrayDeque<>();
     private State state = State.STARTING;
     private TerminalReason terminalReason;
+    private String failedOperation;
+    private Throwable dispatchFailure;
     private boolean draining;
 
     ProcessLifecycle(long generation) {
@@ -55,6 +57,14 @@ final class ProcessLifecycle {
 
     synchronized int pendingCount() {
         return pending.size();
+    }
+
+    synchronized String failedOperation() {
+        return failedOperation;
+    }
+
+    synchronized Throwable dispatchFailure() {
+        return dispatchFailure;
     }
 
     synchronized boolean isDraining() {
@@ -186,6 +196,10 @@ final class ProcessLifecycle {
                         dispatched++;
                     }
                 } catch (Exception dispatchFailure) {
+                    synchronized (this) {
+                        failedOperation = operation.description();
+                        this.dispatchFailure = dispatchFailure;
+                    }
                     markFailed(generation, TerminalReason.DISPATCH_FAILED);
                     return dispatched;
                 }

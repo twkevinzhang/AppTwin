@@ -27,11 +27,13 @@ import com.lody.virtual.client.VClientImpl;
 import com.lody.virtual.client.core.VirtualCore;
 import com.lody.virtual.client.hook.base.MethodProxy;
 import com.lody.virtual.client.hook.utils.MethodParameterUtils;
+import com.lody.virtual.client.ipc.VActivityManager;
 import com.lody.virtual.client.ipc.VPackageManager;
 import com.lody.virtual.helper.collection.ArraySet;
 import com.lody.virtual.helper.compat.ParceledListSliceCompat;
 import com.lody.virtual.helper.utils.ArrayUtils;
 import com.lody.virtual.helper.utils.EncodeUtils;
+import com.lody.virtual.helper.utils.VLog;
 import com.lody.virtual.os.VUserHandle;
 import com.lody.virtual.server.IPackageInstaller;
 import com.lody.virtual.server.pm.installer.SessionInfo;
@@ -63,9 +65,10 @@ class MethodProxies {
      * Android 13+ package-manager binder methods use long-backed *Flags values,
      * while the virtual package manager still exposes the legacy int API.
      *
-     * Keep all 32 bits (including bit 31) when adapting the binder argument,
-     * but reject flags that cannot be represented by that API instead of
-     * silently discarding their high bits.
+     * Keep the legacy low 32 bits (including bit 31) when adapting the binder
+     * argument. Newer framework-only flags live above bit 31 and have no
+     * representation in the virtual package manager's legacy API, so ignoring
+     * those unsupported bits is safer than crashing the guest process.
      */
     static int packageManagerFlagsToInt(Object value) {
         if (!(value instanceof Byte)
@@ -76,10 +79,6 @@ class MethodProxies {
                     + (value == null ? "null" : value.getClass().getName()));
         }
         long flags = ((Number) value).longValue();
-        if (flags < Integer.MIN_VALUE || flags > 0xffffffffL) {
-            throw new IllegalArgumentException("Package-manager flags exceed the legacy int range: "
-                    + Long.toUnsignedString(flags));
-        }
         return (int) flags;
     }
 
@@ -796,14 +795,27 @@ class MethodProxies {
 
         @Override
         public Object call(Object who, Method method, Object... args) throws Throwable {
-            int uid = (int) args[0];
-            int callingUid = Binder.getCallingUid();
-            if (uid == VirtualCore.get().myUid()) {
-                uid = getBaseVUid();
+            int requestedUid = (int) args[0];
+            int currentVUid = getVUid();
+            int callingPid = Binder.getCallingPid();
+            VActivityManager activityManager = VActivityManager.get();
+            boolean callerIsVirtualProcess = activityManager.isAppPid(callingPid);
+            int observedCallerVUid = callerIsVirtualProcess
+                    ? activityManager.getUidByPid(callingPid) : currentVUid;
+            int callerVUid = CallingPackageUidResolver.trustedCallerVUid(
+                    currentVUid, observedCallerVUid, callerIsVirtualProcess);
+            int targetVUid = CallingPackageUidResolver.restoreRequestedUid(
+                    requestedUid, VirtualCore.get().myUid(), callerVUid);
+
+            if (targetVUid != requestedUid) {
+                VLog.i("VA-PackageIdentity",
+                        "restore getPackagesForUid callerPid=%d requested=%d target=%d current=%d",
+                        callingPid, requestedUid, targetVUid, currentVUid);
             }
-            String[] callingPkgs = VPackageManager.get().getPackagesForUid(callingUid);
-            String[] targetPkgs = VPackageManager.get().getPackagesForUid(uid);
-            String[] selfPkgs = VPackageManager.get().getPackagesForUid(Process.myUid());
+
+            String[] callingPkgs = VPackageManager.get().getPackagesForUid(callerVUid);
+            String[] targetPkgs = VPackageManager.get().getPackagesForUid(targetVUid);
+            String[] selfPkgs = VPackageManager.get().getPackagesForUid(currentVUid);
 
             Set<String> pkgList = new ArraySet<>(2);
             if (callingPkgs != null && callingPkgs.length > 0) {

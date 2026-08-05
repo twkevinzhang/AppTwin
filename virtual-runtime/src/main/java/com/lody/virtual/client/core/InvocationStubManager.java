@@ -48,6 +48,7 @@ import com.lody.virtual.client.hook.proxies.pm.LauncherAppsStub;
 import com.lody.virtual.client.hook.proxies.pm.PackageManagerStub;
 import com.lody.virtual.client.hook.proxies.power.PowerManagerStub;
 import com.lody.virtual.client.hook.proxies.restriction.RestrictionStub;
+import com.lody.virtual.client.hook.proxies.safetycenter.SafetyCenterManagerStub;
 import com.lody.virtual.client.hook.proxies.search.SearchManagerStub;
 import com.lody.virtual.client.hook.proxies.shortcut.ShortcutServiceStub;
 import com.lody.virtual.client.hook.proxies.telephony.TelephonyRegistryStub;
@@ -212,6 +213,7 @@ public final class InvocationStubManager {
             }
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
                 addInjector(new LocaleManagerStub());
+                addInjector(new SafetyCenterManagerStub());
             }
 		}
 	}
