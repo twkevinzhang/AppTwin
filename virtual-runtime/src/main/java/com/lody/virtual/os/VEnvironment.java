@@ -10,7 +10,6 @@ import com.lody.virtual.helper.utils.FileUtils;
 import com.lody.virtual.helper.utils.VLog;
 
 import java.io.File;
-import java.util.Locale;
 
 import mirror.dalvik.system.VMRuntime;
 
@@ -174,9 +173,8 @@ public class VEnvironment {
     public static File getVirtualStorageBaseDir() {
         File externalFilesRoot = Environment.getExternalStorageDirectory();
         if (externalFilesRoot != null) {
-            File vBaseDir = new File(externalFilesRoot, "MaskAccounts");
-            File vSdcard = new File(vBaseDir, "vsdcard");
-            return ensureCreated(vSdcard);
+            return ensureCreated(VirtualExternalStorageLayout.sharedStorageBase(
+                    externalFilesRoot, VirtualCore.get().getHostPkg()));
         }
         return null;
     }
@@ -187,16 +185,16 @@ public class VEnvironment {
         if (virtualStorageBaseDir == null) {
             return null;
         }
-        File userBase = new File(virtualStorageBaseDir, String.valueOf(userId));
-        return ensureCreated(userBase);
+        return ensureCreated(VirtualExternalStorageLayout.sharedStorageForUser(
+                Environment.getExternalStorageDirectory(),
+                VirtualCore.get().getHostPkg(), userId));
     }
 
     // /sdcard/Android/data/<host_package>/virtual/<user>
     public static File getVirtualPrivateStorageDir(int userId) {
-        String base = String.format(Locale.ENGLISH, "%s/Android/data/%s/%s/%d", Environment.getExternalStorageDirectory(),
-                VirtualCore.get().getHostPkg(), "virtual", userId);
-        File file = new File(base);
-        return ensureCreated(file);
+        return ensureCreated(VirtualExternalStorageLayout.privateStorageForUser(
+                Environment.getExternalStorageDirectory(),
+                VirtualCore.get().getHostPkg(), userId));
     }
 
     public static File getVirtualPrivateStorageDir(int userId, String packageName) {

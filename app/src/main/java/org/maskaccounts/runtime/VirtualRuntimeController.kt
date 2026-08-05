@@ -5,12 +5,14 @@ import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageInfo
 import android.os.Build
+import android.os.Environment
 import android.util.Log
 import com.lody.virtual.client.core.InstallStrategy
 import com.lody.virtual.client.core.VirtualCore
 import com.lody.virtual.client.ipc.VActivityManager
 import com.lody.virtual.client.ipc.VPackageManager
 import com.lody.virtual.os.VEnvironment
+import com.lody.virtual.os.VirtualExternalStorageLayout
 import com.lody.virtual.os.VUserManager
 import java.io.File
 import java.io.FileOutputStream
@@ -189,7 +191,7 @@ class VirtualRuntimeController(context: Context) : GroupEnvironmentRuntime, Grou
         val revision = requireNotNull(importer.activeRevisionDirectory(packageName)) {
             "沒有可啟動的 active revision"
         }
-        prepareVirtualExternalStorage()
+        prepareVirtualExternalStorage(environmentId)
         if (!core.isAppInstalled(packageName)) {
             val result = core.installPackage(
                 revision.absolutePath,
@@ -259,7 +261,7 @@ class VirtualRuntimeController(context: Context) : GroupEnvironmentRuntime, Grou
                 // Group's store unusable.
                 Log.w(TAG, "google-checkin-prewarm-skipped environmentId=$environmentId", error)
             }
-        prepareVirtualExternalStorage()
+        prepareVirtualExternalStorage(environmentId)
 
         val contract = GroupPlayStoreLaunchContract.launcher
         check(core.isAppInstalledAsUser(environmentId, contract.packageName)) {
@@ -430,11 +432,24 @@ class VirtualRuntimeController(context: Context) : GroupEnvironmentRuntime, Grou
         }
     }
 
-    private fun prepareVirtualExternalStorage() {
-        val appExternalRoot = appContext.getExternalFilesDir(null)?.parentFile ?: return
-        val virtualRoot = File(appExternalRoot, "virtual/0")
-        check(virtualRoot.isDirectory || virtualRoot.mkdirs()) {
-            "無法建立 virtual external storage"
+    private fun prepareVirtualExternalStorage(environmentId: Int) {
+        val externalRoot = Environment.getExternalStorageDirectory() ?: return
+        val directories = listOf(
+            VirtualExternalStorageLayout.sharedStorageForUser(
+                externalRoot,
+                appContext.packageName,
+                environmentId,
+            ),
+            VirtualExternalStorageLayout.privateStorageForUser(
+                externalRoot,
+                appContext.packageName,
+                environmentId,
+            ),
+        )
+        directories.forEach { directory ->
+            check(directory.isDirectory || directory.mkdirs()) {
+                "無法建立 virtual external storage：${directory.path}"
+            }
         }
     }
 

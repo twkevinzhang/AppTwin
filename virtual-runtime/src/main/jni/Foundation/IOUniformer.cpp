@@ -3,6 +3,9 @@
 //
 #include <unistd.h>
 #include <stdlib.h>
+#include <stdarg.h>
+#include <stdio.h>
+#include <sys/stat.h>
 #include <fb/include/fb/ALog.h>
 
 #ifdef __aarch64__
@@ -121,6 +124,138 @@ const char *IOUniformer::reverse(const char *_path) {
 __BEGIN_DECLS
 
 #define FREE(ptr, org_ptr) { if ((void*) ptr != NULL && (void*) ptr != (void*) org_ptr) { free((void*) ptr); } }
+#define RETURN_IF_FORBID if(res == FORBID) return -1;
+
+
+HOOK_DEF(int, access, const char *pathname, int mode) {
+    int res;
+    const char *redirect_path = relocate_path(pathname, &res);
+    RETURN_IF_FORBID
+    int ret = syscall(__NR_faccessat, AT_FDCWD, redirect_path, mode);
+    FREE(redirect_path, pathname);
+    return ret;
+}
+
+
+HOOK_DEF(int, stat, const char *pathname, struct stat *buf) {
+    int res;
+    const char *redirect_path = relocate_path(pathname, &res);
+    RETURN_IF_FORBID
+    int ret = syscall(__NR_newfstatat, AT_FDCWD, redirect_path, buf, 0);
+    FREE(redirect_path, pathname);
+    return ret;
+}
+
+
+HOOK_DEF(int, lstat, const char *pathname, struct stat *buf) {
+    int res;
+    const char *redirect_path = relocate_path(pathname, &res);
+    RETURN_IF_FORBID
+    int ret = syscall(__NR_newfstatat, AT_FDCWD, redirect_path, buf, AT_SYMLINK_NOFOLLOW);
+    FREE(redirect_path, pathname);
+    return ret;
+}
+
+
+HOOK_DEF(int, open, const char *pathname, int flags, ...) {
+    mode_t mode = 0;
+    if ((flags & O_CREAT) != 0) {
+        va_list args;
+        va_start(args, flags);
+        mode = static_cast<mode_t>(va_arg(args, int));
+        va_end(args);
+    }
+    int res;
+    const char *redirect_path = relocate_path(pathname, &res);
+    RETURN_IF_FORBID
+    int ret = syscall(__NR_openat, AT_FDCWD, redirect_path, flags, mode);
+    FREE(redirect_path, pathname);
+    return ret;
+}
+
+
+HOOK_DEF(int, openat, int dirfd, const char *pathname, int flags, ...) {
+    mode_t mode = 0;
+    if ((flags & O_CREAT) != 0) {
+        va_list args;
+        va_start(args, flags);
+        mode = static_cast<mode_t>(va_arg(args, int));
+        va_end(args);
+    }
+    int res;
+    const char *redirect_path = relocate_path(pathname, &res);
+    RETURN_IF_FORBID
+    int ret = syscall(__NR_openat, dirfd, redirect_path, flags, mode);
+    FREE(redirect_path, pathname);
+    return ret;
+}
+
+
+HOOK_DEF(FILE *, fopen, const char *pathname, const char *mode) {
+    int res;
+    const char *redirect_path = relocate_path(pathname, &res);
+    if (res == FORBID) {
+        return nullptr;
+    }
+    FILE *ret = orig_fopen(redirect_path, mode);
+    FREE(redirect_path, pathname);
+    return ret;
+}
+
+
+HOOK_DEF(DIR *, opendir, const char *pathname) {
+    int res;
+    const char *redirect_path = relocate_path(pathname, &res);
+    if (res == FORBID) {
+        return nullptr;
+    }
+    DIR *ret = orig_opendir(redirect_path);
+    FREE(redirect_path, pathname);
+    return ret;
+}
+
+
+HOOK_DEF(int, mkdir, const char *pathname, mode_t mode) {
+    int res;
+    const char *redirect_path = relocate_path(pathname, &res);
+    RETURN_IF_FORBID
+    int ret = syscall(__NR_mkdirat, AT_FDCWD, redirect_path, mode);
+    FREE(redirect_path, pathname);
+    return ret;
+}
+
+
+HOOK_DEF(int, rename, const char *oldpath, const char *newpath) {
+    int res_old;
+    int res_new;
+    const char *redirect_path_old = relocate_path(oldpath, &res_old);
+    const char *redirect_path_new = relocate_path(newpath, &res_new);
+    int ret = syscall(__NR_renameat, AT_FDCWD, redirect_path_old,
+                      AT_FDCWD, redirect_path_new);
+    FREE(redirect_path_old, oldpath);
+    FREE(redirect_path_new, newpath);
+    return ret;
+}
+
+
+HOOK_DEF(int, unlink, const char *pathname) {
+    int res;
+    const char *redirect_path = relocate_path(pathname, &res);
+    RETURN_IF_FORBID
+    int ret = syscall(__NR_unlinkat, AT_FDCWD, redirect_path, 0);
+    FREE(redirect_path, pathname);
+    return ret;
+}
+
+
+HOOK_DEF(int, rmdir, const char *pathname) {
+    int res;
+    const char *redirect_path = relocate_path(pathname, &res);
+    RETURN_IF_FORBID
+    int ret = syscall(__NR_unlinkat, AT_FDCWD, redirect_path, AT_REMOVEDIR);
+    FREE(redirect_path, pathname);
+    return ret;
+}
 
 
 
@@ -250,9 +385,6 @@ HOOK_DEF(int, truncate, const char *pathname, off_t length) {
     FREE(redirect_path, pathname);
     return ret;
 }
-
-#define RETURN_IF_FORBID if(res == FORBID) return -1;
-
 
 // int chdir(const char *path);
 HOOK_DEF(int, chdir, const char *pathname) {
@@ -516,6 +648,17 @@ void IOUniformer::startUniformer(const char *so_path, int api_level, int preview
 
     void *handle = dlopen("libc.so", RTLD_NOW);
     if (handle) {
+        HOOK_SYMBOL(handle, access);
+        HOOK_SYMBOL(handle, stat);
+        HOOK_SYMBOL(handle, lstat);
+        HOOK_SYMBOL(handle, open);
+        HOOK_SYMBOL(handle, openat);
+        HOOK_SYMBOL(handle, fopen);
+        HOOK_SYMBOL(handle, opendir);
+        HOOK_SYMBOL(handle, mkdir);
+        HOOK_SYMBOL(handle, rename);
+        HOOK_SYMBOL(handle, unlink);
+        HOOK_SYMBOL(handle, rmdir);
         HOOK_SYMBOL(handle, fchownat);
         HOOK_SYMBOL(handle, renameat);
         HOOK_SYMBOL(handle, fstatat64);
