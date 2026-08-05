@@ -19,6 +19,8 @@ import com.lody.virtual.helper.utils.VLog;
 import com.lody.virtual.helper.collection.SparseArray;
 import com.lody.virtual.os.VUserHandle;
 
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Map;
 
 import static com.lody.virtual.server.job.VJobSchedulerService.JobConfig;
@@ -36,6 +38,7 @@ public class StubJob extends Service {
     private static final String TAG = StubJob.class.getSimpleName();
     private final SparseArray<JobSession> mJobSessions = new SparseArray<>();
     private JobScheduler mScheduler;
+    private boolean mDestroyed;
     private final IJobService mService = new IJobService.Stub() {
 
         @Override
@@ -50,32 +53,35 @@ public class StubJob extends Service {
             } else {
                 JobId key = entry.getKey();
                 JobConfig config = entry.getValue();
+                JobSession session;
                 synchronized (mJobSessions) {
-                    JobSession session = mJobSessions.get(jobId);
+                    session = mJobSessions.get(jobId);
                     if (session != null) {
-                        // Job Session has exist.
-                        emptyCallback(callback, jobId);
+                        // A session for this virtual job is already active.
+                        session = null;
+                    } else if (mDestroyed) {
+                        session = null;
                     } else {
                         session = new JobSession(jobId, callback, jobParams);
                         mirror.android.app.job.JobParameters.callback.set(jobParams, session.asBinder());
                         mirror.android.app.job.JobParameters.jobId.set(jobParams, key.clientJobId);
-                        Intent service = new Intent();
-                        service.setComponent(new ComponentName(key.packageName, config.serviceName));
-                        service.putExtra("_VA_|_user_id_", VUserHandle.getUserId(key.vuid));
-                        boolean bound = false;
-                        try {
-                            bound = bindService(service, session, 0);
-                        } catch (Throwable e) {
-                            VLog.e(TAG, e);
-                        }
-                        if (bound) {
-                            mJobSessions.put(jobId, session);
-                        } else {
-                            emptyCallback(callback, jobId);
-                            mScheduler.cancel(jobId);
-                            get().cancel(jobId);
-                        }
+                        // Register before binding so stop/destroy can see an in-flight bind.
+                        mJobSessions.put(jobId, session);
                     }
+                }
+                if (session == null) {
+                    emptyCallback(callback, jobId);
+                    return;
+                }
+
+                Intent service = new Intent();
+                service.setComponent(new ComponentName(key.packageName, config.serviceName));
+                service.putExtra("_VA_|_user_id_", VUserHandle.getUserId(key.vuid));
+                boolean bound = session.bindIfActive(service);
+                if (!bound) {
+                    session.finishBeforeStart();
+                    mScheduler.cancel(jobId);
+                    get().cancel(jobId);
                 }
             }
         }
@@ -83,11 +89,12 @@ public class StubJob extends Service {
         @Override
         public void stopJob(JobParameters jobParams) throws RemoteException {
             int jobId = jobParams.getJobId();
+            JobSession session;
             synchronized (mJobSessions) {
-                JobSession session = mJobSessions.get(jobId);
-                if (session != null) {
-                    session.stopSession();
-                }
+                session = mJobSessions.get(jobId);
+            }
+            if (session != null) {
+                session.stopSession(true);
             }
         }
     };
@@ -116,12 +123,103 @@ public class StubJob extends Service {
         return mService.asBinder();
     }
 
+    @Override
+    public void onDestroy() {
+        List<JobSession> sessions = new ArrayList<>();
+        synchronized (mJobSessions) {
+            mDestroyed = true;
+            for (int i = 0; i < mJobSessions.size(); i++) {
+                sessions.add(mJobSessions.valueAt(i));
+            }
+            mJobSessions.clear();
+        }
+        for (JobSession session : sessions) {
+            session.stopSession(true);
+        }
+        super.onDestroy();
+    }
+
+    private void removeSession(JobSession session) {
+        synchronized (mJobSessions) {
+            if (mJobSessions.get(session.jobId) == session) {
+                mJobSessions.remove(session.jobId);
+            }
+        }
+    }
+
+    /** Pure state seam that makes cleanup idempotent across Binder/lifecycle races. */
+    static final class SessionState {
+        enum CleanupAction {
+            ALREADY_CLEANED(false, false),
+            CLEANED(false, true),
+            CLEANED_AND_UNBIND(true, true);
+
+            private final boolean shouldUnbind;
+            private final boolean firstCleanup;
+
+            CleanupAction(boolean shouldUnbind, boolean firstCleanup) {
+                this.shouldUnbind = shouldUnbind;
+                this.firstCleanup = firstCleanup;
+            }
+
+            boolean shouldUnbind() {
+                return shouldUnbind;
+            }
+
+            boolean isFirstCleanup() {
+                return firstCleanup;
+            }
+        }
+
+        private boolean bound;
+        private boolean cleanupRequested;
+        private boolean unbindClaimed;
+        private boolean finishCallbackClaimed;
+
+        synchronized boolean onBindingSucceeded() {
+            bound = true;
+            return claimUnbindIfNeeded();
+        }
+
+        synchronized CleanupAction requestCleanup() {
+            if (cleanupRequested) {
+                return CleanupAction.ALREADY_CLEANED;
+            }
+            cleanupRequested = true;
+            return claimUnbindIfNeeded()
+                    ? CleanupAction.CLEANED_AND_UNBIND
+                    : CleanupAction.CLEANED;
+        }
+
+        synchronized boolean isCleanupRequested() {
+            return cleanupRequested;
+        }
+
+        synchronized boolean claimFinishCallback() {
+            if (finishCallbackClaimed) {
+                return false;
+            }
+            finishCallbackClaimed = true;
+            return true;
+        }
+
+        private boolean claimUnbindIfNeeded() {
+            if (!bound || !cleanupRequested || unbindClaimed) {
+                return false;
+            }
+            unbindClaimed = true;
+            return true;
+        }
+    }
+
     private final class JobSession extends IJobCallback.Stub implements ServiceConnection {
 
-        private int jobId;
-        private IJobCallback clientCallback;
-        private JobParameters jobParams;
-        private IJobService clientJobService;
+        private final int jobId;
+        private final IJobCallback clientCallback;
+        private final JobParameters jobParams;
+        private final SessionState state = new SessionState();
+        private final Object bindingLock = new Object();
+        private volatile IJobService clientJobService;
 
         JobSession(int jobId, IJobCallback clientCallback, JobParameters jobParams) {
             this.jobId = jobId;
@@ -131,25 +229,50 @@ public class StubJob extends Service {
 
         @Override
         public void acknowledgeStartMessage(int jobId, boolean ongoing) throws RemoteException {
-            clientCallback.acknowledgeStartMessage(jobId, ongoing);
+            try {
+                clientCallback.acknowledgeStartMessage(jobId, ongoing);
+            } catch (RemoteException e) {
+                stopSession(true);
+                throw e;
+            }
+            if (!ongoing) {
+                // acknowledgeStart(false) is terminal; suppress any late disconnect finish.
+                state.claimFinishCallback();
+                stopSession(false);
+            }
         }
 
         @Override
         public void acknowledgeStopMessage(int jobId, boolean reschedule) throws RemoteException {
-            clientCallback.acknowledgeStopMessage(jobId, reschedule);
+            try {
+                clientCallback.acknowledgeStopMessage(jobId, reschedule);
+            } finally {
+                stopSession(false);
+            }
         }
 
         @Override
         public void jobFinished(int jobId, boolean reschedule) throws RemoteException {
-            clientCallback.jobFinished(jobId, reschedule);
+            try {
+                if (state.claimFinishCallback()) {
+                    clientCallback.jobFinished(jobId, reschedule);
+                }
+            } finally {
+                stopSession(false);
+            }
         }
 
         @Override
         public void onServiceConnected(ComponentName name, IBinder service) {
+            if (state.isCleanupRequested()) {
+                return;
+            }
             clientJobService = IJobService.Stub.asInterface(service);
             if (clientJobService == null) {
-                emptyCallback(clientCallback, jobId);
-                stopSession();
+                finishBeforeStart();
+                return;
+            }
+            if (state.isCleanupRequested()) {
                 return;
             }
             try {
@@ -162,29 +285,93 @@ public class StubJob extends Service {
 
         @Override
         public void onServiceDisconnected(ComponentName name) {
-
+            forceFinishJob();
         }
 
         void forceFinishJob() {
             try {
-                clientCallback.jobFinished(jobId, false);
+                if (state.claimFinishCallback()) {
+                    clientCallback.jobFinished(jobId, false);
+                }
             } catch (RemoteException e) {
                 e.printStackTrace();
             } finally {
-                stopSession();
+                stopSession(false);
             }
         }
 
-        void stopSession() {
-            if (clientJobService != null) {
+        void finishBeforeStart() {
+            try {
+                if (state.claimFinishCallback()) {
+                    try {
+                        clientCallback.acknowledgeStartMessage(jobId, false);
+                    } catch (RemoteException ignored) {
+                        // The scheduler callback is already gone; cleanup must still run.
+                    }
+                    try {
+                        clientCallback.jobFinished(jobId, false);
+                    } catch (RemoteException ignored) {
+                        // The scheduler callback is already gone; cleanup must still run.
+                    }
+                }
+            } finally {
+                stopSession(false);
+            }
+        }
+
+        boolean bindIfActive(Intent service) {
+            synchronized (bindingLock) {
+                if (state.isCleanupRequested()) {
+                    return false;
+                }
+                boolean bound = false;
                 try {
-                    clientJobService.stopJob(jobParams);
-                } catch (RemoteException e) {
-                    e.printStackTrace();
+                    // ContextImpl registers the ServiceConnection before the Binder call returns.
+                    // Keep lifecycle cleanup outside this window, otherwise ActivityThread can
+                    // destroy StubJob and report the still-in-flight dispatcher as leaked.
+                    bound = StubJob.this.bindService(service, this, 0);
+                } catch (Throwable e) {
+                    VLog.e(TAG, e);
+                }
+                if (bound && state.onBindingSucceeded()) {
+                    unbindSafely();
+                }
+                return bound;
+            }
+        }
+
+        void stopSession(boolean stopClient) {
+            removeSession(this);
+            SessionState.CleanupAction action;
+            synchronized (bindingLock) {
+                // Wait for an in-flight Context.bindService() to return before claiming cleanup.
+                // ActivityThread does not check for leaked dispatchers until onDestroy returns.
+                action = state.requestCleanup();
+            }
+            if (!action.isFirstCleanup()) {
+                return;
+            }
+
+            IJobService service = clientJobService;
+            if (stopClient && service != null) {
+                try {
+                    service.stopJob(jobParams);
+                } catch (Throwable e) {
+                    VLog.e(TAG, e);
                 }
             }
-            mJobSessions.remove(jobId);
-            unbindService(this);
+            if (action.shouldUnbind()) {
+                unbindSafely();
+            }
+        }
+
+        private void unbindSafely() {
+            try {
+                StubJob.this.unbindService(this);
+            } catch (Throwable e) {
+                // The framework may have already dropped a dead connection.
+                VLog.e(TAG, e);
+            }
         }
     }
 
