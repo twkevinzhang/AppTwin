@@ -9,11 +9,8 @@ import com.lody.virtual.os.VUserHandle;
 
 import java.util.HashSet;
 import java.util.Set;
-import java.util.concurrent.atomic.AtomicLong;
 
 final class ProcessRecord extends Binder implements Comparable<ProcessRecord> {
-
-	private static final AtomicLong NEXT_GENERATION = new AtomicLong(1);
 
 	final long generation;
 	final ProcessLifecycle lifecycle;
@@ -29,10 +26,6 @@ final class ProcessRecord extends Binder implements Comparable<ProcessRecord> {
 	boolean startupWatchdogScheduled;
 	boolean terminalCleanupStarted;
     int priority;
-
-	public ProcessRecord(ApplicationInfo info, String processName, int vuid, int vpid) {
-		this(info, processName, vuid, vpid, NEXT_GENERATION.getAndIncrement());
-	}
 
 	ProcessRecord(ApplicationInfo info, String processName, int vuid, int vpid, long generation) {
 		this.info = info;
