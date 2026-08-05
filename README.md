@@ -58,6 +58,8 @@ recorded for [LINE](docs/m0-line-acceptance.md) and
 [Shopee Taiwan](docs/m0-shopee-acceptance.md). The immutable Group environment migration and reboot
 acceptance is recorded in
 [`docs/group-environment-binding-acceptance.md`](docs/group-environment-binding-acceptance.md).
+Group-scoped long-press uninstall and cross-Group data-preservation evidence is recorded in
+[`docs/group-app-uninstall-acceptance.md`](docs/group-app-uninstall-acceptance.md).
 
 For Shopee, select the imported package and use **開啟登入** to enter Shopee's declared native
 login activity. The normal GroupApp action continues to open Shopee's home activity. MaskAccounts

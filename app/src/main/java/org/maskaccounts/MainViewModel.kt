@@ -11,12 +11,15 @@ import androidx.compose.runtime.setValue
 import androidx.lifecycle.AndroidViewModel
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.Executors
+import org.maskaccounts.groups.FileGroupAppRemovalJournal
 import org.maskaccounts.groups.FileGroupOperationJournal
 import org.maskaccounts.groups.FileGroupStore
 import org.maskaccounts.groups.GoogleServicesState
 import org.maskaccounts.groups.Group
 import org.maskaccounts.groups.GroupApp
 import org.maskaccounts.groups.GroupAppOrigin
+import org.maskaccounts.groups.GroupAppRemovalCoordinator
+import org.maskaccounts.groups.GroupAppRemovalResult
 import org.maskaccounts.groups.GroupAppState
 import org.maskaccounts.groups.GroupHealth
 import org.maskaccounts.groups.GroupLifecycleCoordinator
@@ -77,6 +80,7 @@ data class MainUiState(
     val busyGroupId: String? = null,
     val launchingAppKey: String? = null,
     val launchingPlayStoreGroupId: String? = null,
+    val uninstallingAppKey: String? = null,
     val allFilesGranted: Boolean = false,
     val downloadCount: Int = 0,
     val photoCount: Int = 0,
@@ -92,6 +96,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         store = groupStore,
         runtime = runtimeController,
         journal = FileGroupOperationJournal(application),
+    )
+    private val appRemoval = GroupAppRemovalCoordinator(
+        store = groupStore,
+        runtime = runtimeController,
+        journal = FileGroupAppRemovalJournal(application),
     )
     private val worker = Executors.newSingleThreadExecutor()
     private val mainHandler = Handler(Looper.getMainLooper())
@@ -110,6 +119,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun openAppPicker(groupId: String) {
+        if (uiState.uninstallingAppKey != null) {
+            showMessage("App 正在解除安裝，請稍候")
+            return
+        }
         val group = groupStore.find(groupId)
         if (group == null) {
             showMessage("找不到這個群組")
@@ -235,7 +248,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun deleteGroup(groupId: String) {
-        if (uiState.busyGroupId != null) return
+        if (uiState.busyGroupId != null || uiState.uninstallingAppKey != null) return
         val group = groupStore.find(groupId) ?: run {
             showMessage("找不到這個群組")
             return
@@ -257,6 +270,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun selectApp(app: AppItem) {
+        if (uiState.uninstallingAppKey != null) return
         val groupId = uiState.appPickerGroupId ?: return
         val group = groupStore.find(groupId) ?: run {
             showMessage("找不到這個群組")
@@ -312,6 +326,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     fun prepareGroup(groupId: String) {
         if (groupId in activePreparations) return
+        if (uiState.uninstallingAppKey?.startsWith("$groupId:") == true) return
         val group = groupStore.find(groupId) ?: return
         if (group.health != GroupHealth.HEALTHY) {
             showMessage("群組環境目前無法準備 Google 服務")
@@ -345,7 +360,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun launchGroupApp(item: GroupAppItem) {
-        if (uiState.launchingAppKey != null || uiState.launchingPlayStoreGroupId != null) return
+        if (
+            uiState.launchingAppKey != null ||
+            uiState.launchingPlayStoreGroupId != null ||
+            uiState.uninstallingAppKey != null
+        ) return
         if (item.groupId in activePreparations) {
             showMessage("「${item.groupName}」正在準備，請稍候")
             return
@@ -440,8 +459,57 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    fun uninstallGroupApp(item: GroupAppItem) {
+        if (
+            uiState.uninstallingAppKey != null ||
+            uiState.launchingAppKey != null ||
+            uiState.launchingPlayStoreGroupId != null ||
+            uiState.busyGroupId != null ||
+            uiState.busyPackageName != null
+        ) return
+        if (item.groupId in activePreparations) {
+            showMessage("「${item.groupName}」正在準備，請稍候")
+            return
+        }
+        val current = groupStore.find(item.groupId)
+        val currentApp = current?.apps?.firstOrNull {
+            it.packageName == item.app.packageName &&
+                it.addedAtEpochMillis == item.app.addedAtEpochMillis
+        }
+        if (current == null || currentApp == null) {
+            showMessage("${item.appLabel} 已不在「${item.groupName}」中")
+            refresh()
+            return
+        }
+        if (current.health != GroupHealth.HEALTHY) {
+            showMessage("「${item.groupName}」目前無法解除安裝 App")
+            return
+        }
+
+        uiState = uiState.copy(uninstallingAppKey = item.launchKey)
+        worker.execute {
+            val result = appRemoval.remove(item.groupId, item.app.packageName)
+            post {
+                uiState = uiState.copy(uninstallingAppKey = null)
+                when (result) {
+                    is GroupAppRemovalResult.Succeeded ->
+                        showMessage("已從「${item.groupName}」解除安裝 ${item.appLabel}")
+                    GroupAppRemovalResult.AlreadyAbsent ->
+                        showMessage("${item.appLabel} 已不在「${item.groupName}」中")
+                    is GroupAppRemovalResult.Failed ->
+                        showMessage("解除安裝失敗：${result.reason}")
+                }
+                refresh()
+            }
+        }
+    }
+
     fun launchPlayStore(groupId: String) {
-        if (uiState.launchingAppKey != null || uiState.launchingPlayStoreGroupId != null) return
+        if (
+            uiState.launchingAppKey != null ||
+            uiState.launchingPlayStoreGroupId != null ||
+            uiState.uninstallingAppKey != null
+        ) return
         if (groupId in activePreparations) {
             val groupName = uiState.groups.firstOrNull { it.groupId == groupId }?.name ?: "群組"
             showMessage("「$groupName」正在準備，請稍候")
@@ -529,10 +597,14 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private fun reconcileAndRefresh() {
         uiState = uiState.copy(isRefreshing = true)
         worker.execute {
-            val result = runCatching(lifecycle::reconcile)
+            val lifecycleResult = runCatching(lifecycle::reconcile)
+            val appRemovalResult = runCatching(appRemoval::reconcile)
             post {
-                result.onFailure { error ->
+                lifecycleResult.onFailure { error ->
                     showMessage("部分群組環境需要處理：${error.userMessage()}")
+                }
+                appRemovalResult.onFailure { error ->
+                    showMessage("部分 App 解除安裝作業需要處理：${error.userMessage()}")
                 }
                 refresh()
             }

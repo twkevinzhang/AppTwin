@@ -19,8 +19,10 @@ import org.maskaccounts.groups.EnvironmentBinding
 import org.maskaccounts.groups.FileGroupStore
 import org.maskaccounts.groups.Group
 import org.maskaccounts.groups.GroupApp
+import org.maskaccounts.groups.GroupAppRemovalRuntime
 import org.maskaccounts.groups.GroupEnvironmentRuntime
 import org.maskaccounts.groups.GroupHealth
+import org.maskaccounts.groups.RuntimeGroupAppRemovalResult
 import org.maskaccounts.revision.AndroidPackageRevisionImporter
 import org.maskaccounts.revision.RevisionImportResult
 
@@ -47,7 +49,7 @@ data class VirtualPackageSummary(
 )
 
 /** The only adapter allowed to translate a Group environment into the engine's numeric user API. */
-class VirtualRuntimeController(context: Context) : GroupEnvironmentRuntime {
+class VirtualRuntimeController(context: Context) : GroupEnvironmentRuntime, GroupAppRemovalRuntime {
     private val appContext = context.applicationContext
     private val importer = AndroidPackageRevisionImporter(appContext)
 
@@ -128,6 +130,30 @@ class VirtualRuntimeController(context: Context) : GroupEnvironmentRuntime {
             Thread.sleep(50)
         }
         error("群組環境刪除逾時")
+    }
+
+    override fun removeApp(
+        binding: EnvironmentBinding,
+        packageName: String,
+    ): RuntimeGroupAppRemovalResult {
+        require(binding.internalId > 0) { "預設引擎環境不可移除 GroupApp" }
+        val core = VirtualCore.get()
+        core.waitForEngine()
+        check(environmentExists(binding)) { "群組環境已損毀" }
+        if (!core.isAppInstalledAsUser(binding.internalId, packageName)) {
+            return RuntimeGroupAppRemovalResult.AlreadyAbsent
+        }
+        check(core.uninstallPackageAsUser(packageName, binding.internalId)) {
+            "無法從群組移除 $packageName"
+        }
+        check(!core.isAppInstalledAsUser(binding.internalId, packageName)) {
+            "$packageName 仍存在於群組環境"
+        }
+        Log.i(
+            TAG,
+            "group-app-removed package=$packageName environmentId=${binding.internalId}",
+        )
+        return RuntimeGroupAppRemovalResult.Removed
     }
 
     fun prepareGroup(group: Group): GroupPreparationResult = runCatching {
