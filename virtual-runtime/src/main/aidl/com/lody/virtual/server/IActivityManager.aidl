@@ -50,7 +50,7 @@ interface IActivityManager {
 
     void handleApplicationCrash();
 
-    void appDoneExecuting();
+    void appDoneExecuting(in IBinder processToken, boolean success);
 
     int startActivities(in Intent[] intents, in String[] resolvedTypes, in IBinder token, in Bundle options, in int userId);
 

@@ -359,9 +359,9 @@ public class VActivityManager {
         }
     }
 
-    public void appDoneExecuting() {
+    public void appDoneExecuting(IBinder processToken, boolean success) {
         try {
-            getService().appDoneExecuting();
+            getService().appDoneExecuting(processToken, success);
         } catch (RemoteException e) {
             e.printStackTrace();
         }

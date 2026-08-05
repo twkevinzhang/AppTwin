@@ -384,7 +384,7 @@ public final class VClientImpl extends IVClient.Stub {
                     }
                 }
                 // 2. tell vams that launch finish.
-                VActivityManager.get().appDoneExecuting();
+                VActivityManager.get().appDoneExecuting(token, false);
 
                 // 3. rethrow
                 throw new RuntimeException(
@@ -394,7 +394,7 @@ public final class VClientImpl extends IVClient.Stub {
         }
         VirtualCore.get().getComponentDelegate().afterApplicationCreate(mInitialApplication);
         ensureGoogleMainProcessKeepAlive(packageName, processName);
-        VActivityManager.get().appDoneExecuting();
+        VActivityManager.get().appDoneExecuting(token, true);
     }
 
     private void ensureGoogleMainProcessKeepAlive(String packageName, String processName) {
