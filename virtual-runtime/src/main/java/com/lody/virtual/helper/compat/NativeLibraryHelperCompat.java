@@ -41,45 +41,50 @@ public class NativeLibraryHelperCompat {
 
 	@TargetApi(Build.VERSION_CODES.LOLLIPOP)
 	private static int copyNativeBinariesAfterL(File apkFile, File sharedLibraryDir) {
-		try {
-			Object handle = NativeLibraryHelper.Handle.create.call(apkFile);
-			if (handle == null) {
-				return -1;
-			}
-
-			String abi = null;
-			Set<String> abiSet = getABIsFromApk(apkFile.getAbsolutePath());
-			if (abiSet == null || abiSet.isEmpty()) {
-				return 0;
-			}
-			boolean is64Bit = VMRuntime.is64Bit.call(VMRuntime.getRuntime.call());
-			if (is64Bit && isVM64(abiSet)) {
-				if (Build.SUPPORTED_64_BIT_ABIS.length > 0) {
-					int abiIndex = NativeLibraryHelper.findSupportedAbi.call(handle, Build.SUPPORTED_64_BIT_ABIS);
-					if (abiIndex >= 0) {
-						abi = Build.SUPPORTED_64_BIT_ABIS[abiIndex];
-					}
-				}
-			} else {
-				if (Build.SUPPORTED_32_BIT_ABIS.length > 0) {
-					int abiIndex = NativeLibraryHelper.findSupportedAbi.call(handle, Build.SUPPORTED_32_BIT_ABIS);
-					if (abiIndex >= 0) {
-						abi = Build.SUPPORTED_32_BIT_ABIS[abiIndex];
-					}
-				}
-			}
-
-			if (abi == null) {
-				VLog.e(TAG, "Not match any abi [%s].", apkFile.getPath());
-				return -1;
-			}
-			return NativeLibraryHelper.copyNativeBinaries.call(handle, sharedLibraryDir, abi);
-		} catch (Throwable e) {
-			VLog.d(TAG, "copyNativeBinaries with error : %s", e.getLocalizedMessage());
-			e.printStackTrace();
+		Set<String> abiSet = getABIsFromApk(apkFile.getAbsolutePath());
+		if (abiSet == null) {
+			return -1;
+		}
+		if (abiSet.isEmpty()) {
+			return 0;
+		}
+		String abi = selectRuntimeAbi(abiSet);
+		if (abi == null) {
+			VLog.e(TAG, "Not match any abi [%s].", apkFile.getPath());
+			return -1;
 		}
 
-		return -1;
+		try {
+			Object handle = NativeLibraryHelper.Handle.create.call(apkFile);
+			if (handle != null) {
+				NativeLibraryHelper.copyNativeBinaries.call(handle, sharedLibraryDir, abi);
+			}
+		} catch (Throwable e) {
+			VLog.w(TAG, "platform native extraction failed for " + apkFile, e);
+		}
+		try {
+			int extracted = NativeLibraryExtractor.extractMissing(apkFile, sharedLibraryDir, abi);
+			if (extracted > 0) {
+				VLog.i(TAG, "native extraction fallback apk=%s abi=%s extracted=%d",
+						apkFile.getName(), abi, extracted);
+			}
+			return 1;
+		} catch (Throwable e) {
+			VLog.e(TAG, "native extraction fallback failed for " + apkFile, e);
+			return -1;
+		}
+	}
+
+	private static String selectRuntimeAbi(Set<String> supportedAbis) {
+		boolean is64Bit = VMRuntime.is64Bit.call(VMRuntime.getRuntime.call());
+		String[] runtimeAbis = is64Bit
+				? Build.SUPPORTED_64_BIT_ABIS : Build.SUPPORTED_32_BIT_ABIS;
+		for (String abi : runtimeAbis) {
+			if (supportedAbis.contains(abi)) {
+				return abi;
+			}
+		}
+		return null;
 	}
 
 	@TargetApi(Build.VERSION_CODES.LOLLIPOP)

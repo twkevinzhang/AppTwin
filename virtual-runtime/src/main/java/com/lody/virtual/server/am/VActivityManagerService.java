@@ -88,7 +88,7 @@ public class VActivityManagerService extends IActivityManager.Stub {
     private static final AtomicReference<VActivityManagerService> sService = new AtomicReference<>();
     private static final String TAG = VActivityManagerService.class.getSimpleName();
     private final SparseArray<ProcessRecord> mPidsSelfLocked = new SparseArray<ProcessRecord>();
-    private final Object mProcessStartLock = new Object();
+    private final ProcessStartGate mProcessStartGate = new ProcessStartGate();
     private final ActivityStack mMainStack = new ActivityStack(this);
     private final Set<ServiceRecord> mHistory = new HashSet<ServiceRecord>();
     private final ProcessMap<ProcessRecord> mProcessNames = new ProcessMap<ProcessRecord>();
@@ -335,8 +335,11 @@ public class VActivityManagerService extends IActivityManager.Stub {
         }
         VLog.i(TAG, "startService " + service + " resolved="
                 + ComponentUtils.toComponentName(serviceInfo) + " user=" + userId);
-        final ProcessRecord targetApp = startProcessIfNeedLocked(
-                ComponentUtils.getProcessName(serviceInfo), userId, serviceInfo.packageName);
+        final ProcessRecord targetApp = scheduleServiceArgs
+                ? startProcessIfNeedLocked(ComponentUtils.getProcessName(serviceInfo), userId,
+                serviceInfo.packageName)
+                : tryStartProcessForBinding(ComponentUtils.getProcessName(serviceInfo), userId,
+                serviceInfo.packageName);
         if (targetApp == null) {
             VLog.e(TAG, "Unable to start new Process for : "
                     + ComponentUtils.toComponentName(serviceInfo));
@@ -1056,7 +1059,8 @@ public class VActivityManagerService extends IActivityManager.Stub {
             return;
         }
         int uid = VUserHandle.getUid(userId, appId);
-        synchronized (mProcessStartLock) {
+        mProcessStartGate.enter();
+        try {
             reconcileRunningStubProcessesLocked();
             int vpid = parseVPid(getProcessName(callingPid));
             if (vpid < 0 || vpid >= VASettings.STUB_COUNT
@@ -1096,6 +1100,8 @@ public class VActivityManagerService extends IActivityManager.Stub {
             if (app != null) {
                 app.pkgList.add(packageName);
             }
+        } finally {
+            mProcessStartGate.exit();
         }
     }
 
@@ -1257,42 +1263,64 @@ public class VActivityManagerService extends IActivityManager.Stub {
     }
 
     ProcessRecord startProcessIfNeedLocked(String processName, int userId, String packageName) {
-        synchronized (mProcessStartLock) {
-            PackageSetting ps = PackageCacheManager.getSetting(packageName);
-            ApplicationInfo info = VPackageManagerService.get().getApplicationInfo(
-                    packageName, 0, userId);
-            if (ps == null || info == null) {
-                return null;
-            }
-            if (!ps.isLaunched(userId)) {
-                sendFirstLaunchBroadcast(ps, userId);
-                ps.setLaunched(userId, true);
-                VAppManagerService.get().savePersistenceData();
-            }
-            int uid = VUserHandle.getUid(userId, ps.appId);
-            LogicalProcessKey key = new LogicalProcessKey(uid, packageName, processName);
-            reconcileRunningStubProcessesLocked();
-            LogicalProcessOwnerRegistry.OwnerSnapshot<ProcessRecord> existing =
-                    mLogicalProcessOwners.find(key);
-            if (existing != null && isLogicalOwnerAlive(existing.owner())) {
-                existing.owner().pkgList.add(info.packageName);
-                return existing.owner();
-            }
-
-            LogicalProcessOwnerRegistry.ReservationResult<ProcessRecord> reserved =
-                    reserveFreeStubProcessLocked(key);
-            if (reserved == null || reserved.status()
-                    != LogicalProcessOwnerRegistry.ReservationStatus.RESERVED) {
-                return null;
-            }
-            int vpid = reserved.reservation().slot();
-            ProcessRecord app = performStartProcessLocked(uid, vpid, info, processName,
-                    reserved.reservation());
-            if (app != null) {
-                app.pkgList.add(info.packageName);
-            }
-            return app;
+        mProcessStartGate.enter();
+        try {
+            return startProcessWithGateHeld(processName, userId, packageName);
+        } finally {
+            mProcessStartGate.exit();
         }
+    }
+
+    private ProcessRecord tryStartProcessForBinding(String processName, int userId,
+                                                     String packageName) {
+        if (!mProcessStartGate.tryEnter()) {
+            VLog.d(TAG, "Skipping contended service process start package=" + packageName
+                    + " process=" + processName + " user=" + userId);
+            return null;
+        }
+        try {
+            return startProcessWithGateHeld(processName, userId, packageName);
+        } finally {
+            mProcessStartGate.exit();
+        }
+    }
+
+    private ProcessRecord startProcessWithGateHeld(String processName, int userId,
+                                                    String packageName) {
+        PackageSetting ps = PackageCacheManager.getSetting(packageName);
+        ApplicationInfo info = VPackageManagerService.get().getApplicationInfo(
+                packageName, 0, userId);
+        if (ps == null || info == null) {
+            return null;
+        }
+        if (!ps.isLaunched(userId)) {
+            sendFirstLaunchBroadcast(ps, userId);
+            ps.setLaunched(userId, true);
+            VAppManagerService.get().savePersistenceData();
+        }
+        int uid = VUserHandle.getUid(userId, ps.appId);
+        LogicalProcessKey key = new LogicalProcessKey(uid, packageName, processName);
+        reconcileRunningStubProcessesLocked();
+        LogicalProcessOwnerRegistry.OwnerSnapshot<ProcessRecord> existing =
+                mLogicalProcessOwners.find(key);
+        if (existing != null && isLogicalOwnerAlive(existing.owner())) {
+            existing.owner().pkgList.add(info.packageName);
+            return existing.owner();
+        }
+
+        LogicalProcessOwnerRegistry.ReservationResult<ProcessRecord> reserved =
+                reserveFreeStubProcessLocked(key);
+        if (reserved == null || reserved.status()
+                != LogicalProcessOwnerRegistry.ReservationStatus.RESERVED) {
+            return null;
+        }
+        int vpid = reserved.reservation().slot();
+        ProcessRecord app = performStartProcessLocked(uid, vpid, info, processName,
+                reserved.reservation());
+        if (app != null) {
+            app.pkgList.add(info.packageName);
+        }
+        return app;
     }
 
     private void sendFirstLaunchBroadcast(PackageSetting ps, int userId) {

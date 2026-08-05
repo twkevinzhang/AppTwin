@@ -196,8 +196,8 @@ public class MethodInvocationStub<T> {
                 } else {
                     res = method.invoke(mBaseInterface, args);
                 }
-                if (res instanceof List && ParceledListSliceCompat.isReturnParceledListSlice(method)) {
-                    res = ParceledListSliceCompat.create((List) res);
+                if (res instanceof List && ParceledListSliceCompat.isReturnListContainer(method)) {
+                    res = ParceledListSliceCompat.createForReturnType(method, (List) res);
                 }
                 return res;
 
