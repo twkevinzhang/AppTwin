@@ -121,7 +121,7 @@ import static android.content.pm.ActivityInfo.LAUNCH_SINGLE_TOP;
                 }
                 synchronized (task.activities) {
                     for (ActivityRecord r : task.activities) {
-                        if (r.token == token) {
+                        if (sameToken(r.token, token)) {
                             target = r;
                         }
                     }
@@ -131,22 +131,28 @@ import static android.content.pm.ActivityInfo.LAUNCH_SINGLE_TOP;
         return target;
     }
 
-    private boolean markTaskByClearTarget(TaskRecord task, ClearTarget clearTarget, ComponentName component) {
-        boolean marked = false;
+    private static boolean sameToken(IBinder first, IBinder second) {
+        return first == second || (first != null && first.equals(second));
+    }
+
+    private boolean markTaskByClearTarget(TaskRecord task, ClearTarget clearTarget,
+                                          ComponentName component,
+                                          ArrayList<ActivityRecord> newlyMarked) {
+        boolean targetFound = false;
         synchronized (task.activities) {
             switch (clearTarget) {
                 case TASK: {
                     for (ActivityRecord r : task.activities) {
-                        r.marked = true;
-                        marked = true;
+                        markActivity(r, newlyMarked);
+                        targetFound = true;
                     }
                 }
                 break;
                 case SPEC_ACTIVITY: {
                     for (ActivityRecord r : task.activities) {
                         if (r.component.equals(component)) {
-                            r.marked = true;
-                            marked = true;
+                            markActivity(r, newlyMarked);
+                            targetFound = true;
                         }
                     }
                 }
@@ -156,20 +162,34 @@ import static android.content.pm.ActivityInfo.LAUNCH_SINGLE_TOP;
                     while (N-- > 0) {
                         ActivityRecord r = task.activities.get(N);
                         if (r.component.equals(component)) {
-                            marked = true;
+                            targetFound = true;
                             break;
                         }
                     }
-                    if (marked) {
+                    if (targetFound) {
                         while (N++ < task.activities.size() - 1) {
-                            task.activities.get(N).marked = true;
+                            markActivity(task.activities.get(N), newlyMarked);
                         }
                     }
                 }
                 break;
             }
         }
-        return marked;
+        return targetFound;
+    }
+
+    private static void markActivity(ActivityRecord record,
+                                     ArrayList<ActivityRecord> newlyMarked) {
+        if (!record.marked) {
+            record.marked = true;
+            newlyMarked.add(record);
+        }
+    }
+
+    private static void rollbackMarkedActivities(ArrayList<ActivityRecord> newlyMarked) {
+        for (ActivityRecord record : newlyMarked) {
+            record.marked = false;
+        }
     }
 
     /**
@@ -369,14 +389,18 @@ import static android.content.pm.ActivityInfo.LAUNCH_SINGLE_TOP;
             startActivityInNewTaskLocked(userId, intent, info, options);
         } else {
             boolean delivered = false;
+            boolean successorStarted = false;
             mAM.moveTaskToFront(reuseTask.taskId, 0);
             boolean startTaskToFront = !clearTask && !clearTop && ComponentUtils.isSameIntent(intent, reuseTask.taskRoot);
+            ActivityRecord topBeforeMarking = topActivityInTask(reuseTask);
+            ArrayList<ActivityRecord> newlyMarked = new ArrayList<>();
 
             if (clearTarget.deliverIntent || singleTop) {
-                taskMarked = markTaskByClearTarget(reuseTask, clearTarget, intent.getComponent());
+                taskMarked = markTaskByClearTarget(reuseTask, clearTarget,
+                        intent.getComponent(), newlyMarked);
                 ActivityRecord topRecord = topActivityInTask(reuseTask);
                 if (clearTop && !singleTop && topRecord != null && taskMarked) {
-                    topRecord.marked = true;
+                    markActivity(topRecord, newlyMarked);
                 }
                 // Target activity is on top
                 if (topRecord != null && !topRecord.marked && topRecord.component.equals(intent.getComponent())) {
@@ -384,18 +408,23 @@ import static android.content.pm.ActivityInfo.LAUNCH_SINGLE_TOP;
                     delivered = true;
                 }
             }
-            if (taskMarked) {
-                synchronized (mHistory) {
-                    scheduleFinishMarkedActivityLocked();
-                }
-            }
             if (!startTaskToFront) {
                 if (!delivered) {
                     destIntent = startActivityProcess(userId, sourceRecord, intent, info);
                     if (destIntent != null) {
-                        startActivityFromSourceTask(reuseTask, destIntent, info, resultWho, requestCode, options);
+                        ActivityRecord sourceInReuseTask = sourceRecord != null
+                                && sourceRecord.task == reuseTask ? sourceRecord : null;
+                        ActivityRecord launchAnchor = ActivityLaunchGuard.selectLaunchAnchor(
+                                sourceInReuseTask, topActivityInTask(reuseTask), topBeforeMarking);
+                        successorStarted = startActivityFromSourceTask(launchAnchor, destIntent,
+                                resultWho, requestCode, options);
                     }
                 }
+            }
+            if (ActivityLaunchGuard.shouldCommitClear(taskMarked, delivered, successorStarted)) {
+                scheduleFinishMarkedActivityLocked(newlyMarked);
+            } else if (taskMarked) {
+                rollbackMarkedActivities(newlyMarked);
             }
         }
         return 0;
@@ -423,36 +452,28 @@ import static android.content.pm.ActivityInfo.LAUNCH_SINGLE_TOP;
         }
     }
 
-    private void scheduleFinishMarkedActivityLocked() {
-        int N = mHistory.size();
-        while (N-- > 0) {
-            final TaskRecord task = mHistory.valueAt(N);
-            for (final ActivityRecord r : task.activities) {
-                if (!r.marked) {
-                    continue;
-                }
-                VirtualRuntime.getUIHandler().post(new Runnable() {
-                    @Override
-                    public void run() {
-                        try {
-                            r.process.client.finishActivity(r.token);
-                        } catch (RemoteException e) {
-                            e.printStackTrace();
-                        }
+    private void scheduleFinishMarkedActivityLocked(ArrayList<ActivityRecord> newlyMarked) {
+        for (final ActivityRecord r : newlyMarked) {
+            VirtualRuntime.getUIHandler().post(new Runnable() {
+                @Override
+                public void run() {
+                    try {
+                        r.process.client.finishActivity(r.token);
+                    } catch (RemoteException e) {
+                        e.printStackTrace();
                     }
-                });
-            }
+                }
+            });
         }
     }
 
-    private void startActivityFromSourceTask(TaskRecord task, Intent intent, ActivityInfo info, String resultWho,
-                                             int requestCode, Bundle options) {
-        ActivityRecord top = task.activities.isEmpty() ? null : task.activities.get(task.activities.size() - 1);
-        if (top != null) {
-            if (startActivityProcess(task.userId, top, intent, info) != null) {
-                realStartActivityLocked(top.token, intent, resultWho, requestCode, options);
-            }
+    private boolean startActivityFromSourceTask(ActivityRecord launchAnchor, Intent intent,
+                                                String resultWho, int requestCode, Bundle options) {
+        if (launchAnchor != null) {
+            realStartActivityLocked(launchAnchor.token, intent, resultWho, requestCode, options);
+            return true;
         }
+        return false;
     }
 
 

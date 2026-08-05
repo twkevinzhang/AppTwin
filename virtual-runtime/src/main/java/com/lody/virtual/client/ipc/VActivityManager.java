@@ -96,7 +96,9 @@ public class VActivityManager {
     public ActivityClientRecord onActivityCreate(ComponentName component, ComponentName caller, IBinder token, ActivityInfo info, Intent intent, String affinity, int taskId, int launchMode, int flags) {
         ActivityClientRecord r = new ActivityClientRecord();
         r.info = info;
-        mActivities.put(token, r);
+        synchronized (mActivities) {
+            mActivities.put(token, r);
+        }
         try {
             getService().onActivityCreated(component, caller, token, intent, affinity, taskId, launchMode, flags);
         } catch (RemoteException e) {
@@ -125,9 +127,14 @@ public class VActivityManager {
     }
 
     public boolean onActivityDestroy(IBinder token) {
-        mActivities.remove(token);
+        ActivityClientRecord removed;
+        synchronized (mActivities) {
+            removed = mActivities.remove(token);
+        }
         try {
-            return getService().onActivityDestroyed(VUserHandle.myUserId(), token);
+            boolean serverRemoved = getService().onActivityDestroyed(
+                    VUserHandle.myUserId(), token);
+            return removed != null || serverRemoved;
         } catch (RemoteException e) {
             return VirtualRuntime.crash(e);
         }
