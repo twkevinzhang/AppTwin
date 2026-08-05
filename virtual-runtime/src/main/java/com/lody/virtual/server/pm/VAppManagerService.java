@@ -508,6 +508,7 @@ public class VAppManagerService extends IAppManager.Stub {
             notifyAppUninstalled(ps, userId);
             mPersistenceLayer.save();
             FileUtils.deleteDir(VEnvironment.getDataUserPackageDirectory(userId, packageName));
+            FileUtils.deleteDir(VEnvironment.getDeDataUserPackageDirectory(userId, packageName));
             FileUtils.deleteDir(VEnvironment.getVirtualPrivateStorageDir(userId, packageName));
             return true;
         }

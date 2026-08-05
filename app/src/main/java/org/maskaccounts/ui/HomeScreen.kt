@@ -1,7 +1,9 @@
 package org.maskaccounts.ui
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -51,6 +53,10 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.stateDescription
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -70,10 +76,12 @@ fun HomeScreen(
     onPrepareGroup: (String) -> Unit,
     onRenameGroup: (String, String) -> Unit,
     onDeleteGroup: (String) -> Unit,
+    onUninstallApp: (GroupAppItem) -> Unit,
     onCreateGroup: () -> Unit,
 ) {
     var renameTarget by remember { mutableStateOf<GroupItem?>(null) }
     var deleteTarget by remember { mutableStateOf<GroupItem?>(null) }
+    var uninstallTarget by remember { mutableStateOf<GroupAppItem?>(null) }
 
     if (state.groups.isEmpty() && !state.isRefreshing) {
         EmptyGroups(onCreateGroup)
@@ -88,16 +96,20 @@ fun HomeScreen(
                 GroupCard(
                     item = item,
                     launchingAppKey = state.launchingAppKey,
+                    uninstallingAppKey = state.uninstallingAppKey,
                     isPlayStoreLaunching = state.launchingPlayStoreGroupId == item.groupId,
                     isAnyLaunchBusy = state.launchingAppKey != null ||
-                        state.launchingPlayStoreGroupId != null,
-                    isBusy = state.busyGroupId == item.groupId,
+                        state.launchingPlayStoreGroupId != null ||
+                        state.uninstallingAppKey != null,
+                    isBusy = state.busyGroupId == item.groupId ||
+                        state.uninstallingAppKey?.startsWith("${item.groupId}:") == true,
                     onLaunch = onLaunch,
                     onLaunchPlayStore = { onLaunchPlayStore(item.groupId) },
                     onAddApp = { onAddApp(item.groupId) },
                     onPrepare = { onPrepareGroup(item.groupId) },
                     onRename = { renameTarget = item },
                     onDelete = { deleteTarget = item },
+                    onUninstallApp = { uninstallTarget = it },
                 )
             }
         }
@@ -132,6 +144,41 @@ fun HomeScreen(
             },
             dismissButton = {
                 TextButton(onClick = { deleteTarget = null }) { Text("取消") }
+            },
+        )
+    }
+
+    uninstallTarget?.let { app ->
+        AlertDialog(
+            modifier = Modifier.testTag("uninstall-app-dialog"),
+            onDismissRequest = { uninstallTarget = null },
+            icon = {
+                Icon(
+                    Icons.Default.Delete,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.error,
+                )
+            },
+            title = { Text("解除安裝「${app.appLabel}」？") },
+            text = {
+                Text(
+                    "只會從「${app.groupName}」Group 移除此 App，並永久刪除它在此 Group 內的所有私有資料。主系統 App 與其他 Group 不受影響；此操作無法復原。",
+                )
+            },
+            confirmButton = {
+                Button(
+                    modifier = Modifier.testTag("confirm-uninstall-app"),
+                    onClick = {
+                        onUninstallApp(app)
+                        uninstallTarget = null
+                    },
+                ) { Text("解除安裝") }
+            },
+            dismissButton = {
+                TextButton(
+                    modifier = Modifier.testTag("cancel-uninstall-app"),
+                    onClick = { uninstallTarget = null },
+                ) { Text("取消") }
             },
         )
     }
@@ -186,6 +233,7 @@ private fun HomeSummary(groupCount: Int) {
 private fun GroupCard(
     item: GroupItem,
     launchingAppKey: String?,
+    uninstallingAppKey: String?,
     isPlayStoreLaunching: Boolean,
     isAnyLaunchBusy: Boolean,
     isBusy: Boolean,
@@ -195,6 +243,7 @@ private fun GroupCard(
     onPrepare: () -> Unit,
     onRename: () -> Unit,
     onDelete: () -> Unit,
+    onUninstallApp: (GroupAppItem) -> Unit,
 ) {
     var menuExpanded by remember { mutableStateOf(false) }
     Card(
@@ -276,8 +325,13 @@ private fun GroupCard(
                 modifier = Modifier.padding(start = 12.dp, top = 12.dp, end = 12.dp),
                 apps = item.apps,
                 launchingAppKey = launchingAppKey,
-                enabled = item.health == GroupHealth.HEALTHY && !isBusy && !isAnyLaunchBusy,
+                uninstallingAppKey = uninstallingAppKey,
+                enabled = item.health == GroupHealth.HEALTHY &&
+                    !isBusy &&
+                    !isAnyLaunchBusy &&
+                    uninstallingAppKey == null,
                 onLaunch = onLaunch,
+                onUninstall = onUninstallApp,
                 onAddApp = onAddApp,
             )
         }
@@ -386,8 +440,10 @@ private fun AppGrid(
     modifier: Modifier,
     apps: List<GroupAppItem>,
     launchingAppKey: String?,
+    uninstallingAppKey: String?,
     enabled: Boolean,
     onLaunch: (GroupAppItem) -> Unit,
+    onUninstall: (GroupAppItem) -> Unit,
     onAddApp: () -> Unit,
 ) {
     BoxWithConstraints(modifier = modifier.fillMaxWidth()) {
@@ -401,8 +457,10 @@ private fun AppGrid(
                 AppGridTile(
                     app = app,
                     isLaunching = launchingAppKey == app.launchKey,
-                    enabled = enabled,
+                    isUninstalling = uninstallingAppKey == app.launchKey,
+                    enabled = enabled && launchingAppKey == null,
                     onClick = { onLaunch(app) },
+                    onUninstall = { onUninstall(app) },
                 )
             }
         } + listOf<@Composable () -> Unit>({ AddAppTile(enabled, onAddApp) })
@@ -423,49 +481,99 @@ private fun AppGrid(
 }
 
 @Composable
+@OptIn(ExperimentalFoundationApi::class)
 private fun AppGridTile(
     app: GroupAppItem,
     isLaunching: Boolean,
+    isUninstalling: Boolean,
     enabled: Boolean,
     onClick: () -> Unit,
+    onUninstall: () -> Unit,
 ) {
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .aspectRatio(0.82f)
-            .clip(MaterialTheme.shapes.medium)
-            .clickable(enabled = enabled, onClick = onClick)
-            .padding(horizontal = 6.dp, vertical = 10.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.Center,
-    ) {
-        Box(contentAlignment = Alignment.Center) {
-            AppIcon(packageName = app.app.packageName, size = 52.dp)
-            if (isLaunching) {
-                Box(
-                    modifier = Modifier
-                        .size(52.dp)
-                        .clip(MaterialTheme.shapes.medium)
-                        .background(MaterialTheme.colorScheme.scrim.copy(alpha = 0.52f)),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    CircularProgressIndicator(
-                        modifier = Modifier.size(24.dp),
-                        strokeWidth = 2.dp,
-                        color = MaterialTheme.colorScheme.onPrimary,
-                    )
+    var menuExpanded by remember(app.launchKey) { mutableStateOf(false) }
+    val busy = isLaunching || isUninstalling
+    Box(modifier = Modifier.fillMaxWidth()) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .aspectRatio(0.82f)
+                .clip(MaterialTheme.shapes.medium)
+                .semantics {
+                    stateDescription = when {
+                        isUninstalling -> "解除安裝中"
+                        isLaunching -> "開啟中"
+                        !enabled -> "暫時無法操作"
+                        else -> "可操作"
+                    }
+                }
+                .testTag("group-app-tile-${app.launchKey}")
+                .combinedClickable(
+                    enabled = enabled && !busy,
+                    role = Role.Button,
+                    onClickLabel = "開啟 ${app.appLabel}",
+                    onLongClickLabel = "開啟 App 選單",
+                    onLongClick = { menuExpanded = true },
+                    onClick = onClick,
+                )
+                .padding(horizontal = 6.dp, vertical = 10.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center,
+        ) {
+            Box(contentAlignment = Alignment.Center) {
+                AppIcon(packageName = app.app.packageName, size = 52.dp)
+                if (busy) {
+                    Box(
+                        modifier = Modifier
+                            .size(52.dp)
+                            .clip(MaterialTheme.shapes.medium)
+                            .background(MaterialTheme.colorScheme.scrim.copy(alpha = 0.52f)),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(24.dp),
+                            strokeWidth = 2.dp,
+                            color = MaterialTheme.colorScheme.onPrimary,
+                        )
+                    }
                 }
             }
+            Text(
+                if (isUninstalling) "解除安裝中…" else app.appLabel,
+                modifier = Modifier.padding(top = 8.dp),
+                style = MaterialTheme.typography.labelLarge,
+                fontWeight = FontWeight.Medium,
+                textAlign = TextAlign.Center,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+            )
         }
-        Text(
-            app.appLabel,
-            modifier = Modifier.padding(top = 8.dp),
-            style = MaterialTheme.typography.labelLarge,
-            fontWeight = FontWeight.Medium,
-            textAlign = TextAlign.Center,
-            maxLines = 2,
-            overflow = TextOverflow.Ellipsis,
-        )
+        DropdownMenu(
+            modifier = Modifier.testTag("group-app-menu-${app.launchKey}"),
+            expanded = menuExpanded,
+            onDismissRequest = { menuExpanded = false },
+        ) {
+            DropdownMenuItem(
+                modifier = Modifier.testTag("uninstall-app-${app.launchKey}"),
+                text = {
+                    Text(
+                        "解除安裝",
+                        color = MaterialTheme.colorScheme.error,
+                    )
+                },
+                leadingIcon = {
+                    Icon(
+                        Icons.Default.Delete,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.error,
+                    )
+                },
+                enabled = enabled && !busy,
+                onClick = {
+                    menuExpanded = false
+                    onUninstall()
+                },
+            )
+        }
     }
 }
 

@@ -142,7 +142,8 @@ fun MaskAccountsApp(
                                 state.busyPackageName != null ||
                                 state.busyGroupId != null ||
                                 state.launchingAppKey != null ||
-                                state.launchingPlayStoreGroupId != null
+                                state.launchingPlayStoreGroupId != null ||
+                                state.uninstallingAppKey != null
                             ) {
                                 LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
                             }
@@ -160,6 +161,7 @@ fun MaskAccountsApp(
                                     onPrepareGroup = viewModel::prepareGroup,
                                     onRenameGroup = viewModel::renameGroup,
                                     onDeleteGroup = viewModel::deleteGroup,
+                                    onUninstallApp = viewModel::uninstallGroupApp,
                                     onCreateGroup = { showCreateGroup = true },
                                 )
                                 else -> SettingsScreen(
