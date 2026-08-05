@@ -578,8 +578,15 @@ public final class VClientImpl extends IVClient.Stub {
         }
 
         File vsDir = VEnvironment.getVirtualStorageDir(info.packageName, userId);
-        if (vsDir == null || !vsDir.exists() || !vsDir.isDirectory()) {
+        File privateDir = VEnvironment.getVirtualPrivateStorageDir(userId);
+        if (privateDir == null || !privateDir.exists() || !privateDir.isDirectory()) {
+            VLog.e(TAG, "Unable to prepare guest private external storage user=" + userId);
             return;
+        }
+        boolean sharedStorageAvailable = vsDir != null && vsDir.exists() && vsDir.isDirectory();
+        if (!sharedStorageAvailable) {
+            VLog.w(TAG, "Guest shared external storage unavailable; keeping private redirect user="
+                    + userId);
         }
 
         HashSet<String> storageRoots = getMountPoints();
@@ -603,27 +610,33 @@ public final class VClientImpl extends IVClient.Stub {
             whiteList.add(Environment.DIRECTORY_DOCUMENTS);
         }
 
-        // ensure virtual storage white directory exists.
-        for (String whiteDir : whiteList) {
-            File originalDir = new File(Environment.getExternalStorageDirectory(), whiteDir);
-            File virtualDir = new File(vsDir, whiteDir);
-            if (!originalDir.exists()) {
-                continue;
+        if (sharedStorageAvailable) {
+            // ensure virtual storage white directory exists.
+            for (String whiteDir : whiteList) {
+                File originalDir = new File(Environment.getExternalStorageDirectory(), whiteDir);
+                File virtualDir = new File(vsDir, whiteDir);
+                if (!originalDir.exists()) {
+                    continue;
+                }
+                //noinspection ResultOfMethodCallIgnored
+                virtualDir.mkdirs();
             }
-            //noinspection ResultOfMethodCallIgnored
-            virtualDir.mkdirs();
         }
 
-        String vsPath = vsDir.getAbsolutePath();
-        NativeEngine.whitelist(vsPath, true);
-        String privatePath = VEnvironment.getVirtualPrivateStorageDir(userId).getAbsolutePath();
+        String vsPath = sharedStorageAvailable ? vsDir.getAbsolutePath() : null;
+        if (vsPath != null) {
+            NativeEngine.whitelist(vsPath, true);
+        }
+        String privatePath = privateDir.getAbsolutePath();
         NativeEngine.whitelist(privatePath, true);
 
         for (String storageRoot : storageRoots) {
-            for (String whiteDir : whiteList) {
-                // white list, do not redirect
-                String whitePath = new File(storageRoot, whiteDir).getAbsolutePath();
-                NativeEngine.whitelist(whitePath, true);
+            if (sharedStorageAvailable) {
+                for (String whiteDir : whiteList) {
+                    // white list, do not redirect
+                    String whitePath = new File(storageRoot, whiteDir).getAbsolutePath();
+                    NativeEngine.whitelist(whitePath, true);
+                }
             }
 
             // Android 11 -> see https://developer.android.com/training/data-storage#scoped-storage
@@ -634,7 +647,9 @@ public final class VClientImpl extends IVClient.Stub {
             // redirect xxx/Android/obb/ -> /xxx/Android/data/<host>/virtual/<user>
             NativeEngine.redirectDirectory(new File(storageRoot, "Android/obb/").getAbsolutePath(), privatePath);
             // redirect /sdcard/ -> vsdcard
-            NativeEngine.redirectDirectory(storageRoot, vsPath);
+            if (vsPath != null) {
+                NativeEngine.redirectDirectory(storageRoot, vsPath);
+            }
         }
     }
 
