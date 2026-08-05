@@ -149,7 +149,10 @@ public class NativeEngine {
                 throw new RuntimeException("io redirect failed.");
             }
             redirectDirectory(VESCAPE, "/");
-            nativeEnableIORedirect(soPath, Build.VERSION.SDK_INT, BuildCompat.getPreviewSDKInt());
+            nativeEnableIORedirect(soPath, VirtualCore.get().getHostPkg(), Build.VERSION.SDK_INT,
+                    BuildCompat.getPreviewSDKInt());
+            VLog.i(TAG, "proc-maps-sanitizer host=%s remainingLeaks=%d",
+                    VirtualCore.get().getHostPkg(), nativeCountProcMapsLeaksForProbe());
         } catch (Throwable e) {
             VLog.e(TAG, VLog.getStackTraceString(e));
         }
@@ -222,11 +225,26 @@ public class NativeEngine {
 
     private static native void nativeIOForbid(String path);
 
-    private static native void nativeEnableIORedirect(String selfSoPath, int apiLevel, int previewApiLevel);
+    private static native void nativeEnableIORedirect(String selfSoPath, String hostPackageName,
+                                                       int apiLevel, int previewApiLevel);
+
+    private static native void nativeConfigureUidOverride(int uidOverride);
+
+    private static native int nativeReadUidForProbe();
+
+    private static native int nativeCountProcMapsLeaksForProbe();
+
+    public static void configureUidOverride(int uidOverride) {
+        nativeConfigureUidOverride(uidOverride);
+    }
+
+    public static int readUidForProbe() {
+        return nativeReadUidForProbe();
+    }
 
     public static native void disableJit(int apiLevel);
 
     public static int onGetUid(int uid) {
-        return VClientImpl.get().getBaseVUid();
+        return VClientImpl.get().getBaseReportedUid();
     }
 }

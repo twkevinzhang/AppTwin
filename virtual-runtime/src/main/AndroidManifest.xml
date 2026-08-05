@@ -31,6 +31,8 @@
         tools:ignore="ProtectedPermissions" />
     <uses-permission android:name="android.permission.USE_CREDENTIALS" />
     <uses-permission android:name="android.permission.INTERNET" />
+    <!-- Android 17 GMS AdvancedProtectionManager uses this normal permission at startup. -->
+    <uses-permission android:name="android.permission.QUERY_ADVANCED_PROTECTION_MODE" />
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
     <uses-permission android:name="android.permission.ACCESS_LOCATION_EXTRA_COMMANDS" />
@@ -246,6 +248,202 @@
             android:name=".client.stub.StubProcessKeepAliveService$C0"
             android:exported="false"
             android:process=":p0" />
+        <service
+            android:name=".client.stub.StubProcessKeepAliveService$C1"
+            android:exported="false"
+            android:process=":p1" />
+        <service
+            android:name=".client.stub.StubProcessKeepAliveService$C2"
+            android:exported="false"
+            android:process=":p2" />
+        <service
+            android:name=".client.stub.StubProcessKeepAliveService$C3"
+            android:exported="false"
+            android:process=":p3" />
+        <service
+            android:name=".client.stub.StubProcessKeepAliveService$C4"
+            android:exported="false"
+            android:process=":p4" />
+        <service
+            android:name=".client.stub.StubProcessKeepAliveService$C5"
+            android:exported="false"
+            android:process=":p5" />
+        <service
+            android:name=".client.stub.StubProcessKeepAliveService$C6"
+            android:exported="false"
+            android:process=":p6" />
+        <service
+            android:name=".client.stub.StubProcessKeepAliveService$C7"
+            android:exported="false"
+            android:process=":p7" />
+        <service
+            android:name=".client.stub.StubProcessKeepAliveService$C8"
+            android:exported="false"
+            android:process=":p8" />
+        <service
+            android:name=".client.stub.StubProcessKeepAliveService$C9"
+            android:exported="false"
+            android:process=":p9" />
+        <service
+            android:name=".client.stub.StubProcessKeepAliveService$C10"
+            android:exported="false"
+            android:process=":p10" />
+        <service
+            android:name=".client.stub.StubProcessKeepAliveService$C11"
+            android:exported="false"
+            android:process=":p11" />
+        <service
+            android:name=".client.stub.StubProcessKeepAliveService$C12"
+            android:exported="false"
+            android:process=":p12" />
+        <service
+            android:name=".client.stub.StubProcessKeepAliveService$C13"
+            android:exported="false"
+            android:process=":p13" />
+        <service
+            android:name=".client.stub.StubProcessKeepAliveService$C14"
+            android:exported="false"
+            android:process=":p14" />
+        <service
+            android:name=".client.stub.StubProcessKeepAliveService$C15"
+            android:exported="false"
+            android:process=":p15" />
+        <service
+            android:name=".client.stub.StubProcessKeepAliveService$C16"
+            android:exported="false"
+            android:process=":p16" />
+        <service
+            android:name=".client.stub.StubProcessKeepAliveService$C17"
+            android:exported="false"
+            android:process=":p17" />
+        <service
+            android:name=".client.stub.StubProcessKeepAliveService$C18"
+            android:exported="false"
+            android:process=":p18" />
+        <service
+            android:name=".client.stub.StubProcessKeepAliveService$C19"
+            android:exported="false"
+            android:process=":p19" />
+        <service
+            android:name=".client.stub.StubProcessKeepAliveService$C20"
+            android:exported="false"
+            android:process=":p20" />
+        <service
+            android:name=".client.stub.StubProcessKeepAliveService$C21"
+            android:exported="false"
+            android:process=":p21" />
+        <service
+            android:name=".client.stub.StubProcessKeepAliveService$C22"
+            android:exported="false"
+            android:process=":p22" />
+        <service
+            android:name=".client.stub.StubProcessKeepAliveService$C23"
+            android:exported="false"
+            android:process=":p23" />
+        <service
+            android:name=".client.stub.StubProcessKeepAliveService$C24"
+            android:exported="false"
+            android:process=":p24" />
+        <service
+            android:name=".client.stub.StubProcessKeepAliveService$C25"
+            android:exported="false"
+            android:process=":p25" />
+        <service
+            android:name=".client.stub.StubProcessKeepAliveService$C26"
+            android:exported="false"
+            android:process=":p26" />
+        <service
+            android:name=".client.stub.StubProcessKeepAliveService$C27"
+            android:exported="false"
+            android:process=":p27" />
+        <service
+            android:name=".client.stub.StubProcessKeepAliveService$C28"
+            android:exported="false"
+            android:process=":p28" />
+        <service
+            android:name=".client.stub.StubProcessKeepAliveService$C29"
+            android:exported="false"
+            android:process=":p29" />
+        <service
+            android:name=".client.stub.StubProcessKeepAliveService$C30"
+            android:exported="false"
+            android:process=":p30" />
+        <service
+            android:name=".client.stub.StubProcessKeepAliveService$C31"
+            android:exported="false"
+            android:process=":p31" />
+        <service
+            android:name=".client.stub.StubProcessKeepAliveService$C32"
+            android:exported="false"
+            android:process=":p32" />
+        <service
+            android:name=".client.stub.StubProcessKeepAliveService$C33"
+            android:exported="false"
+            android:process=":p33" />
+        <service
+            android:name=".client.stub.StubProcessKeepAliveService$C34"
+            android:exported="false"
+            android:process=":p34" />
+        <service
+            android:name=".client.stub.StubProcessKeepAliveService$C35"
+            android:exported="false"
+            android:process=":p35" />
+        <service
+            android:name=".client.stub.StubProcessKeepAliveService$C36"
+            android:exported="false"
+            android:process=":p36" />
+        <service
+            android:name=".client.stub.StubProcessKeepAliveService$C37"
+            android:exported="false"
+            android:process=":p37" />
+        <service
+            android:name=".client.stub.StubProcessKeepAliveService$C38"
+            android:exported="false"
+            android:process=":p38" />
+        <service
+            android:name=".client.stub.StubProcessKeepAliveService$C39"
+            android:exported="false"
+            android:process=":p39" />
+        <service
+            android:name=".client.stub.StubProcessKeepAliveService$C40"
+            android:exported="false"
+            android:process=":p40" />
+        <service
+            android:name=".client.stub.StubProcessKeepAliveService$C41"
+            android:exported="false"
+            android:process=":p41" />
+        <service
+            android:name=".client.stub.StubProcessKeepAliveService$C42"
+            android:exported="false"
+            android:process=":p42" />
+        <service
+            android:name=".client.stub.StubProcessKeepAliveService$C43"
+            android:exported="false"
+            android:process=":p43" />
+        <service
+            android:name=".client.stub.StubProcessKeepAliveService$C44"
+            android:exported="false"
+            android:process=":p44" />
+        <service
+            android:name=".client.stub.StubProcessKeepAliveService$C45"
+            android:exported="false"
+            android:process=":p45" />
+        <service
+            android:name=".client.stub.StubProcessKeepAliveService$C46"
+            android:exported="false"
+            android:process=":p46" />
+        <service
+            android:name=".client.stub.StubProcessKeepAliveService$C47"
+            android:exported="false"
+            android:process=":p47" />
+        <service
+            android:name=".client.stub.StubProcessKeepAliveService$C48"
+            android:exported="false"
+            android:process=":p48" />
+        <service
+            android:name=".client.stub.StubProcessKeepAliveService$C49"
+            android:exported="false"
+            android:process=":p49" />
         <receiver
             android:name=".client.stub.StubPendingReceiver"
             android:process="@string/engine_process_name" />
@@ -1704,6 +1902,356 @@
             android:authorities="${applicationId}.virtual_stub_49"
             android:exported="false"
             android:process=":p49" />
+
++        <service
+            android:name="com.lody.virtual.client.stub.StubIsolatedService$C0"
+            android:exported="false"
+            android:isolatedProcess="true"
+            android:process=":va_isolated_0"
+            android:useAppZygote="true" />
+
+        <service
+            android:name="com.lody.virtual.client.stub.StubIsolatedService$C1"
+            android:exported="false"
+            android:isolatedProcess="true"
+            android:process=":va_isolated_1"
+            android:useAppZygote="true" />
+
+        <service
+            android:name="com.lody.virtual.client.stub.StubIsolatedService$C2"
+            android:exported="false"
+            android:isolatedProcess="true"
+            android:process=":va_isolated_2"
+            android:useAppZygote="true" />
+
+        <service
+            android:name="com.lody.virtual.client.stub.StubIsolatedService$C3"
+            android:exported="false"
+            android:isolatedProcess="true"
+            android:process=":va_isolated_3"
+            android:useAppZygote="true" />
+
+        <service
+            android:name="com.lody.virtual.client.stub.StubIsolatedService$C4"
+            android:exported="false"
+            android:isolatedProcess="true"
+            android:process=":va_isolated_4"
+            android:useAppZygote="true" />
+
+        <service
+            android:name="com.lody.virtual.client.stub.StubIsolatedService$C5"
+            android:exported="false"
+            android:isolatedProcess="true"
+            android:process=":va_isolated_5"
+            android:useAppZygote="true" />
+
+        <service
+            android:name="com.lody.virtual.client.stub.StubIsolatedService$C6"
+            android:exported="false"
+            android:isolatedProcess="true"
+            android:process=":va_isolated_6"
+            android:useAppZygote="true" />
+
+        <service
+            android:name="com.lody.virtual.client.stub.StubIsolatedService$C7"
+            android:exported="false"
+            android:isolatedProcess="true"
+            android:process=":va_isolated_7"
+            android:useAppZygote="true" />
+
+        <service
+            android:name="com.lody.virtual.client.stub.StubIsolatedService$C8"
+            android:exported="false"
+            android:isolatedProcess="true"
+            android:process=":va_isolated_8"
+            android:useAppZygote="true" />
+
+        <service
+            android:name="com.lody.virtual.client.stub.StubIsolatedService$C9"
+            android:exported="false"
+            android:isolatedProcess="true"
+            android:process=":va_isolated_9"
+            android:useAppZygote="true" />
+
+        <service
+            android:name="com.lody.virtual.client.stub.StubIsolatedService$C10"
+            android:exported="false"
+            android:isolatedProcess="true"
+            android:process=":va_isolated_10"
+            android:useAppZygote="true" />
+
+        <service
+            android:name="com.lody.virtual.client.stub.StubIsolatedService$C11"
+            android:exported="false"
+            android:isolatedProcess="true"
+            android:process=":va_isolated_11"
+            android:useAppZygote="true" />
+
+        <service
+            android:name="com.lody.virtual.client.stub.StubIsolatedService$C12"
+            android:exported="false"
+            android:isolatedProcess="true"
+            android:process=":va_isolated_12"
+            android:useAppZygote="true" />
+
+        <service
+            android:name="com.lody.virtual.client.stub.StubIsolatedService$C13"
+            android:exported="false"
+            android:isolatedProcess="true"
+            android:process=":va_isolated_13"
+            android:useAppZygote="true" />
+
+        <service
+            android:name="com.lody.virtual.client.stub.StubIsolatedService$C14"
+            android:exported="false"
+            android:isolatedProcess="true"
+            android:process=":va_isolated_14"
+            android:useAppZygote="true" />
+
+        <service
+            android:name="com.lody.virtual.client.stub.StubIsolatedService$C15"
+            android:exported="false"
+            android:isolatedProcess="true"
+            android:process=":va_isolated_15"
+            android:useAppZygote="true" />
+
+        <service
+            android:name="com.lody.virtual.client.stub.StubIsolatedService$C16"
+            android:exported="false"
+            android:isolatedProcess="true"
+            android:process=":va_isolated_16"
+            android:useAppZygote="true" />
+
+        <service
+            android:name="com.lody.virtual.client.stub.StubIsolatedService$C17"
+            android:exported="false"
+            android:isolatedProcess="true"
+            android:process=":va_isolated_17"
+            android:useAppZygote="true" />
+
+        <service
+            android:name="com.lody.virtual.client.stub.StubIsolatedService$C18"
+            android:exported="false"
+            android:isolatedProcess="true"
+            android:process=":va_isolated_18"
+            android:useAppZygote="true" />
+
+        <service
+            android:name="com.lody.virtual.client.stub.StubIsolatedService$C19"
+            android:exported="false"
+            android:isolatedProcess="true"
+            android:process=":va_isolated_19"
+            android:useAppZygote="true" />
+
+        <service
+            android:name="com.lody.virtual.client.stub.StubIsolatedService$C20"
+            android:exported="false"
+            android:isolatedProcess="true"
+            android:process=":va_isolated_20"
+            android:useAppZygote="true" />
+
+        <service
+            android:name="com.lody.virtual.client.stub.StubIsolatedService$C21"
+            android:exported="false"
+            android:isolatedProcess="true"
+            android:process=":va_isolated_21"
+            android:useAppZygote="true" />
+
+        <service
+            android:name="com.lody.virtual.client.stub.StubIsolatedService$C22"
+            android:exported="false"
+            android:isolatedProcess="true"
+            android:process=":va_isolated_22"
+            android:useAppZygote="true" />
+
+        <service
+            android:name="com.lody.virtual.client.stub.StubIsolatedService$C23"
+            android:exported="false"
+            android:isolatedProcess="true"
+            android:process=":va_isolated_23"
+            android:useAppZygote="true" />
+
+        <service
+            android:name="com.lody.virtual.client.stub.StubIsolatedService$C24"
+            android:exported="false"
+            android:isolatedProcess="true"
+            android:process=":va_isolated_24"
+            android:useAppZygote="true" />
+
+        <service
+            android:name="com.lody.virtual.client.stub.StubIsolatedService$C25"
+            android:exported="false"
+            android:isolatedProcess="true"
+            android:process=":va_isolated_25"
+            android:useAppZygote="true" />
+
+        <service
+            android:name="com.lody.virtual.client.stub.StubIsolatedService$C26"
+            android:exported="false"
+            android:isolatedProcess="true"
+            android:process=":va_isolated_26"
+            android:useAppZygote="true" />
+
+        <service
+            android:name="com.lody.virtual.client.stub.StubIsolatedService$C27"
+            android:exported="false"
+            android:isolatedProcess="true"
+            android:process=":va_isolated_27"
+            android:useAppZygote="true" />
+
+        <service
+            android:name="com.lody.virtual.client.stub.StubIsolatedService$C28"
+            android:exported="false"
+            android:isolatedProcess="true"
+            android:process=":va_isolated_28"
+            android:useAppZygote="true" />
+
+        <service
+            android:name="com.lody.virtual.client.stub.StubIsolatedService$C29"
+            android:exported="false"
+            android:isolatedProcess="true"
+            android:process=":va_isolated_29"
+            android:useAppZygote="true" />
+
+        <service
+            android:name="com.lody.virtual.client.stub.StubIsolatedService$C30"
+            android:exported="false"
+            android:isolatedProcess="true"
+            android:process=":va_isolated_30"
+            android:useAppZygote="true" />
+
+        <service
+            android:name="com.lody.virtual.client.stub.StubIsolatedService$C31"
+            android:exported="false"
+            android:isolatedProcess="true"
+            android:process=":va_isolated_31"
+            android:useAppZygote="true" />
+
+        <service
+            android:name="com.lody.virtual.client.stub.StubIsolatedService$C32"
+            android:exported="false"
+            android:isolatedProcess="true"
+            android:process=":va_isolated_32"
+            android:useAppZygote="true" />
+
+        <service
+            android:name="com.lody.virtual.client.stub.StubIsolatedService$C33"
+            android:exported="false"
+            android:isolatedProcess="true"
+            android:process=":va_isolated_33"
+            android:useAppZygote="true" />
+
+        <service
+            android:name="com.lody.virtual.client.stub.StubIsolatedService$C34"
+            android:exported="false"
+            android:isolatedProcess="true"
+            android:process=":va_isolated_34"
+            android:useAppZygote="true" />
+
+        <service
+            android:name="com.lody.virtual.client.stub.StubIsolatedService$C35"
+            android:exported="false"
+            android:isolatedProcess="true"
+            android:process=":va_isolated_35"
+            android:useAppZygote="true" />
+
+        <service
+            android:name="com.lody.virtual.client.stub.StubIsolatedService$C36"
+            android:exported="false"
+            android:isolatedProcess="true"
+            android:process=":va_isolated_36"
+            android:useAppZygote="true" />
+
+        <service
+            android:name="com.lody.virtual.client.stub.StubIsolatedService$C37"
+            android:exported="false"
+            android:isolatedProcess="true"
+            android:process=":va_isolated_37"
+            android:useAppZygote="true" />
+
+        <service
+            android:name="com.lody.virtual.client.stub.StubIsolatedService$C38"
+            android:exported="false"
+            android:isolatedProcess="true"
+            android:process=":va_isolated_38"
+            android:useAppZygote="true" />
+
+        <service
+            android:name="com.lody.virtual.client.stub.StubIsolatedService$C39"
+            android:exported="false"
+            android:isolatedProcess="true"
+            android:process=":va_isolated_39"
+            android:useAppZygote="true" />
+
+        <service
+            android:name="com.lody.virtual.client.stub.StubIsolatedService$C40"
+            android:exported="false"
+            android:isolatedProcess="true"
+            android:process=":va_isolated_40"
+            android:useAppZygote="true" />
+
+        <service
+            android:name="com.lody.virtual.client.stub.StubIsolatedService$C41"
+            android:exported="false"
+            android:isolatedProcess="true"
+            android:process=":va_isolated_41"
+            android:useAppZygote="true" />
+
+        <service
+            android:name="com.lody.virtual.client.stub.StubIsolatedService$C42"
+            android:exported="false"
+            android:isolatedProcess="true"
+            android:process=":va_isolated_42"
+            android:useAppZygote="true" />
+
+        <service
+            android:name="com.lody.virtual.client.stub.StubIsolatedService$C43"
+            android:exported="false"
+            android:isolatedProcess="true"
+            android:process=":va_isolated_43"
+            android:useAppZygote="true" />
+
+        <service
+            android:name="com.lody.virtual.client.stub.StubIsolatedService$C44"
+            android:exported="false"
+            android:isolatedProcess="true"
+            android:process=":va_isolated_44"
+            android:useAppZygote="true" />
+
+        <service
+            android:name="com.lody.virtual.client.stub.StubIsolatedService$C45"
+            android:exported="false"
+            android:isolatedProcess="true"
+            android:process=":va_isolated_45"
+            android:useAppZygote="true" />
+
+        <service
+            android:name="com.lody.virtual.client.stub.StubIsolatedService$C46"
+            android:exported="false"
+            android:isolatedProcess="true"
+            android:process=":va_isolated_46"
+            android:useAppZygote="true" />
+
+        <service
+            android:name="com.lody.virtual.client.stub.StubIsolatedService$C47"
+            android:exported="false"
+            android:isolatedProcess="true"
+            android:process=":va_isolated_47"
+            android:useAppZygote="true" />
+
+        <service
+            android:name="com.lody.virtual.client.stub.StubIsolatedService$C48"
+            android:exported="false"
+            android:isolatedProcess="true"
+            android:process=":va_isolated_48"
+            android:useAppZygote="true" />
+
+        <service
+            android:name="com.lody.virtual.client.stub.StubIsolatedService$C49"
+            android:exported="false"
+            android:isolatedProcess="true"
+            android:process=":va_isolated_49"
+            android:useAppZygote="true" />
 
     </application>
 </manifest>

@@ -6,6 +6,9 @@
 #include <stdarg.h>
 #include <stdio.h>
 #include <sys/stat.h>
+#include <sys/mman.h>
+#include <atomic>
+#include <string>
 #include <fb/include/fb/ALog.h>
 
 #ifdef __aarch64__
@@ -25,6 +28,98 @@
 #include "SymbolFinder.h"
 
 bool iu_loaded = false;
+
+static std::atomic<int> uid_override(-1);
+static bool uid_hook_installed = false;
+static std::string proc_maps_host_package;
+
+static bool is_proc_maps_path(const char *pathname) {
+    if (pathname == nullptr) {
+        return false;
+    }
+    if (strcmp(pathname, "/proc/self/maps") == 0 ||
+        strcmp(pathname, "/proc/thread-self/maps") == 0) {
+        return true;
+    }
+    char process_maps[64];
+    snprintf(process_maps, sizeof(process_maps), "/proc/%d/maps", getpid());
+    return strcmp(pathname, process_maps) == 0;
+}
+
+static bool is_proc_maps_leak(const char *line, size_t length) {
+    std::string mapping(line, length);
+    return (!proc_maps_host_package.empty() &&
+            mapping.find(proc_maps_host_package) != std::string::npos) ||
+           mapping.find("libva++.so") != std::string::npos ||
+           mapping.find("/MaskAccounts/") != std::string::npos;
+}
+
+static int open_sanitized_proc_maps(int requested_flags) {
+    int source = static_cast<int>(syscall(__NR_openat, AT_FDCWD, "/proc/self/maps",
+                                          O_RDONLY | O_CLOEXEC, 0));
+    if (source < 0) {
+        ALOGE("proc-maps-sanitizer source-open errno=%d", errno);
+        return -1;
+    }
+
+    std::string contents;
+    char buffer[8192];
+    while (true) {
+        ssize_t count = static_cast<ssize_t>(syscall(__NR_read, source, buffer, sizeof(buffer)));
+        if (count == 0) {
+            break;
+        }
+        if (count < 0) {
+            int saved_errno = errno;
+            syscall(__NR_close, source);
+            ALOGE("proc-maps-sanitizer source-read errno=%d", saved_errno);
+            errno = saved_errno;
+            return -1;
+        }
+        contents.append(buffer, static_cast<size_t>(count));
+    }
+    syscall(__NR_close, source);
+
+#if defined(__NR_memfd_create)
+    int staging = static_cast<int>(syscall(__NR_memfd_create, "jit-cache", MFD_CLOEXEC));
+#else
+    int staging = -1;
+    errno = ENOSYS;
+#endif
+    if (staging < 0) {
+        ALOGE("proc-maps-sanitizer memfd-create errno=%d", errno);
+        return -1;
+    }
+
+    size_t start = 0;
+    while (start < contents.size()) {
+        size_t newline = contents.find('\n', start);
+        size_t end = newline == std::string::npos ? contents.size() : newline + 1;
+        if (!is_proc_maps_leak(contents.data() + start, end - start)) {
+            size_t written = 0;
+            while (written < end - start) {
+                ssize_t count = static_cast<ssize_t>(syscall(
+                        __NR_write, staging, contents.data() + start + written,
+                        end - start - written));
+                if (count <= 0) {
+                    int saved_errno = errno;
+                    syscall(__NR_close, staging);
+                    ALOGE("proc-maps-sanitizer staging-write errno=%d", saved_errno);
+                    errno = saved_errno;
+                    return -1;
+                }
+                written += static_cast<size_t>(count);
+            }
+        }
+        start = end;
+    }
+    syscall(__NR_lseek, staging, 0, SEEK_SET);
+
+    if ((requested_flags & O_CLOEXEC) == 0) {
+        syscall(__NR_fcntl, staging, F_SETFD, 0);
+    }
+    return staging;
+}
 
 void IOUniformer::init_env_before_all() {
     if (iu_loaded)
@@ -72,7 +167,12 @@ void IOUniformer::init_env_before_all() {
             add_replace_item(item_src, item_dst);
             i++;
         }
-        startUniformer(getenv("V_SO_PATH"),api_level, preview_api_level);
+        startUniformer(getenv("V_SO_PATH"), getenv("V_HOST_PACKAGE"), api_level,
+                       preview_api_level);
+        char *uid_override_chars = getenv("V_REPORTED_UID");
+        if (uid_override_chars) {
+            configureUidOverride(atoi(uid_override_chars));
+        }
         iu_loaded = true;
     }
 }
@@ -123,6 +223,11 @@ const char *IOUniformer::reverse(const char *_path) {
 
 __BEGIN_DECLS
 
+HOOK_DEF(uid_t, getuid) {
+    int configured = uid_override.load();
+    return configured >= 0 ? static_cast<uid_t>(configured) : orig_getuid();
+}
+
 #define FREE(ptr, org_ptr) { if ((void*) ptr != NULL && (void*) ptr != (void*) org_ptr) { free((void*) ptr); } }
 #define RETURN_IF_FORBID if(res == FORBID) return -1;
 
@@ -165,6 +270,12 @@ HOOK_DEF(int, open, const char *pathname, int flags, ...) {
         mode = static_cast<mode_t>(va_arg(args, int));
         va_end(args);
     }
+    if ((flags & O_ACCMODE) == O_RDONLY && is_proc_maps_path(pathname)) {
+        int sanitized = open_sanitized_proc_maps(flags);
+        if (sanitized >= 0) {
+            return sanitized;
+        }
+    }
     int res;
     const char *redirect_path = relocate_path(pathname, &res);
     RETURN_IF_FORBID
@@ -182,6 +293,12 @@ HOOK_DEF(int, openat, int dirfd, const char *pathname, int flags, ...) {
         mode = static_cast<mode_t>(va_arg(args, int));
         va_end(args);
     }
+    if ((flags & O_ACCMODE) == O_RDONLY && is_proc_maps_path(pathname)) {
+        int sanitized = open_sanitized_proc_maps(flags);
+        if (sanitized >= 0) {
+            return sanitized;
+        }
+    }
     int res;
     const char *redirect_path = relocate_path(pathname, &res);
     RETURN_IF_FORBID
@@ -192,6 +309,18 @@ HOOK_DEF(int, openat, int dirfd, const char *pathname, int flags, ...) {
 
 
 HOOK_DEF(FILE *, fopen, const char *pathname, const char *mode) {
+    if (mode != nullptr && mode[0] == 'r' && is_proc_maps_path(pathname)) {
+        int sanitized = open_sanitized_proc_maps(O_CLOEXEC);
+        if (sanitized >= 0) {
+            FILE *stream = fdopen(sanitized, mode);
+            if (stream != nullptr) {
+                return stream;
+            }
+            int saved_errno = errno;
+            syscall(__NR_close, sanitized);
+            errno = saved_errno;
+        }
+    }
     int res;
     const char *redirect_path = relocate_path(pathname, &res);
     if (res == FORBID) {
@@ -440,13 +569,13 @@ char **build_new_env(char *const envp[]) {
     } else {
         sprintf(ld_preload, "LD_PRELOAD=%s", so_path);
     }
-    int new_envp_count = orig_envp_count
-                         + get_keep_item_count()
-                         + get_forbidden_item_count()
-                         + get_replace_item_count() * 2 + 1;
-    if (provided_ld_preload) {
-        new_envp_count--;
+    int virtual_env_count = 0;
+    for (int i = 0; environ[i]; ++i) {
+        if (environ[i][0] == 'V' && environ[i][1] == '_') {
+            virtual_env_count++;
+        }
     }
+    int new_envp_count = orig_envp_count + virtual_env_count + 2;
     char **new_envp = (char **) malloc(new_envp_count * sizeof(char *));
     int cur = 0;
     new_envp[cur++] = ld_preload;
@@ -541,6 +670,13 @@ HOOK_DEF(int, execve, const char *pathname, char *argv[], char *const envp[]) {
         free(new_argv);
         return ret;
     }
+    if (strstr(pathname, "app_process")) {
+        char **new_envp = build_new_env(envp);
+        int ret = syscall(__NR_execve, redirect_path, argv, new_envp);
+        FREE(redirect_path, pathname);
+        free(new_envp);
+        return ret;
+    }
     int ret = syscall(__NR_execve, redirect_path, argv, envp);
     FREE(redirect_path, pathname);
     return ret;
@@ -600,6 +736,32 @@ HOOK_DEF(pid_t, vfork) {
 __END_DECLS
 // end IO DEF
 
+static void ensure_uid_hook() {
+    if (uid_hook_installed) {
+        return;
+    }
+    void *handle = dlopen("libc.so", RTLD_NOW);
+    if (handle != nullptr) {
+        HOOK_SYMBOL(handle, getuid);
+        dlclose(handle);
+        uid_hook_installed = orig_getuid != nullptr;
+    }
+}
+
+void IOUniformer::configureUidOverride(int uid_override_value) {
+    uid_override.store(uid_override_value);
+    if (uid_override_value >= 0) {
+        char uid_override_chars[16];
+        snprintf(uid_override_chars, sizeof(uid_override_chars), "%d", uid_override_value);
+        setenv("V_REPORTED_UID", uid_override_chars, 1);
+        ensure_uid_hook();
+    }
+}
+
+int IOUniformer::readUidForProbe() {
+    return static_cast<int>(getuid());
+}
+
 
 void onSoLoaded(const char *name, void *handle) {
 }
@@ -638,9 +800,14 @@ void hook_dlopen(int api_level) {
 }
 
 
-void IOUniformer::startUniformer(const char *so_path, int api_level, int preview_api_level) {
+void IOUniformer::startUniformer(const char *so_path, const char *host_package, int api_level,
+                                 int preview_api_level) {
     char api_level_chars[5];
     setenv("V_SO_PATH", so_path, 1);
+    if (host_package != nullptr) {
+        proc_maps_host_package.assign(host_package);
+        setenv("V_HOST_PACKAGE", host_package, 1);
+    }
     sprintf(api_level_chars, "%i", api_level);
     setenv("V_API_LEVEL", api_level_chars, 1);
     sprintf(api_level_chars, "%i", preview_api_level);
@@ -677,4 +844,36 @@ void IOUniformer::startUniformer(const char *so_path, int api_level, int preview
         dlclose(handle);
     }
     // hook_dlopen(api_level);
+}
+
+int IOUniformer::countProcMapsLeaksForProbe() {
+    int fd = open_sanitized_proc_maps(O_CLOEXEC);
+    if (fd < 0) {
+        return -1;
+    }
+    int leaks = 0;
+    std::string pending;
+    char buffer[4096];
+    while (true) {
+        ssize_t count = static_cast<ssize_t>(syscall(__NR_read, fd, buffer, sizeof(buffer)));
+        if (count == 0) {
+            break;
+        }
+        if (count < 0) {
+            syscall(__NR_close, fd);
+            return -1;
+        }
+        pending.append(buffer, static_cast<size_t>(count));
+    }
+    syscall(__NR_close, fd);
+    size_t start = 0;
+    while (start < pending.size()) {
+        size_t newline = pending.find('\n', start);
+        size_t end = newline == std::string::npos ? pending.size() : newline + 1;
+        if (is_proc_maps_leak(pending.data() + start, end - start)) {
+            ++leaks;
+        }
+        start = end;
+    }
+    return leaks;
 }

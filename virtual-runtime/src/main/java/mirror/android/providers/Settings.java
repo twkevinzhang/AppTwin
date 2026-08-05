@@ -24,6 +24,8 @@ public class Settings {
     public static class NameValueCache {
         public static Class<?> TYPE = RefClass.load(NameValueCache.class, "android.provider.Settings$NameValueCache");
         public static RefObject<Object> mContentProvider;
+        public static RefObject<Object> mReadableFields;
+        public static RefObject<Object> mReadableFieldsWithMaxTargetSdk;
     }
 
     public static class NameValueCacheOreo {

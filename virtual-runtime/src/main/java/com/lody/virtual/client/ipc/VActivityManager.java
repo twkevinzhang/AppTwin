@@ -246,9 +246,11 @@ public class VActivityManager {
         }
     }
 
-    public void unbindFinished(IBinder token, Intent service, boolean doRebind) {
+    public void unbindFinished(IBinder token, IBinder bindToken, Intent service,
+                               boolean doRebind) {
         try {
-            getService().unbindFinished(token, service, doRebind, VUserHandle.myUserId());
+            getService().unbindFinished(
+                    token, bindToken, service, doRebind, VUserHandle.myUserId());
         } catch (RemoteException e) {
             e.printStackTrace();
         }
@@ -270,9 +272,11 @@ public class VActivityManager {
         }
     }
 
-    public void publishService(IBinder token, Intent intent, IBinder service) {
+    public void publishService(IBinder token, IBinder bindToken, Intent intent,
+                               IBinder service) {
         try {
-            getService().publishService(token, intent, service, VUserHandle.myUserId());
+            getService().publishService(
+                    token, bindToken, intent, service, VUserHandle.myUserId());
         } catch (RemoteException e) {
             e.printStackTrace();
         }

@@ -29,7 +29,8 @@ namespace IOUniformer {
 
     void init_env_before_all();
 
-    void startUniformer(const char *so_path, int api_level, int preview_api_level);
+    void startUniformer(const char *so_path, const char *host_package, int api_level,
+                        int preview_api_level);
 
     void redirect(const char *orig_path, const char *new_path);
 
@@ -40,6 +41,12 @@ namespace IOUniformer {
     const char *reverse(const char *redirected_path);
 
     void forbid(const char *path);
+
+    void configureUidOverride(int uid_override);
+
+    int readUidForProbe();
+
+    int countProcMapsLeaksForProbe();
 }
 
 #endif //NDK_HOOK_H

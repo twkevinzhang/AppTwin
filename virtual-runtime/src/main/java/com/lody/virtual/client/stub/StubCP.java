@@ -51,8 +51,10 @@ public class StubCP extends ContentProvider {
 		String packageName = extras.getString(StubProcessContract.KEY_PACKAGE_NAME);
 		String processName = extras.getString(StubProcessContract.KEY_PROCESS_NAME);
 		long generation = extras.getLong(StubProcessContract.KEY_GENERATION, 0L);
+		int reportedUidOverride = extras.getInt(
+				StubProcessContract.KEY_REPORTED_UID_OVERRIDE, -1);
 		StubProcessOwner.ClaimResult result = client.claimProcess(token, vuid, packageName,
-				processName, generation);
+				processName, generation, reportedUidOverride);
 		return createResponse(client, result.isAccepted(), result.getReason(),
 				result.getCurrentIdentity());
 	}
@@ -80,6 +82,8 @@ public class StubCP extends ContentProvider {
 			response.putString(StubProcessContract.KEY_PACKAGE_NAME, identity.getPackageName());
 			response.putString(StubProcessContract.KEY_PROCESS_NAME, identity.getProcessName());
 			response.putLong(StubProcessContract.KEY_GENERATION, identity.getGeneration());
+			response.putInt(StubProcessContract.KEY_REPORTED_UID_OVERRIDE,
+					identity.getReportedUidOverride());
 			BundleCompat.putBinder(response, StubProcessContract.KEY_SERVER_TOKEN,
 					(IBinder) identity.getServerToken());
 		}

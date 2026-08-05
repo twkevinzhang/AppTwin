@@ -34,6 +34,26 @@ class MethodProxies {
 
     }
 
+    /**
+     * Subscriber identifiers are privileged on modern Android. Returning the per-environment
+     * stable identifier avoids leaking the physical SIM and prevents a SecurityException from
+     * terminating cloned GMS check-in.
+     */
+    @FakeDeviceMark("fake subscriber id")
+    static class GetSubscriberId extends GetDeviceId {
+        @Override
+        public String getMethodName() {
+            return "getSubscriberId";
+        }
+    }
+
+    static class GetSubscriberIdForSubscriber extends GetSubscriberId {
+        @Override
+        public String getMethodName() {
+            return "getSubscriberIdForSubscriber";
+        }
+    }
+
     @FakeDeviceMark("fake iccid")
     static class GetIccSerialNumber extends MethodProxy {
 

@@ -89,6 +89,19 @@ import mirror.android.content.pm.UserInfo;
 @SuppressWarnings("unused")
 class MethodProxies {
 
+    static IBinder serviceBindToken(Object bindingIdentity) {
+        return bindingIdentity instanceof IBinder ? (IBinder) bindingIdentity : null;
+    }
+
+    static Intent legacyServiceIntent(Object bindingIdentity) {
+        return bindingIdentity instanceof Intent ? (Intent) bindingIdentity : null;
+    }
+
+    static boolean serviceDoRebind(Object... args) {
+        return args.length > 1 && serviceBindToken(args[1]) != null
+                || args.length > 2 && Boolean.TRUE.equals(args[2]);
+    }
+
     private static String getHostDynamicReceiverPermission() {
         return DynamicReceiverPermissionCompat.forHost(VirtualCore.get().getHostPkg());
     }
@@ -856,9 +869,14 @@ class MethodProxies {
         @Override
         public Object call(Object who, Method method, Object... args) throws Throwable {
             IBinder token = (IBinder) args[0];
-            Intent service = (Intent) args[1];
-            boolean doRebind = (boolean) args[2];
-            VActivityManager.get().unbindFinished(token, service, doRebind);
+            if (!VActivityManager.get().isVAServiceToken(token)) {
+                return method.invoke(who, args);
+            }
+            IBinder bindToken = serviceBindToken(args[1]);
+            Intent service = legacyServiceIntent(args[1]);
+            // Android 17 only invokes unbindFinished when Service.onUnbind() returned true.
+            boolean doRebind = serviceDoRebind(args);
+            VActivityManager.get().unbindFinished(token, bindToken, service, doRebind);
             return 0;
         }
 
@@ -1067,9 +1085,10 @@ class MethodProxies {
             if (!VActivityManager.get().isVAServiceToken(token)) {
                 return method.invoke(who, args);
             }
-            Intent intent = (Intent) args[1];
+            IBinder bindToken = serviceBindToken(args[1]);
+            Intent intent = legacyServiceIntent(args[1]);
             IBinder service = (IBinder) args[2];
-            VActivityManager.get().publishService(token, intent, service);
+            VActivityManager.get().publishService(token, bindToken, intent, service);
             return 0;
         }
 

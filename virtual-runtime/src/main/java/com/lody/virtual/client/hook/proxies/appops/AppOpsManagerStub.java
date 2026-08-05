@@ -30,10 +30,19 @@ public class AppOpsManagerStub extends BinderInvocationProxy {
     protected void onBindMethods() {
         super.onBindMethods();
         addMethodProxy(new BaseMethodProxy("checkOperation", 1, 2));
+        addMethodProxy(new BaseMethodProxy("checkOperationForDevice", 1, 2));
+        addMethodProxy(new BaseMethodProxy("checkOperationRaw", 1, 2));
+        addMethodProxy(new BaseMethodProxy("checkOperationRawForDevice", 1, 2));
         addMethodProxy(new BaseMethodProxy("noteOperation", 1, 2));
+        addMethodProxy(new BaseMethodProxy("noteOperationForDevice", 1, 2));
         addMethodProxy(new BaseMethodProxy("startOperation", 2, 3));
+        addMethodProxy(new BaseMethodProxy("startOperationForDevice", 2, 3));
         addMethodProxy(new BaseMethodProxy("finishOperation", 2, 3));
+        addMethodProxy(new BaseMethodProxy("finishOperationForDevice", 2, 3));
+        addMethodProxy(new BaseMethodProxy("isOperationActive", 1, 2));
+        addMethodProxy(new BaseMethodProxy("isProxying", 0, 1));
         addMethodProxy(new BaseMethodProxy("startWatchingMode", -1, 1));
+        addMethodProxy(new BaseMethodProxy("startWatchingModeWithFlags", -1, 1));
         addMethodProxy(new BaseMethodProxy("checkPackage", 0, 1));
         addMethodProxy(new BaseMethodProxy("getOpsForPackage", 0, 1));
         addMethodProxy(new BaseMethodProxy("setMode", 1, 2));
@@ -65,12 +74,8 @@ public class AppOpsManagerStub extends BinderInvocationProxy {
 
         @Override
         public boolean beforeCall(Object who, Method method, Object... args) {
-            if (pkgIndex != -1 && args.length > pkgIndex && args[pkgIndex] instanceof String) {
-                args[pkgIndex] = getHostPkg();
-            }
-            if (uidIndex != -1 && args[uidIndex] instanceof Integer) {
-                args[uidIndex] = getRealUid();
-            }
+            AppOpsArgumentRewriter.rewrite(args, uidIndex, pkgIndex,
+                    getRealUid(), getHostPkg());
             return true;
         }
     }

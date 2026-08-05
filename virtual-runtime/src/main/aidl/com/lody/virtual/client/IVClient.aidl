@@ -18,8 +18,9 @@ interface IVClient {
     IBinder getToken();
     String getDebugInfo();
     void scheduleCreateService(in IBinder token, in ServiceInfo info, int processState);
-    void scheduleBindService(in IBinder token, in Intent intent, boolean rebind, int processState);
-    void scheduleUnbindService(in IBinder token, in Intent intent);
+    void scheduleBindService(in IBinder token, in IBinder bindToken, in Intent intent,
+            boolean rebind, int processState, long bindSeq);
+    void scheduleUnbindService(in IBinder token, in IBinder bindToken, in Intent intent);
     void scheduleServiceArgs(in IBinder token, boolean taskRemoved, int startId, int flags,
             in Intent intent);
     void scheduleStopService(in IBinder token);

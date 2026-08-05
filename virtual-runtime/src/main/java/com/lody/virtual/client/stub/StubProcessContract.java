@@ -11,6 +11,7 @@ public final class StubProcessContract {
     public static final String KEY_PACKAGE_NAME = "_VA_|_pkg_";
     public static final String KEY_PROCESS_NAME = "_VA_|_process_";
     public static final String KEY_GENERATION = "_VA_|_generation_";
+    public static final String KEY_REPORTED_UID_OVERRIDE = "_VA_|_reported_uid_override_";
 
     public static final String KEY_ACCEPTED = "_VA_|_accepted_";
     public static final String KEY_REASON = "_VA_|_reason_";

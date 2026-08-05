@@ -14,6 +14,10 @@ import android.os.Parcelable;
 import android.util.Log;
 import android.util.MergedConfiguration;
 import android.view.DisplayAdjustments;
+import android.view.SurfaceControl;
+import android.window.ActivityWindowInfo;
+import android.window.SplashScreenView$SplashScreenViewParcelable;
+import android.window.WindowContextInfo;
 
 import com.lody.virtual.client.VClientImpl;
 import com.lody.virtual.client.core.VirtualCore;
@@ -163,6 +167,20 @@ public class TransactionHandlerProxy extends ClientTransactionHandler {
     }
 
     @Override
+    public void handleActivityConfigurationChanged(ActivityClientRecord r) {
+        originalHandler.handleActivityConfigurationChanged(r);
+    }
+
+    @Override
+    public void handleActivityConfigurationChanged(ActivityClientRecord r,
+                                                   Configuration overrideConfig,
+                                                   int displayId,
+                                                   ActivityWindowInfo activityWindowInfo) {
+        originalHandler.handleActivityConfigurationChanged(r, overrideConfig, displayId,
+                activityWindowInfo);
+    }
+
+    @Override
     public void handleSendResult(IBinder token, List results, String reason) {
         originalHandler.handleSendResult(token, results, reason);
     }
@@ -210,6 +228,13 @@ public class TransactionHandlerProxy extends ClientTransactionHandler {
     @Override
     public void handleAttachSplashScreenView(ActivityClientRecord r, Parcelable parcelable) {
         originalHandler.handleAttachSplashScreenView(r, parcelable);
+    }
+
+    @Override
+    public void handleAttachSplashScreenView(ActivityClientRecord r,
+                                             SplashScreenView$SplashScreenViewParcelable parcelable,
+                                             SurfaceControl startingWindowLeash) {
+        originalHandler.handleAttachSplashScreenView(r, parcelable, startingWindowLeash);
     }
 
     @Override
@@ -343,6 +368,21 @@ public class TransactionHandlerProxy extends ClientTransactionHandler {
     }
 
     @Override
+    public void handleConfigurationChanged(Configuration config, int deviceId) {
+        originalHandler.handleConfigurationChanged(config, deviceId);
+    }
+
+    @Override
+    public void handleWindowContextInfoChanged(IBinder clientToken, WindowContextInfo info) {
+        originalHandler.handleWindowContextInfoChanged(clientToken, info);
+    }
+
+    @Override
+    public void handleWindowContextWindowRemoval(IBinder clientToken) {
+        originalHandler.handleWindowContextWindowRemoval(clientToken);
+    }
+
+    @Override
     public void handleFixedRotationAdjustments(IBinder token, DisplayAdjustments.FixedRotationAdjustments fixedRotationAdjustments) {
         originalHandler.handleFixedRotationAdjustments(token, fixedRotationAdjustments);
     }
@@ -374,6 +414,18 @@ public class TransactionHandlerProxy extends ClientTransactionHandler {
     }
 
     @Override
+    public ActivityClientRecord prepareRelaunchActivity(IBinder token, List pendingResults,
+                                                        List pendingNewIntents,
+                                                        int configChanges,
+                                                        MergedConfiguration config,
+                                                        boolean preserveWindow,
+                                                        ActivityWindowInfo activityWindowInfo,
+                                                        int deviceId) {
+        return originalHandler.prepareRelaunchActivity(token, pendingResults, pendingNewIntents,
+                configChanges, config, preserveWindow, activityWindowInfo, deviceId);
+    }
+
+    @Override
     public void handleRelaunchActivity(ActivityClientRecord r, PendingTransactionActions pendingActions) {
         originalHandler.handleRelaunchActivity(r, pendingActions);
     }
@@ -381,6 +433,16 @@ public class TransactionHandlerProxy extends ClientTransactionHandler {
     @Override
     public void reportRelaunch(IBinder token, PendingTransactionActions pendingActions) {
         originalHandler.reportRelaunch(token, pendingActions);
+    }
+
+    @Override
+    public void reportRelaunch(ActivityClientRecord r) {
+        originalHandler.reportRelaunch(r);
+    }
+
+    @Override
+    public void reportRefresh(ActivityClientRecord r) {
+        originalHandler.reportRefresh(r);
     }
 
     @Override

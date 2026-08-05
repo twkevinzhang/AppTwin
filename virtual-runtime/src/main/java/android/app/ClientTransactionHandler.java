@@ -26,6 +26,10 @@ import android.os.IBinder;
 import android.os.Parcelable;
 import android.util.MergedConfiguration;
 import android.view.DisplayAdjustments;
+import android.view.SurfaceControl;
+import android.window.ActivityWindowInfo;
+import android.window.SplashScreenView$SplashScreenViewParcelable;
+import android.window.WindowContextInfo;
 
 import java.util.List;
 import java.util.Map;
@@ -154,6 +158,13 @@ public abstract class ClientTransactionHandler {
     public abstract void handleActivityConfigurationChanged(ActivityThread.ActivityClientRecord r,
                                                             Configuration overrideConfig, int displayId);
 
+    // API 37
+    public abstract void handleActivityConfigurationChanged(ActivityThread.ActivityClientRecord r);
+    public abstract void handleActivityConfigurationChanged(ActivityThread.ActivityClientRecord r,
+                                                            Configuration overrideConfig,
+                                                            int displayId,
+                                                            ActivityWindowInfo activityWindowInfo);
+
     /** Deliver result from another activity. */
     public abstract void handleSendResult(IBinder token, List results, String reason);
 
@@ -187,6 +198,11 @@ public abstract class ClientTransactionHandler {
     /** Attach a splash screen window view to the top of the activity */
     public abstract void handleAttachSplashScreenView(ActivityThread.ActivityClientRecord r,
                                                       Parcelable parcelable);
+
+    // API 37
+    public abstract void handleAttachSplashScreenView(ActivityThread.ActivityClientRecord r,
+                                                      SplashScreenView$SplashScreenViewParcelable parcelable,
+                                                      SurfaceControl startingWindowLeash);
 
     /** Hand over the splash screen window view to the activity */
     public abstract void handOverSplashScreenView(ActivityThread.ActivityClientRecord r);
@@ -226,6 +242,14 @@ public abstract class ClientTransactionHandler {
     public abstract LoadedApk getPackageInfoNoCheck(ApplicationInfo ai);
     /** Deliver app configuration change notification. */
     public abstract void handleConfigurationChanged(Configuration config);
+
+    // API 37
+    public abstract void handleConfigurationChanged(Configuration config, int deviceId);
+
+    // API 37
+    public abstract void handleWindowContextInfoChanged(IBinder clientToken,
+                                                        WindowContextInfo info);
+    public abstract void handleWindowContextWindowRemoval(IBinder clientToken);
 
     public abstract void handleFixedRotationAdjustments(IBinder token,
                                                         DisplayAdjustments.FixedRotationAdjustments fixedRotationAdjustments);
@@ -271,6 +295,12 @@ public abstract class ClientTransactionHandler {
     public abstract ActivityThread.ActivityClientRecord prepareRelaunchActivity(IBinder token,
             List pendingResults, List pendingNewIntents,
             int configChanges, MergedConfiguration config, boolean preserveWindow);
+
+    // API 37
+    public abstract ActivityThread.ActivityClientRecord prepareRelaunchActivity(IBinder token,
+            List pendingResults, List pendingNewIntents,
+            int configChanges, MergedConfiguration config, boolean preserveWindow,
+            ActivityWindowInfo activityWindowInfo, int deviceId);
     /**
      * Perform activity relaunch.
      * @param r Activity client record prepared for relaunch.
@@ -285,6 +315,10 @@ public abstract class ClientTransactionHandler {
      *                       Used to check if we should report relaunch to WM.
      * */
     public abstract void reportRelaunch(IBinder token, PendingTransactionActions pendingActions);
+
+    // API 37
+    public abstract void reportRelaunch(ActivityThread.ActivityClientRecord r);
+    public abstract void reportRefresh(ActivityThread.ActivityClientRecord r);
 
     public abstract Map getActivitiesToBeDestroyed();
 
