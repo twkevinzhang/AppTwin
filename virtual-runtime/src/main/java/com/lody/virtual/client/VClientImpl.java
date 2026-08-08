@@ -276,7 +276,8 @@ public final class VClientImpl extends IVClient.Stub {
             );
         } else {
             if (BuildCompat.isQ()) {
-                ActivityThread.handleNewIntent.call(VirtualCore.mainThread(), data.token, Collections.singletonList(intent));
+                NewIntentCompat.handleNewIntent(
+                        VirtualCore.mainThread(), data.token, Collections.singletonList(intent));
             } else {
                 ActivityThreadNMR1.performNewIntents.call(
                         VirtualCore.mainThread(),
