@@ -44,6 +44,7 @@ public class ActivityThread {
     public static RefObject<Map> mProviderMap;
     @MethodParams({IBinder.class, List.class})
     public static RefMethod<Void> performNewIntents;
+    @MethodParams({IBinder.class, List.class})
     public static RefMethod<Void> handleNewIntent;
     public static RefStaticObject<IInterface> sPackageManager;
     @MethodParams({IBinder.class, String.class, int.class, int.class, Intent.class})
