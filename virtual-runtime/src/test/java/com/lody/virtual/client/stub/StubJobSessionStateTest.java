@@ -15,32 +15,55 @@ import java.util.concurrent.TimeUnit;
 public class StubJobSessionStateTest {
 
     @Test
-    public void boundSessionClaimsUnbindExactlyOnceAcrossRepeatedCleanup() {
+    public void startedBindingClaimsUnbindExactlyOnceAcrossRepeatedCleanup() {
         StubJob.SessionState state = new StubJob.SessionState();
 
-        assertFalse(state.onBindingSucceeded());
+        assertTrue(state.onBindingStarted());
         assertEquals(StubJob.SessionState.CleanupAction.CLEANED_AND_UNBIND,
                 state.requestCleanup());
         assertEquals(StubJob.SessionState.CleanupAction.ALREADY_CLEANED,
                 state.requestCleanup());
-        assertFalse(state.onBindingSucceeded());
+        assertFalse(state.onBindingStarted());
     }
 
     @Test
-    public void cleanupDuringBindDefersSingleUnbindUntilBindSucceeds() {
+    public void bindReturningFalseStillReleasesRegisteredDispatcher() {
         StubJob.SessionState state = new StubJob.SessionState();
 
-        assertEquals(StubJob.SessionState.CleanupAction.CLEANED, state.requestCleanup());
-        assertTrue(state.onBindingSucceeded());
-        assertFalse(state.onBindingSucceeded());
+        assertTrue(state.onBindingStarted());
+        // bindService() returned false; the dispatcher was nevertheless registered first.
+        assertEquals(StubJob.SessionState.CleanupAction.CLEANED_AND_UNBIND,
+                state.requestCleanup());
         assertEquals(StubJob.SessionState.CleanupAction.ALREADY_CLEANED,
                 state.requestCleanup());
     }
 
     @Test
-    public void concurrentCleanupHasOneWinnerAndOneUnbind() throws Exception {
+    public void bindThrowingStillReleasesRegisteredDispatcher() {
         StubJob.SessionState state = new StubJob.SessionState();
-        assertFalse(state.onBindingSucceeded());
+
+        assertTrue(state.onBindingStarted());
+        // bindService() threw after ContextImpl registered the dispatcher.
+        assertEquals(StubJob.SessionState.CleanupAction.CLEANED_AND_UNBIND,
+                state.requestCleanup());
+        assertEquals(StubJob.SessionState.CleanupAction.ALREADY_CLEANED,
+                state.requestCleanup());
+    }
+
+    @Test
+    public void destroyBeforeBindingRejectsLateBindWithoutExtraUnbind() {
+        StubJob.SessionState state = new StubJob.SessionState();
+
+        assertEquals(StubJob.SessionState.CleanupAction.CLEANED, state.requestCleanup());
+        assertFalse(state.onBindingStarted());
+        assertEquals(StubJob.SessionState.CleanupAction.ALREADY_CLEANED,
+                state.requestCleanup());
+    }
+
+    @Test
+    public void concurrentDestroyHasOneCleanupWinnerAndOneUnbind() throws Exception {
+        StubJob.SessionState state = new StubJob.SessionState();
+        assertTrue(state.onBindingStarted());
         int threadCount = 16;
         CountDownLatch ready = new CountDownLatch(threadCount);
         CountDownLatch start = new CountDownLatch(1);

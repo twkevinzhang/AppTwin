@@ -171,14 +171,20 @@ public class StubJob extends Service {
             }
         }
 
-        private boolean bound;
+        private boolean dispatcherRegistered;
         private boolean cleanupRequested;
         private boolean unbindClaimed;
         private boolean finishCallbackClaimed;
 
-        synchronized boolean onBindingSucceeded() {
-            bound = true;
-            return claimUnbindIfNeeded();
+        synchronized boolean onBindingStarted() {
+            if (cleanupRequested || dispatcherRegistered) {
+                return false;
+            }
+            // ContextImpl obtains and stores its ServiceDispatcher before the remote
+            // bind call returns. A false return value or exception therefore does not
+            // prove that there is no dispatcher to release.
+            dispatcherRegistered = true;
+            return true;
         }
 
         synchronized CleanupAction requestCleanup() {
@@ -204,7 +210,7 @@ public class StubJob extends Service {
         }
 
         private boolean claimUnbindIfNeeded() {
-            if (!bound || !cleanupRequested || unbindClaimed) {
+            if (!dispatcherRegistered || !cleanupRequested || unbindClaimed) {
                 return false;
             }
             unbindClaimed = true;
@@ -321,22 +327,19 @@ public class StubJob extends Service {
 
         boolean bindIfActive(Intent service) {
             synchronized (bindingLock) {
-                if (state.isCleanupRequested()) {
+                if (!state.onBindingStarted()) {
                     return false;
                 }
-                boolean bound = false;
                 try {
                     // ContextImpl registers the ServiceConnection before the Binder call returns.
-                    // Keep lifecycle cleanup outside this window, otherwise ActivityThread can
-                    // destroy StubJob and report the still-in-flight dispatcher as leaked.
-                    bound = StubJob.this.bindService(service, this, 0);
+                    // Record that dispatcher before invoking bindService(), even when the remote
+                    // bind later returns false or throws. Keep lifecycle cleanup outside this
+                    // window so onDestroy cannot return with an in-flight dispatcher.
+                    return StubJob.this.bindService(service, this, 0);
                 } catch (Throwable e) {
                     VLog.e(TAG, e);
+                    return false;
                 }
-                if (bound && state.onBindingSucceeded()) {
-                    unbindSafely();
-                }
-                return bound;
             }
         }
 
