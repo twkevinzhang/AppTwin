@@ -11,8 +11,8 @@ import org.junit.Test;
 public class IsolatedProcessUidPolicyTest {
 
     @Test
-    public void regularProcessReportsGuestAppUidInsteadOfHostUid() {
-        assertEquals(10005,
+    public void regularProcessDoesNotOverrideKernelOwnedNativeUid() {
+        assertEquals(IsolatedProcessUidPolicy.NO_OVERRIDE,
                 IsolatedProcessUidPolicy.reportedUidOverride(110005, false));
     }
 

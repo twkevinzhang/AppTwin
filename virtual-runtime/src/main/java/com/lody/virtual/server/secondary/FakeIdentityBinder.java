@@ -6,6 +6,8 @@ import android.os.Parcel;
 import android.os.Process;
 import android.os.RemoteException;
 
+import com.lody.virtual.client.core.VirtualCore;
+
 /**
  * @author Lody
  */
@@ -39,15 +41,21 @@ public class FakeIdentityBinder extends Binder {
      * See: http://androidxref.com/6.0.1_r10/xref/frameworks/native/libs/binder/IPCThreadState.cpp#356
      */
     protected long getFakeIdentity() {
-        return (long) getFakeUid() << 32 | (long) getFakePid();
+        return composeIdentity(getFakeUid(), getFakePid());
     }
 
     protected int getFakeUid() {
-        return Process.myUid();
+        // Process.myUid() is guest-facing after libcore hooks are installed. VirtualCore caches the
+        // kernel-assigned host UID before those hooks, which is the identity Binder must restore.
+        return VirtualCore.get().myUid();
     }
 
     protected int getFakePid() {
         return Process.myPid();
+    }
+
+    static long composeIdentity(int hostUid, int hostPid) {
+        return (long) hostUid << 32 | (hostPid & 0xffffffffL);
     }
 
     public final IInterface queryLocalInterface(String descriptor) {

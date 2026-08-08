@@ -169,7 +169,7 @@ public final class VClientImpl extends IVClient.Stub {
     }
 
     public int getBaseReportedUid() {
-        return reportedUidOverride >= 0 ? reportedUidOverride : getBaseVUid();
+        return GuestUidPolicy.guestFacingUid(getBaseVUid(), reportedUidOverride);
     }
 
     public ClassLoader getClassLoader(ApplicationInfo appInfo) {

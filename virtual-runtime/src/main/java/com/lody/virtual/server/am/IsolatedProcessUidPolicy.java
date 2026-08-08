@@ -2,7 +2,7 @@ package com.lody.virtual.server.am;
 
 import com.lody.virtual.os.VUserHandle;
 
-/** Maps a virtual isolated process to a stable UID in Android's isolated-app range. */
+/** Selects the native UID override used by a guest process. */
 final class IsolatedProcessUidPolicy {
 
     static final int NO_OVERRIDE = -1;
@@ -15,7 +15,10 @@ final class IsolatedProcessUidPolicy {
 
     static int reportedUidOverride(int vuid, boolean isolatedProcess) {
         if (!isolatedProcess) {
-            return VUserHandle.getAppId(vuid);
+            // A regular guest still receives its logical UID through the Java/libcore hooks.
+            // Replacing libc getuid() process-wide makes Android's Binder/Looper identity disagree
+            // with the kernel-owned host process and can leave apps stuck during initialization.
+            return NO_OVERRIDE;
         }
         int userId = VUserHandle.getUserId(vuid);
         int appId = VUserHandle.getAppId(vuid);
