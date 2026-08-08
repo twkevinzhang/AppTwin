@@ -2,7 +2,6 @@ package com.lody.virtual.os;
 
 import android.content.Context;
 import android.os.Build;
-import android.os.Environment;
 
 import com.lody.virtual.client.core.VirtualCore;
 import com.lody.virtual.helper.utils.EncodeUtils;
@@ -171,10 +170,10 @@ public class VEnvironment {
     }
 
     public static File getVirtualStorageBaseDir() {
-        File externalFilesRoot = Environment.getExternalStorageDirectory();
-        if (externalFilesRoot != null) {
+        File externalFilesDir = getContext().getExternalFilesDir(null);
+        if (externalFilesDir != null) {
             return ensureCreated(VirtualExternalStorageLayout.sharedStorageBase(
-                    externalFilesRoot, VirtualCore.get().getHostPkg()));
+                    externalFilesDir));
         }
         return null;
     }
@@ -185,20 +184,25 @@ public class VEnvironment {
         if (virtualStorageBaseDir == null) {
             return null;
         }
-        return ensureCreated(VirtualExternalStorageLayout.sharedStorageForUser(
-                Environment.getExternalStorageDirectory(),
-                VirtualCore.get().getHostPkg(), userId));
+        return ensureCreated(new File(virtualStorageBaseDir, String.valueOf(userId)));
     }
 
-    // /sdcard/Android/data/<host_package>/virtual/<user>
+    // <host external files>/virtual/<user>
     public static File getVirtualPrivateStorageDir(int userId) {
+        File externalFilesDir = getContext().getExternalFilesDir(null);
+        if (externalFilesDir == null) {
+            return null;
+        }
         return ensureCreated(VirtualExternalStorageLayout.privateStorageForUser(
-                Environment.getExternalStorageDirectory(),
-                VirtualCore.get().getHostPkg(), userId));
+                externalFilesDir, userId));
     }
 
     public static File getVirtualPrivateStorageDir(int userId, String packageName) {
-        File file = new File(getVirtualPrivateStorageDir(userId), packageName);
+        File privateStorageDir = getVirtualPrivateStorageDir(userId);
+        if (privateStorageDir == null) {
+            return null;
+        }
+        File file = new File(privateStorageDir, packageName);
         return ensureCreated(file);
     }
 

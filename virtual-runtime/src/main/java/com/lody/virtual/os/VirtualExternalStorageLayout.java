@@ -8,25 +8,21 @@ public final class VirtualExternalStorageLayout {
     private VirtualExternalStorageLayout() {
     }
 
-    public static File sharedStorageBase(File externalStorageRoot, String hostPackage) {
-        return new File(hostVirtualRoot(externalStorageRoot, hostPackage), "vsdcard");
+    public static File sharedStorageBase(File hostExternalFilesDir) {
+        return new File(hostVirtualRoot(hostExternalFilesDir), "vsdcard");
     }
 
-    public static File sharedStorageForUser(File externalStorageRoot, String hostPackage,
-                                            int userId) {
-        return new File(sharedStorageBase(externalStorageRoot, hostPackage),
+    public static File sharedStorageForUser(File hostExternalFilesDir, int userId) {
+        return new File(sharedStorageBase(hostExternalFilesDir),
                 String.valueOf(userId));
     }
 
-    public static File privateStorageForUser(File externalStorageRoot, String hostPackage,
-                                             int userId) {
-        return new File(hostVirtualRoot(externalStorageRoot, hostPackage),
+    public static File privateStorageForUser(File hostExternalFilesDir, int userId) {
+        return new File(hostVirtualRoot(hostExternalFilesDir),
                 String.valueOf(userId));
     }
 
-    private static File hostVirtualRoot(File externalStorageRoot, String hostPackage) {
-        File hostExternalRoot = new File(
-                new File(new File(externalStorageRoot, "Android"), "data"), hostPackage);
-        return new File(hostExternalRoot, "virtual");
+    private static File hostVirtualRoot(File hostExternalFilesDir) {
+        return new File(hostExternalFilesDir, "virtual");
     }
 }

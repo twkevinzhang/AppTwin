@@ -666,9 +666,9 @@ public final class VClientImpl extends IVClient.Stub {
             // Android 11 -> see https://developer.android.com/training/data-storage#scoped-storage
             // 安卓11 打开这个链接看看 https://developer.android.google.cn/training/data-storage#scoped-storage
             // see https://android-opengrok.bangnimang.net/android-11.0.0_r8/xref/frameworks/base/core/java/android/os/Environment.java
-            // redirect xxx/Android/data/ -> /xxx/Android/data/<host>/virtual/<user>
+            // redirect xxx/Android/data/ -> <host external files>/virtual/<user>
             NativeEngine.redirectDirectory(new File(storageRoot, "Android/data/").getAbsolutePath(), privatePath);
-            // redirect xxx/Android/obb/ -> /xxx/Android/data/<host>/virtual/<user>
+            // redirect xxx/Android/obb/ -> <host external files>/virtual/<user>
             NativeEngine.redirectDirectory(new File(storageRoot, "Android/obb/").getAbsolutePath(), privatePath);
             // redirect /sdcard/ -> vsdcard
             if (vsPath != null) {
