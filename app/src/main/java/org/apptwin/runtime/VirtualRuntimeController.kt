@@ -5,14 +5,12 @@ import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageInfo
 import android.os.Build
-import android.os.Environment
 import android.util.Log
 import com.lody.virtual.client.core.InstallStrategy
 import com.lody.virtual.client.core.VirtualCore
 import com.lody.virtual.client.ipc.VActivityManager
 import com.lody.virtual.client.ipc.VPackageManager
 import com.lody.virtual.os.VEnvironment
-import com.lody.virtual.os.VirtualExternalStorageLayout
 import com.lody.virtual.os.VUserManager
 import java.io.File
 import java.io.FileOutputStream
@@ -433,18 +431,13 @@ class VirtualRuntimeController(context: Context) : GroupEnvironmentRuntime, Grou
     }
 
     private fun prepareVirtualExternalStorage(environmentId: Int) {
-        val externalRoot = Environment.getExternalStorageDirectory() ?: return
         val directories = listOf(
-            VirtualExternalStorageLayout.sharedStorageForUser(
-                externalRoot,
-                appContext.packageName,
-                environmentId,
-            ),
-            VirtualExternalStorageLayout.privateStorageForUser(
-                externalRoot,
-                appContext.packageName,
-                environmentId,
-            ),
+            requireNotNull(
+                VEnvironment.getVirtualStorageDir(appContext.packageName, environmentId),
+            ) { "無法取得 virtual shared external storage" },
+            requireNotNull(VEnvironment.getVirtualPrivateStorageDir(environmentId)) {
+                "無法取得 virtual private external storage"
+            },
         )
         directories.forEach { directory ->
             check(directory.isDirectory || directory.mkdirs()) {
