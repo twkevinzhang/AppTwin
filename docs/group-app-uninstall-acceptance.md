@@ -6,6 +6,10 @@ Device: `ASUS_I002D`, Android 12/API 31, unrooted
 
 Build: `runtimeProbeDebug`
 
+> **Legacy naming note:** This device acceptance predates the AppTwin rename. The
+> `org.maskaccounts` target named below is preserved as evidence of the package that was actually
+> installed and tested; the renamed app and package are AppTwin and `org.apptwin`.
+
 ## Contract
 
 - Long-pressing a GroupApp tile opens a one-item menu containing **解除安裝**; a normal tap still
@@ -47,8 +51,9 @@ The final run verified that both CE and Direct Boot package directories are remo
 
 ## Instrumentation runner safety
 
-`connectedRuntimeProbeDebugAndroidTest` removes the target `org.maskaccounts` package during its
-post-test cleanup on this toolchain, which also removes target-app private data. Run that Gradle
-task only when MaskAccounts data on the connected device is disposable or separately backed up.
-For data-preserving manual acceptance, build the APK and use `adb install -r -t`, then drive the
+During this acceptance run, `connectedRuntimeProbeDebugAndroidTest` removed the legacy target
+`org.maskaccounts` package during its post-test cleanup on this toolchain, which also removed
+target-app private data. In the renamed project, the task targets `org.apptwin`. Run that Gradle
+task only when AppTwin data on the connected device is disposable or separately backed up. For
+data-preserving manual acceptance, build the APK and use `adb install -r -t`, then drive the
 installed app without invoking the connected-test cleanup task.

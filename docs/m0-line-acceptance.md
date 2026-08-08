@@ -4,6 +4,10 @@ Acceptance was executed on 2026-08-03 against an unrooted, bootloader-locked ASU
 Android 12/API 31. The source package was the main-system installation of
 `jp.naver.line.android` 15.5.4 (`versionCode=150540375`).
 
+> **Legacy naming note:** This acceptance predates the AppTwin rename. MaskAccounts,
+> `org.maskaccounts`, UID `10959`, and the recorded private-data paths are preserved exactly as
+> historical device evidence; the current product and package names are AppTwin and `org.apptwin`.
+
 ## Accepted user path
 
 1. Sideload the clean `runtimeProbeDebug` APK without clearing MaskAccounts data.

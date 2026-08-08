@@ -11,7 +11,7 @@ import java.lang.reflect.Method;
 import java.util.List;
 
 public class MethodProxiesActiveNotificationsTest {
-    private static final String HOST_PACKAGE = "org.maskaccounts";
+    private static final String HOST_PACKAGE = "org.apptwin";
 
     @Test
     public void recognizesOnlyWellFormedHostRequests() {

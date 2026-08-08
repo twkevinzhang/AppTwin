@@ -13,7 +13,7 @@ This module is a downstream port of the `VirtualApp/lib` directory shipped in
 
 ## Downstream changes
 
-- Migrated the library from AGP 3.2.1 / compile SDK 28 to the MaskAccounts AGP
+- Migrated the library from AGP 3.2.1 / compile SDK 28 to the AppTwin AGP
   build and compile SDK 36.
 - Restricted native output to `arm64-v8a` and raised the native platform floor
   to API 21.

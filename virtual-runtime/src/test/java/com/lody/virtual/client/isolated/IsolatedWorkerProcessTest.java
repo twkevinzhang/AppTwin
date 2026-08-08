@@ -9,11 +9,11 @@ public class IsolatedWorkerProcessTest {
     @Test
     public void recognizesOnlyOwnedIsolatedWorkerProcesses() {
         assertTrue(IsolatedWorkerProcess.isWorkerProcessName(
-                "org.maskaccounts", "org.maskaccounts:va_isolated_0"));
+                "org.apptwin", "org.apptwin:va_isolated_0"));
         assertFalse(IsolatedWorkerProcess.isWorkerProcessName(
-                "org.maskaccounts", "org.maskaccounts:p0"));
+                "org.apptwin", "org.apptwin:p0"));
         assertFalse(IsolatedWorkerProcess.isWorkerProcessName(
-                "org.maskaccounts", "other:va_isolated_0"));
+                "org.apptwin", "other:va_isolated_0"));
         assertFalse(IsolatedWorkerProcess.isWorkerProcessName(null, null));
     }
 }

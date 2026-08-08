@@ -4,9 +4,9 @@
 
     <!-- AndroidX uses this signature permission to emulate non-exported dynamic receivers on API <= 32. -->
     <permission
-        android:name="org.maskaccounts.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION"
+        android:name="org.apptwin.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION"
         android:protectionLevel="signature" />
-    <uses-permission android:name="org.maskaccounts.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION" />
+    <uses-permission android:name="org.apptwin.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION" />
 
     <!-- M0 is sideload-only. Play distribution requires a package visibility policy review. -->
     <uses-permission
@@ -36,7 +36,7 @@
         android:required="false" />
 
     <application
-        android:name=".MaskAccountsApplication"
+        android:name=".AppTwinApplication"
         android:allowBackup="false"
         android:dataExtractionRules="@xml/data_extraction_rules"
         android:extractNativeLibs="true"
@@ -45,7 +45,7 @@
         android:label="@string/app_name"
         android:roundIcon="@drawable/ic_launcher"
         android:supportsRtl="true"
-        android:theme="@style/Theme.MaskAccounts">
+        android:theme="@style/Theme.AppTwin">
         <activity
             android:name=".MainActivity"
             android:exported="true">

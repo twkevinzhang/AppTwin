@@ -26,14 +26,14 @@ public class VClientImplTest {
     public void mapsHostStubProcessToSameSlotKeepAliveService() {
         String base = StubProcessKeepAliveService.class.getName();
         assertEquals(base + "$C0", GoogleProcessKeepAlivePolicy.serviceClassNameForProcess(
-                "org.maskaccounts", "org.maskaccounts:p0", 50));
+                "org.apptwin", "org.apptwin:p0", 50));
         assertEquals(base + "$C49", GoogleProcessKeepAlivePolicy.serviceClassNameForProcess(
-                "org.maskaccounts", "org.maskaccounts:p49", 50));
+                "org.apptwin", "org.apptwin:p49", 50));
         assertNull(GoogleProcessKeepAlivePolicy.serviceClassNameForProcess(
-                "org.maskaccounts", "org.maskaccounts:p50", 50));
+                "org.apptwin", "org.apptwin:p50", 50));
         assertNull(GoogleProcessKeepAlivePolicy.serviceClassNameForProcess(
-                "org.maskaccounts", "com.google.android.gms", 50));
+                "org.apptwin", "com.google.android.gms", 50));
         assertNull(GoogleProcessKeepAlivePolicy.serviceClassNameForProcess(
-                "org.maskaccounts", "org.maskaccounts:px", 50));
+                "org.apptwin", "org.apptwin:px", 50));
     }
 }

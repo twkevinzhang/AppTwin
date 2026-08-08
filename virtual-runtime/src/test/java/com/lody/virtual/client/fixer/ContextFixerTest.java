@@ -11,12 +11,12 @@ public class ContextFixerTest {
         FakeAttributionSource next = new FakeAttributionSource(10004, "guest.next", null);
         FakeAttributionSource source = new FakeAttributionSource(10004, "guest.root", next);
 
-        ContextFixer.fixAttributionSource(source, "org.maskaccounts", 10959);
+        ContextFixer.fixAttributionSource(source, "org.apptwin", 10959);
 
         assertEquals(10959, source.mAttributionSourceState.uid);
-        assertEquals("org.maskaccounts", source.mAttributionSourceState.packageName);
+        assertEquals("org.apptwin", source.mAttributionSourceState.packageName);
         assertEquals(10959, next.mAttributionSourceState.uid);
-        assertEquals("org.maskaccounts", next.mAttributionSourceState.packageName);
+        assertEquals("org.apptwin", next.mAttributionSourceState.packageName);
     }
 
     private static final class FakeAttributionSource {

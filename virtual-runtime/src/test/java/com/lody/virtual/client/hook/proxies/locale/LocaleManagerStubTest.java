@@ -11,13 +11,13 @@ public class LocaleManagerStubTest {
     public void rewritesGuestPackageAndVirtualUserToHostOperatingSystemIdentity() {
         Object[] ownerArgs = {"jp.naver.line.android", 7};
         assertTrue(LocaleManagerStub.rewriteApplicationLocalesArgs(
-                ownerArgs, "org.maskaccounts", 11060));
-        assertArrayEquals(new Object[]{"org.maskaccounts", 0}, ownerArgs);
+                ownerArgs, "org.apptwin", 11060));
+        assertArrayEquals(new Object[]{"org.apptwin", 0}, ownerArgs);
 
         Object[] secondaryUserArgs = {"jp.naver.line.android", 7, "unchanged"};
         assertTrue(LocaleManagerStub.rewriteApplicationLocalesArgs(
-                secondaryUserArgs, "org.maskaccounts", 111060));
-        assertArrayEquals(new Object[]{"org.maskaccounts", 1, "unchanged"}, secondaryUserArgs);
+                secondaryUserArgs, "org.apptwin", 111060));
+        assertArrayEquals(new Object[]{"org.apptwin", 1, "unchanged"}, secondaryUserArgs);
     }
 
     @Test
@@ -32,7 +32,7 @@ public class LocaleManagerStubTest {
         for (Object[] args : malformedArgs) {
             Object[] original = args.clone();
             assertFalse(LocaleManagerStub.rewriteApplicationLocalesArgs(
-                    args, "org.maskaccounts", 11060));
+                    args, "org.apptwin", 11060));
             assertArrayEquals(original, args);
         }
 
@@ -40,6 +40,6 @@ public class LocaleManagerStubTest {
         assertFalse(LocaleManagerStub.rewriteApplicationLocalesArgs(validShape, null, 11060));
         assertArrayEquals(new Object[]{"jp.naver.line.android", 0}, validShape);
         assertFalse(LocaleManagerStub.rewriteApplicationLocalesArgs(null,
-                "org.maskaccounts", 11060));
+                "org.apptwin", 11060));
     }
 }

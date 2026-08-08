@@ -43,7 +43,7 @@ licenses, and the remaining third-party notice gap are recorded in
 - A root Apache-2.0 file exists, but 1,635 inspected source files contain no per-file SPDX or GPL
   continuation notice while the README credits VirtualApp as an original framework.
 - Its upstream lineage publicly acknowledges structural/IP disputes. The root declaration alone
-  is not enough evidence for MaskAccounts to copy or cherry-pick the runtime.
+  is not enough evidence for AppTwin to copy or cherry-pick the runtime.
 
 ## Decision
 

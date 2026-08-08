@@ -12,7 +12,7 @@ import com.lody.virtual.client.core.VirtualCore;
  * Keeps denied guest location requests inside the virtual runtime.
  *
  * <p>Passing a guest package name to Android's real location service fails app-op ownership
- * validation because every guest runs under the MaskAccounts UID. Repeated callers such as Maps
+ * validation because every guest runs under the AppTwin UID. Repeated callers such as Maps
  * then retry the rejected registration indefinitely. When the host UID has neither coarse nor
  * fine location access, expose location as unavailable and avoid the host Binder call entirely.
  */

@@ -6,6 +6,10 @@ Device: `ASUS_I002D`, Android 12/API 31, unrooted and bootloader locked
 
 Build: `runtimeProbeDebug`, installed with `adb install -r -t`
 
+> **Legacy naming note:** This device acceptance predates the AppTwin rename. References to
+> MaskAccounts, its temporary backup paths, and its observed process identity are preserved as
+> historical evidence; the current product and package names are AppTwin and `org.apptwin`.
+
 ## Contract
 
 - A Group is the product's isolation identity; no second user-facing runtime identity exists.

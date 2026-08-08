@@ -10,9 +10,9 @@ public class HCallbackStubTest {
     @Test
     public void hostKeepAliveServiceDoesNotBindAsVirtualGuest() {
         assertFalse(GuestServiceBindingPolicy.shouldBindGuestApplication(
-                "org.maskaccounts", "org.maskaccounts"));
-        assertFalse(GuestServiceBindingPolicy.shouldBindGuestApplication("org.maskaccounts", null));
+                "org.apptwin", "org.apptwin"));
+        assertFalse(GuestServiceBindingPolicy.shouldBindGuestApplication("org.apptwin", null));
         assertTrue(GuestServiceBindingPolicy.shouldBindGuestApplication(
-                "org.maskaccounts", "com.google.android.gms"));
+                "org.apptwin", "com.google.android.gms"));
     }
 }

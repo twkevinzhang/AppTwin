@@ -1,8 +1,11 @@
 # Group-scoped Play Store acceptance
 
+> **Legacy naming note:** The dated device evidence below was recorded before the AppTwin rename.
+> Current product instructions use AppTwin and the `org.apptwin` package name.
+
 ## Contract
 
-- Every MaskAccounts Group owns one independent virtual runtime environment.
+- Every AppTwin Group owns one independent virtual runtime environment.
 - Google Services Framework, Google Play services, Play Store accounts, installed-app state, and
   app data are scoped to that environment.
 - Play-installed APK code may be shared by the runtime, but installation membership, app data,
@@ -22,7 +25,7 @@ Given two healthy Groups on the unrooted ASUS Android 12 test device:
    no-push fallback instead of passing a cross-process `BinderProxy` that Firebase rejects.
 4. When Play installs or removes an app, only that Group's installation membership and metadata
    may change; shared code must remain while another Group still has the app installed.
-5. When MaskAccounts refreshes, newly installed launchable packages must appear as `PLAY_STORE`
+5. When AppTwin refreshes, newly installed launchable packages must appear as `PLAY_STORE`
    apps and stale `PLAY_STORE` entries must disappear without changing `SYSTEM_IMPORT` entries.
 
 ## 2026-08-05 device evidence

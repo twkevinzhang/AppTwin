@@ -42,10 +42,10 @@ Installed source package
   be explicit; allocating a replacement would violate the Group's identity contract.
 - The runtime installs the active immutable revision into its own virtual package registry and
   launches the guest through a host `StubActivity` without adding another Android package.
-- Guest code runs in a MaskAccounts-owned process/UID. Native path redirection maps guest private
+- Guest code runs in an AppTwin-owned process/UID. Native path redirection maps guest private
   paths into the host-private virtual data tree.
 - On Android 12 and lower, AndroidX's synthetic non-exported dynamic-receiver permission is granted
-  virtually and rewritten to a MaskAccounts-owned signature permission before the OS call. This
+  virtually and rewritten to an AppTwin-owned signature permission before the OS call. This
   preserves receiver privacy while avoiding a permission owned by the original app's signature.
 - On Android 12, the guest delegate class path includes the available platform Apache HTTP legacy
   shared library. This preserves compatibility with installed apps that declare
@@ -62,7 +62,7 @@ Installed source package
 
 - One LINE 15.5.4 GroupApp launches through the virtual PackageManager/ActivityManager path on an
   unrooted ASUS_I002D running Android 12/API 31 and reaches the fresh login screen.
-- The guest process uses the MaskAccounts UID, while its process label and window resources remain
+- The guest process uses the AppTwin UID, while its process label and window resources remain
   LINE's. The original LINE package and data directory remain separate.
 - One Shopee Taiwan 3.79.27 GroupApp launches on the same device, loads the live home screen, and
   opens Shopee's declared native login activity. The login screen remained in the foreground for

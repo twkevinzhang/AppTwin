@@ -1,5 +1,9 @@
 # M1 Google Maps Group environment acceptance
 
+> **Legacy naming note:** This acceptance predates the AppTwin rename. MaskAccounts,
+> `org.maskaccounts`, UID `10959`, and the recorded private-data paths are preserved exactly as
+> historical device evidence; the current product and package names are AppTwin and `org.apptwin`.
+
 ## Contract
 
 - Device: unrooted, bootloader-locked `ASUS_I002D` on Android 12 / API 31.

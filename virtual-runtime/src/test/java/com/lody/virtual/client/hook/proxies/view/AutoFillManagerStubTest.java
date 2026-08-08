@@ -47,10 +47,10 @@ public class AutoFillManagerStubTest {
     public void hostComponentIdentityKeepsOriginalClassName() {
         AutoFillManagerStub.ComponentIdentity identity =
                 AutoFillManagerStub.componentIdentityForHost(
-                        "org.maskaccounts",
+                        "org.apptwin",
                         "jp.naver.line.android.activity.login.SecondaryDeviceLoginActivity");
 
-        assertEquals("org.maskaccounts", identity.packageName);
+        assertEquals("org.apptwin", identity.packageName);
         assertEquals("jp.naver.line.android.activity.login.SecondaryDeviceLoginActivity",
                 identity.className);
     }
