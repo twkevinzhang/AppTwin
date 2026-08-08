@@ -755,6 +755,9 @@ void IOUniformer::configureUidOverride(int uid_override_value) {
         snprintf(uid_override_chars, sizeof(uid_override_chars), "%d", uid_override_value);
         setenv("V_REPORTED_UID", uid_override_chars, 1);
         ensure_uid_hook();
+    } else {
+        // Do not allow a previous process claim to leak a native UID override into exec'd children.
+        unsetenv("V_REPORTED_UID");
     }
 }
 
