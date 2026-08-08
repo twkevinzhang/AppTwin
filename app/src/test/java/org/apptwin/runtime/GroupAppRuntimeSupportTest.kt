@@ -7,14 +7,6 @@ import org.junit.Test
 
 class GroupAppRuntimeSupportTest {
     @Test
-    fun `accepted GroupApps are launchable`() {
-        assertTrue(GroupAppRuntimeSupport.canLaunch(GroupAppRuntimeSupport.LINE_PACKAGE))
-        assertTrue(GroupAppRuntimeSupport.canLaunch(GroupAppRuntimeSupport.SHOPEE_PACKAGE))
-        assertTrue(GroupAppRuntimeSupport.canLaunch(GroupAppRuntimeSupport.YOUTUBE_PACKAGE))
-        assertTrue(GroupAppRuntimeSupport.canLaunch(GroupAppRuntimeSupport.MAPS_PACKAGE))
-    }
-
-    @Test
     fun `shopee exposes its native login while other apps use their launcher`() {
         assertTrue(
             GroupAppRuntimeSupport.loginActivity(GroupAppRuntimeSupport.SHOPEE_PACKAGE)
@@ -56,8 +48,11 @@ class GroupAppRuntimeSupportTest {
     }
 
     @Test
-    fun `unaccepted packages remain metadata only`() {
-        assertFalse(GroupAppRuntimeSupport.canLaunch("com.example.unaccepted"))
+    fun `unknown packages are marked unverified without a launch policy`() {
+        assertEquals(
+            RuntimeCompatibility.UNVERIFIED,
+            GroupAppRuntimeSupport.compatibility("com.example.unaccepted"),
+        )
     }
 
     @Test
@@ -69,7 +64,10 @@ class GroupAppRuntimeSupportTest {
         assertEquals("android.intent.category.LAUNCHER", launcher.category)
         assertTrue(launcher.flags != 0)
         assertTrue(GroupPlayStoreLaunchContract.isReservedGroupService(launcher.packageName))
-        assertFalse(GroupAppRuntimeSupport.canLaunch(launcher.packageName))
+        assertEquals(
+            RuntimeCompatibility.UNVERIFIED,
+            GroupAppRuntimeSupport.compatibility(launcher.packageName),
+        )
         assertFalse(
             GroupPlayStoreLaunchContract.isReservedGroupService(
                 GroupAppRuntimeSupport.LINE_PACKAGE,

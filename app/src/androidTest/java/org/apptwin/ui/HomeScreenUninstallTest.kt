@@ -124,7 +124,6 @@ class HomeScreenUninstallTest {
             appLabel = "測試記事",
             versionName = "1.0",
             sourceInstalled = true,
-            launchSupported = true,
             launchStatus = "可啟動",
         )
         val uiState = MainUiState(

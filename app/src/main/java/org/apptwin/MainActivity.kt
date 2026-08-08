@@ -53,7 +53,7 @@ class MainActivity : ComponentActivity() {
                 ACTION_LAUNCH_LINE_CLONE -> GroupAppRuntimeSupport.LINE_PACKAGE
                 ACTION_LAUNCH_CLONE -> intent.getStringExtra(EXTRA_PACKAGE_NAME)
                 else -> null
-            }?.takeIf(GroupAppRuntimeSupport::canLaunch)
+            }?.takeIf(String::isNotBlank)
             window.decorView.post {
                 debugPackage?.let(mainViewModel::launchFirst)
             }

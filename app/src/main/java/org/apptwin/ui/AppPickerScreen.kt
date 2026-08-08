@@ -38,6 +38,15 @@ import org.apptwin.AppItem
 import org.apptwin.GroupItem
 import org.apptwin.MainUiState
 
+private val guaranteedAppPickerIconPackages = setOf(
+    "jp.naver.line.android",
+    "com.shopee.tw",
+    "com.discord",
+)
+
+internal fun shouldUseColorIconInAppPicker(packageName: String): Boolean =
+    packageName in guaranteedAppPickerIconPackages
+
 @Composable
 fun AppPickerScreen(
     state: MainUiState,
@@ -125,7 +134,11 @@ private fun AppPickerItem(
         ListItem(
             modifier = Modifier.clickable(enabled = enabled, onClick = onClick),
             leadingContent = {
-                AppIcon(packageName = app.entry.packageName, size = 52.dp)
+                AppIcon(
+                    packageName = app.entry.packageName,
+                    size = 52.dp,
+                    grayscale = !shouldUseColorIconInAppPicker(app.entry.packageName),
+                )
             },
             headlineContent = {
                 Text(
