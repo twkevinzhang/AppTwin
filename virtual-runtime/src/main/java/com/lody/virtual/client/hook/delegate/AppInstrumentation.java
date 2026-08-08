@@ -18,7 +18,6 @@ import com.lody.virtual.client.fixer.ContextFixer;
 import com.lody.virtual.client.interfaces.IInjector;
 import com.lody.virtual.client.ipc.ActivityClientRecord;
 import com.lody.virtual.client.ipc.VActivityManager;
-import com.lody.virtual.helper.compat.BundleCompat;
 import com.lody.virtual.helper.utils.VLog;
 import com.lody.virtual.os.VUserHandle;
 import com.lody.virtual.server.interfaces.IUiCallback;
@@ -71,9 +70,7 @@ public final class AppInstrumentation extends InstrumentationDelegate implements
 
     @Override
     public void callActivityOnCreate(Activity activity, Bundle icicle) {
-        if (icicle != null) {
-            BundleCompat.clearParcelledData(icicle);
-        }
+        ActivitySavedStateCompat.prepare(icicle, activity.getClassLoader());
         VirtualCore.get().getComponentDelegate().beforeActivityCreate(activity);
         IBinder token = mirror.android.app.Activity.mToken.get(activity);
         ActivityClientRecord r = VActivityManager.get().getActivityRecord(token);
@@ -138,9 +135,7 @@ public final class AppInstrumentation extends InstrumentationDelegate implements
 
     @Override
     public void callActivityOnCreate(Activity activity, Bundle icicle, PersistableBundle persistentState) {
-        if (icicle != null) {
-            BundleCompat.clearParcelledData(icicle);
-        }
+        ActivitySavedStateCompat.prepare(icicle, activity.getClassLoader());
         super.callActivityOnCreate(activity, icicle, persistentState);
     }
 

@@ -12,6 +12,7 @@ import android.content.Intent;
 import android.content.IntentFilter;
 import android.content.pm.ActivityInfo;
 import android.content.pm.ComponentInfo;
+import android.content.pm.IPackageDataObserver;
 import android.content.pm.PackageManager;
 import android.content.pm.ProviderInfo;
 import android.content.pm.ResolveInfo;
@@ -120,6 +121,44 @@ class MethodProxies {
             int userId = VUserHandle.myUserId();
             VActivityManager.get().killAppByPkg(pkg, userId);
             return 0;
+        }
+
+        @Override
+        public boolean isEnable() {
+            return isAppProcess();
+        }
+    }
+
+
+    static class ClearApplicationUserData extends MethodProxy {
+
+        @Override
+        public String getMethodName() {
+            return "clearApplicationUserData";
+        }
+
+        @Override
+        public Object call(Object who, Method method, Object... args) throws Throwable {
+            String requestedPackage = ArrayUtils.getFirst(args, String.class);
+            if (!GuestPackageDataClearPolicy.shouldHandle(requestedPackage, getAppPkg())) {
+                return method.invoke(who, args);
+            }
+
+            boolean cleared = VirtualCore.get().clearPackageAsUser(
+                    VUserHandle.myUserId(), requestedPackage);
+            int observerIndex = ArrayUtils.indexOfObject(args, IPackageDataObserver.class, 0);
+            IPackageDataObserver observer = observerIndex >= 0
+                    ? (IPackageDataObserver) args[observerIndex]
+                    : null;
+            if (observer != null) {
+                try {
+                    observer.onRemoveCompleted(requestedPackage, cleared);
+                } catch (RemoteException e) {
+                    VLog.w("VA-PackageData", "Unable to notify clear observer for %s: %s",
+                            requestedPackage, e.getMessage());
+                }
+            }
+            return cleared;
         }
 
         @Override
@@ -931,6 +970,17 @@ class MethodProxies {
                         serviceInfo == null ? "host" : serviceInfo.packageName + "/" + serviceInfo.name);
             }
             if (serviceInfo != null) {
+                if (GmsServiceBindingPolicy.shouldRejectUnavailableWearableBinding(
+                        getAppPkg(), service.getAction(), serviceInfo.packageName)) {
+                    // A guest cannot provide the physical Wear companion expected by GMS. The
+                    // virtual WearableService exits initialization without publishing a Binder,
+                    // leaving clients such as LINE suspended forever during startup/data sync.
+                    // bindService() failure is the supported no-Wear fallback and lets the client
+                    // continue without optional watch integration.
+                    VLog.i("VA-GmsRoute", "reject unavailable wearable binding caller=%s",
+                            getAppPkg());
+                    return 0;
+                }
                 if (PlayStoreServiceBindingPolicy.shouldRejectLocalOnlyBinding(
                         getAppPkg(), serviceInfo.packageName, serviceInfo.name)) {
                     // Firebase's WithinAppServiceConnection requires the concrete local
