@@ -1,6 +1,6 @@
-# MaskAccounts
+# AppTwin
 
-MaskAccounts is an experimental, open-source Android app-level multi-account container. M0 targets
+AppTwin is an experimental, open-source Android app-level multi-account container. M0 targets
 an unrooted, bootloader-locked `ASUS_I002D` running Android 12 / API 31. The target remains Android
 16 compatibility (`compileSdk` and `targetSdk` 36).
 
@@ -62,7 +62,7 @@ Group-scoped long-press uninstall and cross-Group data-preservation evidence is 
 [`docs/group-app-uninstall-acceptance.md`](docs/group-app-uninstall-acceptance.md).
 
 For Shopee, select the imported package and use **開啟登入** to enter Shopee's declared native
-login activity. The normal GroupApp action continues to open Shopee's home activity. MaskAccounts
+login activity. The normal GroupApp action continues to open Shopee's home activity. AppTwin
 does not bypass Shopee traffic verification or device-integrity decisions.
 
 ## Build and test
@@ -100,7 +100,7 @@ permission. The launcher links to the system screen where the user can explicitl
 
 ## License
 
-Copyright © 2026 MaskAccounts contributors.
+Copyright © 2026 AppTwin contributors.
 
-MaskAccounts is licensed under the GNU General Public License, version 3 or (at your option) any
+AppTwin is licensed under the GNU General Public License, version 3 or (at your option) any
 later version. See [LICENSE](LICENSE).

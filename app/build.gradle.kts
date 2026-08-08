@@ -5,7 +5,7 @@ plugins {
 }
 
 android {
-    namespace = "org.maskaccounts"
+    namespace = "org.apptwin"
     compileSdk = 36
 
     buildFeatures {
@@ -14,7 +14,7 @@ android {
     }
 
     defaultConfig {
-        applicationId = "org.maskaccounts"
+        applicationId = "org.apptwin"
         minSdk = 26
         targetSdk = 36
         versionCode = 1

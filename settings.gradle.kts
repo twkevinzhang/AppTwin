@@ -14,7 +14,7 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "MaskAccounts"
+rootProject.name = "AppTwin"
 include(":app")
 include(":package-source")
 include(":revision-store")

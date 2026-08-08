@@ -1,5 +1,5 @@
 <resources>
-    <style name="Theme.MaskAccounts" parent="android:style/Theme.Material.NoActionBar">
+    <style name="Theme.AppTwin" parent="android:style/Theme.Material.NoActionBar">
         <item name="android:fontFamily">sans</item>
         <item name="android:colorAccent">#9DCAFF</item>
         <item name="android:navigationBarColor">#0C1117</item>

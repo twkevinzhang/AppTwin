@@ -20,8 +20,8 @@ public class DynamicReceiverPermissionCompatTest {
     @Test
     public void rewritesToHostOwnedSignaturePermission() {
         assertEquals(
-                "org.maskaccounts.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION",
-                DynamicReceiverPermissionCompat.forHost("org.maskaccounts"));
+                "org.apptwin.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION",
+                DynamicReceiverPermissionCompat.forHost("org.apptwin"));
         assertThrows(
                 IllegalArgumentException.class,
                 () -> DynamicReceiverPermissionCompat.forHost(""));

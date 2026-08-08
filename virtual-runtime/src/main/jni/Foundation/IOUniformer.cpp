@@ -51,7 +51,7 @@ static bool is_proc_maps_leak(const char *line, size_t length) {
     return (!proc_maps_host_package.empty() &&
             mapping.find(proc_maps_host_package) != std::string::npos) ||
            mapping.find("libva++.so") != std::string::npos ||
-           mapping.find("/MaskAccounts/") != std::string::npos;
+           mapping.find("/AppTwin/") != std::string::npos;
 }
 
 static int open_sanitized_proc_maps(int requested_flags) {

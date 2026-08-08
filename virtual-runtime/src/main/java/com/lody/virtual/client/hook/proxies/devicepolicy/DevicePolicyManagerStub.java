@@ -25,7 +25,7 @@ public class DevicePolicyManagerStub extends BinderInvocationProxy{
     protected void onBindMethods() {
         super.onBindMethods();
         addMethodProxy(new GetStorageEncryptionStatus());
-        // MaskAccounts deliberately exposes no Android device-owner/work-profile state to a
+        // AppTwin deliberately exposes no Android device-owner/work-profile state to a
         // guest. The real service rejects these cross-identity queries from the host UID.
         addMethodProxy(new ResultStaticMethodProxy("getDeviceOwnerComponent", null));
         addMethodProxy(new ResultStaticMethodProxy("getProfileOwner", null));

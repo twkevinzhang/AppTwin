@@ -298,7 +298,7 @@ class MethodProxies {
                         public Object invoke(Object proxy, Method method, Object[] args) throws Throwable {
                             if (isStagedSessionQuery(method.getName())) {
                                 if ("getStagedSessions".equals(method.getName())) {
-                                    // MaskAccounts does not expose Android system staged installs.
+                                    // AppTwin does not expose Android system staged installs.
                                     // Returning an empty platform slice matches a device with no
                                     // pending staged sessions and keeps modern Play Store versions
                                     // from terminating their background process during startup.

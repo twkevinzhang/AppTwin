@@ -13,12 +13,12 @@ public class VirtualExternalStorageLayoutTest {
         File externalRoot = new File("/storage/emulated/0");
 
         assertEquals(
-                "/storage/emulated/0/Android/data/org.maskaccounts/virtual/vsdcard/7",
+                "/storage/emulated/0/Android/data/org.apptwin/virtual/vsdcard/7",
                 VirtualExternalStorageLayout.sharedStorageForUser(
-                        externalRoot, "org.maskaccounts", 7).getPath());
+                        externalRoot, "org.apptwin", 7).getPath());
         assertEquals(
-                "/storage/emulated/0/Android/data/org.maskaccounts/virtual/7",
+                "/storage/emulated/0/Android/data/org.apptwin/virtual/7",
                 VirtualExternalStorageLayout.privateStorageForUser(
-                        externalRoot, "org.maskaccounts", 7).getPath());
+                        externalRoot, "org.apptwin", 7).getPath());
     }
 }
