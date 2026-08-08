@@ -53,7 +53,6 @@ data class GroupAppItem(
     val appLabel: String,
     val versionName: String,
     val sourceInstalled: Boolean,
-    val launchSupported: Boolean,
     val launchStatus: String,
 ) {
     val launchKey: String = "$groupId:${app.packageName}"
@@ -192,10 +191,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                                     source?.versionName.orEmpty()
                                 },
                                 sourceInstalled = isPlayStoreApp || source != null,
-                                launchSupported = isPlayStoreApp || (
-                                    source != null &&
-                                        GroupAppRuntimeSupport.canLaunch(app.packageName)
-                                    ),
                                 launchStatus = if (isPlayStoreApp) {
                                     "由此群組的 Play 商店安裝"
                                 } else {
@@ -381,10 +376,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
         if (item.app.origin == GroupAppOrigin.SYSTEM_IMPORT && !item.sourceInstalled) {
             showMessage("來源 App 已移除，暫時無法啟動")
-            return
-        }
-        if (item.app.origin == GroupAppOrigin.SYSTEM_IMPORT && !item.launchSupported) {
-            showMessage("目前實機啟動驗證僅支援 LINE、蝦皮、YouTube 與 Maps")
             return
         }
         activePreparations += item.groupId

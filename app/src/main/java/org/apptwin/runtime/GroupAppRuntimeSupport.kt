@@ -5,10 +5,10 @@ import android.content.Intent
 enum class RuntimeCompatibility {
     VERIFIED,
     EXPERIMENTAL,
-    UNSUPPORTED,
+    UNVERIFIED,
 }
 
-/** Packages with an explicit, device-tested GroupApp launch policy. */
+/** Device-test metadata for GroupApp compatibility. This does not gate launches. */
 object GroupAppRuntimeSupport {
     const val LINE_PACKAGE = "jp.naver.line.android"
     const val SHOPEE_PACKAGE = "com.shopee.tw"
@@ -26,11 +26,8 @@ object GroupAppRuntimeSupport {
     fun compatibility(packageName: String): RuntimeCompatibility = when (packageName) {
         in verifiedPackages -> RuntimeCompatibility.VERIFIED
         in experimentalPackages -> RuntimeCompatibility.EXPERIMENTAL
-        else -> RuntimeCompatibility.UNSUPPORTED
+        else -> RuntimeCompatibility.UNVERIFIED
     }
-
-    fun canLaunch(packageName: String): Boolean =
-        compatibility(packageName) != RuntimeCompatibility.UNSUPPORTED
 
     fun loginActivity(packageName: String): String? = when (packageName) {
         SHOPEE_PACKAGE -> SHOPEE_LOGIN_ACTIVITY

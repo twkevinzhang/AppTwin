@@ -17,6 +17,9 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ColorFilter
+import androidx.compose.ui.graphics.ColorMatrix
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
@@ -25,12 +28,26 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.foundation.Image
 
 @Composable
-fun AppIcon(packageName: String, size: Dp) {
+fun AppIcon(
+    packageName: String,
+    size: Dp,
+    grayscale: Boolean = false,
+) {
     val packageManager = LocalContext.current.packageManager
     val bitmap = remember(packageName) {
         runCatching {
             packageManager.getApplicationIcon(packageName).toBitmap(144)
         }.getOrNull()
+    }
+    val grayscaleFilter = remember(grayscale) {
+        if (grayscale) {
+            ColorFilter.colorMatrix(ColorMatrix().apply { setToSaturation(0f) })
+        } else {
+            null
+        }
+    }
+    val fallbackTint = MaterialTheme.colorScheme.primary.let { color ->
+        if (grayscale) color.withSaturationZero() else color
     }
     Box(
         modifier = Modifier
@@ -44,7 +61,7 @@ fun AppIcon(packageName: String, size: Dp) {
                 Icons.Default.Android,
                 contentDescription = null,
                 modifier = Modifier.size(size * 0.58f),
-                tint = MaterialTheme.colorScheme.primary,
+                tint = fallbackTint,
             )
         } else {
             Image(
@@ -52,9 +69,15 @@ fun AppIcon(packageName: String, size: Dp) {
                 contentDescription = null,
                 modifier = Modifier.size(size),
                 contentScale = ContentScale.Fit,
+                colorFilter = grayscaleFilter,
             )
         }
     }
+}
+
+private fun Color.withSaturationZero(): Color {
+    val luminance = red * 0.213f + green * 0.715f + blue * 0.072f
+    return copy(red = luminance, green = luminance, blue = luminance)
 }
 
 private fun Drawable.toBitmap(edge: Int): Bitmap {
