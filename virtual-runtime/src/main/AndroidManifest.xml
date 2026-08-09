@@ -1701,7 +1701,7 @@
             android:exported="false"
             android:process=":p49" />
 
-+        <service
+        <service
             android:name="com.lody.virtual.client.stub.StubIsolatedService$C0"
             android:exported="false"
             android:isolatedProcess="true"

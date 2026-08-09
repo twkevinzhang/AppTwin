@@ -28,6 +28,10 @@ interface GroupOperationJournal {
     fun remove(groupId: String)
 }
 
+data class GroupReconciliationResult(
+    val loadIssues: List<GroupStoreLoadIssue>,
+)
+
 /** Owns every transition that creates, binds, validates, or destroys a Group environment. */
 class GroupLifecycleCoordinator(
     private val store: GroupStore,
@@ -47,6 +51,7 @@ class GroupLifecycleCoordinator(
         )
         journal.write(started)
         var binding: EnvironmentBinding? = null
+        var metadataCommitted = false
         return try {
             binding = runtime.createEnvironment(groupId, name.trim())
             journal.write(
@@ -55,13 +60,18 @@ class GroupLifecycleCoordinator(
                     environmentBinding = binding,
                 ),
             )
-            store.create(groupId, name, binding, started.startedAtEpochMillis).also {
-                journal.remove(groupId)
-            }
+            val created = store.create(groupId, name, binding, started.startedAtEpochMillis)
+            metadataCommitted = true
+            // Journal cleanup is post-commit and recoverable. It must never compensate a committed Group.
+            runCatching { journal.remove(groupId) }
+            created
         } catch (error: Throwable) {
-            binding?.let { created ->
-                runCatching { runtime.deleteEnvironment(created) }
-                    .onSuccess { journal.remove(groupId) }
+            if (!metadataCommitted) {
+                binding?.let { created ->
+                    val rollback = runCatching { runtime.deleteEnvironment(created) }
+                    rollback.exceptionOrNull()?.let(error::addSuppressed)
+                    if (rollback.isSuccess) runCatching { journal.remove(groupId) }
+                }
             }
             throw error
         }
@@ -87,9 +97,11 @@ class GroupLifecycleCoordinator(
         return true
     }
 
-    fun reconcile() {
-        recoverOperations()
-        val groups = store.listAll().sortedWith(compareBy(Group::createdAtEpochMillis, Group::id))
+    fun reconcile(): GroupReconciliationResult {
+        val loadIssues = recoverOperations().toMutableList()
+        val snapshot = store.loadSnapshot()
+        loadIssues += snapshot.issues
+        val groups = snapshot.groups.sortedWith(compareBy(Group::createdAtEpochMillis, Group::id))
         val activeOwners = linkedMapOf<EnvironmentBinding, Group>()
         groups.forEach { group ->
                 group.environmentBinding?.let { activeOwners.putIfAbsent(it, group) }
@@ -102,11 +114,20 @@ class GroupLifecycleCoordinator(
                 GroupHealth.DAMAGED -> Unit
             }
         }
+        return GroupReconciliationResult(loadIssues.distinct())
     }
 
-    private fun recoverOperations() {
+    private fun recoverOperations(): List<GroupStoreLoadIssue> {
+        val loadIssues = mutableListOf<GroupStoreLoadIssue>()
         journal.listAll().forEach { operation ->
-            val group = store.find(operation.groupId)
+            val group = when (val lookup = store.lookup(operation.groupId)) {
+                is GroupLookupResult.Found -> lookup.group
+                GroupLookupResult.NotFound -> null
+                is GroupLookupResult.Failed -> {
+                    loadIssues += lookup.issue
+                    return@forEach
+                }
+            }
             when (operation.type) {
                 GroupOperationType.CREATE -> when {
                     group != null -> journal.remove(operation.groupId)
@@ -125,6 +146,7 @@ class GroupLifecycleCoordinator(
                 }
             }
         }
+        return loadIssues
     }
 
     private fun validateHealthy(

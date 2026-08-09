@@ -1,32 +1,28 @@
 package org.apptwin
 
 import android.app.Application
-import android.os.Build
-import android.os.Environment
-import android.os.Handler
-import android.os.Looper
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.lifecycle.AndroidViewModel
-import java.util.concurrent.Executors
-import org.apptwin.groups.FileGroupAppRemovalJournal
-import org.apptwin.groups.FileGroupOperationJournal
-import org.apptwin.groups.FileGroupStore
+import androidx.lifecycle.SavedStateHandle
+import androidx.lifecycle.viewModelScope
+import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import org.apptwin.groups.Group
 import org.apptwin.groups.GroupApp
-import org.apptwin.groups.GroupAppRemovalCoordinator
 import org.apptwin.groups.GroupAppRemovalResult
 import org.apptwin.groups.GroupAppState
 import org.apptwin.groups.GroupHealth
-import org.apptwin.groups.GroupLifecycleCoordinator
-import org.apptwin.revision.AndroidPackageRevisionImporter
+import org.apptwin.groups.GroupReconciliationResult
+import org.apptwin.revision.ActiveRevisionSummary
 import org.apptwin.revision.InstalledAppEntry
-import org.apptwin.revision.RevisionImportResult
 import org.apptwin.runtime.GroupAppRuntimeSupport
 import org.apptwin.runtime.RuntimeCompatibility
 import org.apptwin.runtime.RuntimeLaunchResult
-import org.apptwin.runtime.VirtualRuntimeController
 
 enum class MainDestination { HOME, SETTINGS }
 
@@ -73,29 +69,65 @@ data class MainUiState(
     val allFilesGranted: Boolean = false,
     val downloadCount: Int = 0,
     val photoCount: Int = 0,
+    val dataWarnings: List<String> = emptyList(),
     val message: String? = null,
     val messageId: Long = 0,
 )
 
-class MainViewModel(application: Application) : AndroidViewModel(application) {
-    private val importer = AndroidPackageRevisionImporter(application)
-    private val groupStore = FileGroupStore(application)
-    private val runtimeController = VirtualRuntimeController(application)
-    private val lifecycle = GroupLifecycleCoordinator(
-        store = groupStore,
-        runtime = runtimeController,
-        journal = FileGroupOperationJournal(application),
-    )
-    private val appRemoval = GroupAppRemovalCoordinator(
-        store = groupStore,
-        runtime = runtimeController,
-        journal = FileGroupAppRemovalJournal(application),
-    )
-    private val worker = Executors.newSingleThreadExecutor()
-    private val mainHandler = Handler(Looper.getMainLooper())
-    private var pendingLaunchPackage: String? = null
+internal data class StorageStatus(
+    val granted: Boolean,
+    val downloadCount: Int,
+    val photoCount: Int,
+)
 
-    var uiState by mutableStateOf(MainUiState())
+internal data class MainRefreshSnapshot(
+    val storage: StorageStatus,
+    val entries: List<InstalledAppEntry>,
+    val groups: List<Group>,
+    val activeRevisions: Map<String, ActiveRevisionSummary?>,
+    val dataWarnings: List<String>,
+)
+
+/** Blocking application operations. MainViewModel always invokes these on its IO dispatcher. */
+internal interface MainOperations {
+    suspend fun refreshSnapshot(): MainRefreshSnapshot
+    suspend fun findGroup(groupId: String): Group?
+    suspend fun createGroup(name: String): Group
+    suspend fun renameGroup(groupId: String, name: String): Group?
+    suspend fun deleteGroup(groupId: String): Group?
+    suspend fun addAppToGroup(groupId: String, packageName: String): Group
+    suspend fun launchGroupApp(item: GroupAppItem): RuntimeLaunchResult
+    suspend fun uninstallGroupApp(item: GroupAppItem): GroupAppRemovalResult
+    suspend fun reconcileGroups(): GroupReconciliationResult
+    suspend fun reconcileAppRemovals()
+}
+
+class MainViewModel internal constructor(
+    application: Application,
+    private val savedStateHandle: SavedStateHandle,
+    private val operations: MainOperations,
+    private val ioDispatcher: CoroutineDispatcher,
+) : AndroidViewModel(application) {
+    @OptIn(ExperimentalCoroutinesApi::class)
+    constructor(application: Application, savedStateHandle: SavedStateHandle) : this(
+        application = application,
+        savedStateHandle = savedStateHandle,
+        operations = AndroidMainOperations(application),
+        ioDispatcher = Dispatchers.IO.limitedParallelism(1),
+    )
+
+    private var pendingLaunchPackage: String? = null
+    private var refreshGeneration = 0L
+    private var pickerRequestGeneration = 0L
+
+    var uiState by mutableStateOf(
+        MainUiState(
+            destination = savedStateHandle.get<String>(DESTINATION_KEY)
+                ?.let(::destinationFromSavedState)
+                ?: MainDestination.HOME,
+            appPickerGroupId = savedStateHandle.get<String>(APP_PICKER_GROUP_KEY),
+        ),
+    )
         private set
 
     init {
@@ -103,6 +135,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun navigate(destination: MainDestination) {
+        pickerRequestGeneration += 1
+        savedStateHandle[DESTINATION_KEY] = destination.name
+        savedStateHandle[APP_PICKER_GROUP_KEY] = null
         uiState = uiState.copy(destination = destination, appPickerGroupId = null)
     }
 
@@ -111,47 +146,68 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             showMessage("App 正在解除安裝，請稍候")
             return
         }
-        val group = groupStore.find(groupId)
-        if (group == null) {
-            showMessage("找不到這個群組")
-        } else if (group.health != GroupHealth.HEALTHY) {
-            showMessage("這個群組目前無法加入 App")
-        } else {
-            uiState = uiState.copy(destination = MainDestination.HOME, appPickerGroupId = groupId)
+        val requestGeneration = ++pickerRequestGeneration
+        viewModelScope.launch {
+            val lookup = runCatching {
+                withContext(ioDispatcher) { operations.findGroup(groupId) }
+            }
+            if (requestGeneration != pickerRequestGeneration) return@launch
+            val group = lookup.getOrElse { error ->
+                showMessage("讀取群組失敗：${error.userMessage()}")
+                return@launch
+            }
+            when {
+                group == null -> showMessage("找不到這個群組")
+                group.health != GroupHealth.HEALTHY -> showMessage("這個群組目前無法加入 App")
+                else -> {
+                    savedStateHandle[DESTINATION_KEY] = MainDestination.HOME.name
+                    savedStateHandle[APP_PICKER_GROUP_KEY] = groupId
+                    uiState = uiState.copy(
+                        destination = MainDestination.HOME,
+                        appPickerGroupId = groupId,
+                    )
+                }
+            }
         }
     }
 
     fun closeAppPicker() {
+        pickerRequestGeneration += 1
+        savedStateHandle[APP_PICKER_GROUP_KEY] = null
         uiState = uiState.copy(appPickerGroupId = null)
     }
 
     fun refresh() {
-        val storage = readStorageStatus()
-        uiState = uiState.copy(
-            isRefreshing = true,
-            allFilesGranted = storage.granted,
-            downloadCount = storage.downloadCount,
-            photoCount = storage.photoCount,
-        )
-        worker.execute {
-            val entries = runCatching(importer::listCloneableApps).getOrDefault(emptyList())
-            val groups = runCatching(groupStore::listAll).getOrDefault(emptyList())
-            val entriesByPackage = entries.associateBy(InstalledAppEntry::packageName)
-            val appItems = entries.map { entry ->
-                val active = importer.active(entry.packageName)
+        val generation = ++refreshGeneration
+        uiState = uiState.copy(isRefreshing = true)
+        viewModelScope.launch {
+            val snapshot = runCatching {
+                withContext(ioDispatcher) { operations.refreshSnapshot() }
+            }.getOrElse { error ->
+                if (generation == refreshGeneration) {
+                    uiState = uiState.copy(isRefreshing = false)
+                    showMessage("重新整理失敗：${error.userMessage()}")
+                }
+                return@launch
+            }
+            if (generation != refreshGeneration) return@launch
+            val entriesByPackage = snapshot.entries.associateBy(InstalledAppEntry::packageName)
+            val appItems = snapshot.entries.map { entry ->
+                val active = snapshot.activeRevisions[entry.packageName]
                 AppItem(
                     entry = entry,
                     isSynced = active?.versionCode == entry.versionCode,
                     activeVersionCode = active?.versionCode,
-                    groupCount = groups.count { it.contains(entry.packageName) },
+                    groupCount = snapshot.groups.count { it.contains(entry.packageName) },
                 )
             }
-            val groupItems = groups.sortedByDescending(Group::createdAtEpochMillis).map { group ->
-                GroupItem(
-                    groupId = group.id,
-                    name = group.name,
-                    health = group.health,
-                    apps = group.apps.map { app ->
+            val groupItems = snapshot.groups.sortedByDescending(Group::createdAtEpochMillis)
+                .map { group ->
+                    GroupItem(
+                        groupId = group.id,
+                        name = group.name,
+                        health = group.health,
+                        apps = group.apps.map { app ->
                             val source = entriesByPackage[app.packageName]
                             GroupAppItem(
                                 groupId = group.id,
@@ -164,18 +220,35 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                                 launchStatus = launchStatus(app.packageName, source != null),
                             )
                         },
-                )
+                    )
+                }
+            val restoredPickerId = uiState.appPickerGroupId?.takeIf { selectedId ->
+                groupItems.any { it.groupId == selectedId }
             }
-            post {
-                uiState = uiState.copy(apps = appItems, groups = groupItems, isRefreshing = false)
-                pendingLaunchPackage?.let { packageName ->
-                    val pending = groupItems.asSequence()
-                        .flatMap { it.apps.asSequence() }
-                        .firstOrNull { it.app.packageName == packageName }
-                    if (pending != null) {
-                        pendingLaunchPackage = null
-                        launchGroupApp(pending)
-                    }
+            if (restoredPickerId != uiState.appPickerGroupId) {
+                savedStateHandle[APP_PICKER_GROUP_KEY] = null
+            }
+            val warningsChanged = snapshot.dataWarnings != uiState.dataWarnings
+            uiState = uiState.copy(
+                apps = appItems,
+                groups = groupItems,
+                appPickerGroupId = restoredPickerId,
+                isRefreshing = false,
+                allFilesGranted = snapshot.storage.granted,
+                downloadCount = snapshot.storage.downloadCount,
+                photoCount = snapshot.storage.photoCount,
+                dataWarnings = snapshot.dataWarnings,
+            )
+            if (snapshot.dataWarnings.isNotEmpty() && warningsChanged) {
+                showMessage("偵測到 ${snapshot.dataWarnings.size} 筆資料完整性問題；原始資料已保留")
+            }
+            pendingLaunchPackage?.let { packageName ->
+                val pending = groupItems.asSequence()
+                    .flatMap { it.apps.asSequence() }
+                    .firstOrNull { it.app.packageName == packageName }
+                if (pending != null) {
+                    pendingLaunchPackage = null
+                    launchGroupApp(pending)
                 }
             }
         }
@@ -184,107 +257,77 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     fun createGroup(name: String) {
         if (uiState.isCreatingGroup) return
         uiState = uiState.copy(isCreatingGroup = true)
-        worker.execute {
-            val result = runCatching { lifecycle.createGroup(name) }
-            post {
-                uiState = uiState.copy(isCreatingGroup = false)
-                result.onSuccess { group ->
-                    showMessage("已建立「${group.name}」")
-                    refresh()
-                }.onFailure { error -> showMessage("建立群組失敗：${error.userMessage()}") }
+        viewModelScope.launch {
+            val result = runCatching {
+                withContext(ioDispatcher) { operations.createGroup(name) }
             }
+            uiState = uiState.copy(isCreatingGroup = false)
+            result.onSuccess { group ->
+                showMessage("已建立「${group.name}」")
+                refresh()
+            }.onFailure { error -> showMessage("建立群組失敗：${error.userMessage()}") }
         }
     }
 
     fun renameGroup(groupId: String, name: String) {
-        runCatching { groupStore.rename(groupId, name) }
-            .onSuccess { renamed ->
+        viewModelScope.launch {
+            val result = runCatching {
+                withContext(ioDispatcher) { operations.renameGroup(groupId, name) }
+            }
+            result.onSuccess { renamed ->
                 if (renamed == null) showMessage("找不到這個群組")
                 else {
                     showMessage("已重新命名為「${renamed.name}」")
                     refresh()
                 }
-            }
-            .onFailure { error -> showMessage("重新命名失敗：${error.userMessage()}") }
+            }.onFailure { error -> showMessage("重新命名失敗：${error.userMessage()}") }
+        }
     }
 
     fun deleteGroup(groupId: String) {
         if (uiState.busyGroupId != null || uiState.uninstallingAppKey != null) return
-        val group = groupStore.find(groupId) ?: run {
-            showMessage("找不到這個群組")
-            return
-        }
         uiState = uiState.copy(busyGroupId = groupId)
-        worker.execute {
-            val result = runCatching { lifecycle.deleteGroup(groupId) }
-            post {
-                uiState = uiState.copy(busyGroupId = null)
-                result.onSuccess {
+        viewModelScope.launch {
+            val result = runCatching {
+                withContext(ioDispatcher) { operations.deleteGroup(groupId) }
+            }
+            uiState = uiState.copy(busyGroupId = null)
+            result.onSuccess { group ->
+                if (group == null) {
+                    showMessage("找不到這個群組")
+                } else {
                     showMessage("已刪除「${group.name}」及其中的所有資料")
-                    refresh()
-                }.onFailure { error ->
-                    showMessage("刪除群組失敗：${error.userMessage()}")
-                    refresh()
+                    if (uiState.appPickerGroupId == groupId) closeAppPicker()
                 }
+                refresh()
+            }.onFailure { error ->
+                showMessage("刪除群組失敗：${error.userMessage()}")
+                refresh()
             }
         }
     }
 
     fun selectApp(app: AppItem) {
-        if (uiState.uninstallingAppKey != null) return
+        if (uiState.uninstallingAppKey != null || uiState.busyPackageName != null) return
         val groupId = uiState.appPickerGroupId ?: return
-        val group = groupStore.find(groupId) ?: run {
-            showMessage("找不到這個群組")
-            closeAppPicker()
-            return
-        }
-        if (group.health != GroupHealth.HEALTHY) {
-            showMessage("這個群組目前無法加入 App")
-            return
-        }
-        if (group.contains(app.entry.packageName)) {
-            showMessage("${app.entry.label} 已在「${group.name}」中")
-            return
-        }
-        if (uiState.busyPackageName != null) return
         uiState = uiState.copy(busyPackageName = app.entry.packageName)
-        worker.execute {
-            val sync = importer.sync(app.entry.packageName)
-            val added = when (sync) {
-                is RevisionImportResult.Activated,
-                is RevisionImportResult.AlreadyCurrent,
-                -> runCatching {
-                    requireNotNull(
-                        groupStore.addApp(
-                            groupId,
-                            app.entry.packageName,
-                            System.currentTimeMillis(),
-                        ),
-                    ) { "群組不存在" }
+        viewModelScope.launch {
+            val result = runCatching {
+                withContext(ioDispatcher) {
+                    operations.addAppToGroup(groupId, app.entry.packageName)
                 }
-                is RevisionImportResult.Rejected -> Result.failure(
-                    IllegalStateException("無法同步：${sync.reason}"),
-                )
-                is RevisionImportResult.Failed -> Result.failure(
-                    IllegalStateException("同步失敗：${sync.reason}"),
-                )
             }
-            post {
-                uiState = uiState.copy(busyPackageName = null)
-                added.onSuccess {
-                    uiState = uiState.copy(appPickerGroupId = null)
-                    showMessage("已將 ${app.entry.label} 加入「${group.name}」")
-                    refresh()
-                }.onFailure { error -> showMessage(error.userMessage()) }
-            }
+            uiState = uiState.copy(busyPackageName = null)
+            result.onSuccess { group ->
+                closeAppPicker()
+                showMessage("已將 ${app.entry.label} 加入「${group.name}」")
+                refresh()
+            }.onFailure { error -> showMessage(error.userMessage()) }
         }
     }
 
     fun launchGroupApp(item: GroupAppItem) {
-        if (
-            uiState.launchingAppKey != null ||
-            uiState.uninstallingAppKey != null
-        ) return
+        if (uiState.launchingAppKey != null || uiState.uninstallingAppKey != null) return
         if (item.groupHealth != GroupHealth.HEALTHY) {
             showMessage(
                 if (item.groupHealth == GroupHealth.DAMAGED) {
@@ -300,37 +343,17 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             return
         }
         uiState = uiState.copy(launchingAppKey = item.launchKey)
-        worker.execute {
-            val currentGroup = groupStore.find(item.groupId)
-            val result = if (currentGroup == null || currentGroup.health != GroupHealth.HEALTHY) {
-                RuntimeLaunchResult.Failed("群組環境目前無法使用")
-            } else {
-                groupStore.updateAppState(
-                    currentGroup.id,
-                    item.app.packageName,
-                    GroupAppState.INSTALLING,
-                )
-                val launch = runtimeController.installAndLaunch(currentGroup, item.app)
-                groupStore.updateAppState(
-                    currentGroup.id,
-                    item.app.packageName,
-                    if (launch is RuntimeLaunchResult.Started) {
-                        GroupAppState.ENABLED
-                    } else {
-                        GroupAppState.FAILED
-                    },
-                )
-                launch
+        viewModelScope.launch {
+            val result = runCatching {
+                withContext(ioDispatcher) { operations.launchGroupApp(item) }
+            }.getOrElse { error -> RuntimeLaunchResult.Failed(error.userMessage(), error) }
+            uiState = uiState.copy(launchingAppKey = null)
+            when (result) {
+                is RuntimeLaunchResult.Started ->
+                    showMessage("${item.appLabel} 已從「${item.groupName}」啟動")
+                is RuntimeLaunchResult.Failed -> showMessage("啟動失敗：${result.reason}")
             }
-            post {
-                uiState = uiState.copy(launchingAppKey = null)
-                when (result) {
-                    is RuntimeLaunchResult.Started ->
-                        showMessage("${item.appLabel} 已從「${item.groupName}」啟動")
-                    is RuntimeLaunchResult.Failed -> showMessage("啟動失敗：${result.reason}")
-                }
-                refresh()
-            }
+            refresh()
         }
     }
 
@@ -341,36 +364,23 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             uiState.busyGroupId != null ||
             uiState.busyPackageName != null
         ) return
-        val current = groupStore.find(item.groupId)
-        val currentApp = current?.apps?.firstOrNull {
-            it.packageName == item.app.packageName &&
-                it.addedAtEpochMillis == item.app.addedAtEpochMillis
-        }
-        if (current == null || currentApp == null) {
-            showMessage("${item.appLabel} 已不在「${item.groupName}」中")
-            refresh()
-            return
-        }
-        if (current.health != GroupHealth.HEALTHY) {
-            showMessage("「${item.groupName}」目前無法解除安裝 App")
-            return
-        }
-
         uiState = uiState.copy(uninstallingAppKey = item.launchKey)
-        worker.execute {
-            val result = appRemoval.remove(item.groupId, item.app.packageName)
-            post {
-                uiState = uiState.copy(uninstallingAppKey = null)
-                when (result) {
-                    is GroupAppRemovalResult.Succeeded ->
-                        showMessage("已從「${item.groupName}」解除安裝 ${item.appLabel}")
-                    GroupAppRemovalResult.AlreadyAbsent ->
-                        showMessage("${item.appLabel} 已不在「${item.groupName}」中")
-                    is GroupAppRemovalResult.Failed ->
-                        showMessage("解除安裝失敗：${result.reason}")
-                }
-                refresh()
+        viewModelScope.launch {
+            val result = runCatching {
+                withContext(ioDispatcher) { operations.uninstallGroupApp(item) }
+            }.getOrElse { error ->
+                GroupAppRemovalResult.Failed(error.userMessage(), error)
             }
+            uiState = uiState.copy(uninstallingAppKey = null)
+            when (result) {
+                is GroupAppRemovalResult.Succeeded ->
+                    showMessage("已從「${item.groupName}」解除安裝 ${item.appLabel}")
+                GroupAppRemovalResult.AlreadyAbsent ->
+                    showMessage("${item.appLabel} 已不在「${item.groupName}」中")
+                is GroupAppRemovalResult.Failed ->
+                    showMessage("解除安裝失敗：${result.reason}")
+            }
+            refresh()
         }
     }
 
@@ -387,18 +397,25 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     private fun reconcileAndRefresh() {
         uiState = uiState.copy(isRefreshing = true)
-        worker.execute {
-            val lifecycleResult = runCatching(lifecycle::reconcile)
-            val appRemovalResult = runCatching(appRemoval::reconcile)
-            post {
-                lifecycleResult.onFailure { error ->
-                    showMessage("部分群組環境需要處理：${error.userMessage()}")
+        viewModelScope.launch {
+            val (groupResult, appRemovalResult) = withContext(ioDispatcher) {
+                runCatching { operations.reconcileGroups() } to
+                    runCatching { operations.reconcileAppRemovals() }
+            }
+            val notices = buildList {
+                groupResult.onSuccess { result ->
+                    if (result.loadIssues.isNotEmpty()) {
+                        add("偵測到 ${result.loadIssues.size} 筆群組資料無法讀取；原始資料已保留")
+                    }
+                }.onFailure { error ->
+                    add("部分群組環境需要處理：${error.userMessage()}")
                 }
                 appRemovalResult.onFailure { error ->
-                    showMessage("部分 App 解除安裝作業需要處理：${error.userMessage()}")
+                    add("部分 App 解除安裝作業需要處理：${error.userMessage()}")
                 }
-                refresh()
             }
+            if (notices.isNotEmpty()) showMessage(notices.joinToString("\n"))
+            refresh()
         }
     }
 
@@ -413,37 +430,13 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         uiState = uiState.copy(message = message, messageId = uiState.messageId + 1)
     }
 
-    private fun post(action: () -> Unit) {
-        mainHandler.post(action)
+    private companion object {
+        const val DESTINATION_KEY = "main.destination"
+        const val APP_PICKER_GROUP_KEY = "main.appPickerGroupId"
+
+        fun destinationFromSavedState(value: String): MainDestination? =
+            runCatching { MainDestination.valueOf(value) }.getOrNull()
     }
-
-    private fun readStorageStatus(): StorageStatus {
-        val granted = Build.VERSION.SDK_INT < Build.VERSION_CODES.R ||
-            Environment.isExternalStorageManager()
-        if (!granted) return StorageStatus(false, 0, 0)
-        return StorageStatus(
-            granted = true,
-            downloadCount = publicDirectoryEntryCount(Environment.DIRECTORY_DOWNLOADS),
-            photoCount = publicDirectoryEntryCount(Environment.DIRECTORY_DCIM) +
-                publicDirectoryEntryCount(Environment.DIRECTORY_PICTURES),
-        )
-    }
-
-    private fun publicDirectoryEntryCount(directoryType: String): Int = runCatching {
-        @Suppress("DEPRECATION")
-        Environment.getExternalStoragePublicDirectory(directoryType).listFiles()?.size ?: 0
-    }.getOrDefault(0)
-
-    override fun onCleared() {
-        worker.shutdown()
-        super.onCleared()
-    }
-
-    private data class StorageStatus(
-        val granted: Boolean,
-        val downloadCount: Int,
-        val photoCount: Int,
-    )
 }
 
 private fun Throwable.userMessage(): String = message ?: javaClass.simpleName

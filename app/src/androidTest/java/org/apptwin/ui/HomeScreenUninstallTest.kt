@@ -85,6 +85,19 @@ class HomeScreenUninstallTest {
         composeRule.runOnIdle { assertNull(launched) }
     }
 
+    @Test
+    fun metadataWarningRemainsVisibleWhenNoValidGroupCanBeLoaded() {
+        setHome(
+            state = MainUiState(
+                isRefreshing = false,
+                dataWarnings = listOf("corrupt group metadata"),
+            ),
+        )
+
+        composeRule.onNodeWithTag("data-integrity-warning").assertIsDisplayed()
+        composeRule.onNodeWithText("偵測到 1 筆資料完整性問題").assertIsDisplayed()
+    }
+
     private fun setHome(
         state: MainUiState = uiState,
         onLaunch: (GroupAppItem) -> Unit = {},

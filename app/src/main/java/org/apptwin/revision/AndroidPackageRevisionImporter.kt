@@ -19,6 +19,8 @@ import java.util.zip.ZipFile
 import org.apptwin.packagesource.PackageArtifact
 import org.apptwin.packagesource.PackageSourceSnapshot
 import org.apptwin.packagesource.SplitArtifact
+import org.apptwin.revisionstore.RejectionReason
+import org.apptwin.revisionstore.RevisionTransitionPolicy
 
 data class InstalledAppEntry(
     val label: String,
@@ -52,10 +54,11 @@ sealed interface RevisionImportResult {
  * path while a copy is running invalidates the staging directory instead of producing a mixed
  * revision. GroupApp data is deliberately outside this directory and is never touched here.
  */
-class AndroidPackageRevisionImporter(context: Context) {
+class AndroidPackageRevisionImporter(context: Context) : ActiveRuntimeRevisionProvider {
     private val appContext = context.applicationContext
     private val packageManager = appContext.packageManager
     private val revisionsRoot = File(appContext.filesDir, "package-revisions")
+    private val activeLookup = FileActiveRevisionLookup(revisionsRoot)
 
     fun listCloneableApps(): List<InstalledAppEntry> = installedApplications()
         .asSequence()
@@ -76,44 +79,89 @@ class AndroidPackageRevisionImporter(context: Context) {
         .sortedWith(compareBy(String.CASE_INSENSITIVE_ORDER, InstalledAppEntry::label))
         .toList()
 
-    fun active(packageName: String): ActiveRevisionSummary? {
-        val packageRoot = File(revisionsRoot, packageName)
-        if (!packageRoot.isDirectory) return null
-        val pointer = File(packageRoot, ACTIVE_POINTER)
-        if (!pointer.isFile) return null
-        val revisionId = pointer.readText().trim()
-        if (revisionId.isEmpty()) return null
-        val metadata = readProperties(File(packageRoot, "$revisionId/$METADATA")) ?: return null
-        return ActiveRevisionSummary(
-            packageName = metadata.getProperty("packageName") ?: return null,
-            versionCode = metadata.getProperty("versionCode")?.toLongOrNull() ?: return null,
-            revisionId = revisionId,
-        )
+    fun active(packageName: String): ActiveRevisionSummary? = when (
+        val result = activeLookup.read(packageName)
+    ) {
+        ActiveRevisionLookupResult.Absent -> null
+        is ActiveRevisionLookupResult.Found -> result.summary
+        is ActiveRevisionLookupResult.Corrupt ->
+            throw ActiveRevisionMetadataException(result.reason)
     }
 
     /** Returns the immutable base+split directory currently selected for runtime loading. */
     fun activeRevisionDirectory(packageName: String): File? {
-        val active = active(packageName) ?: return null
-        val directory = File(packageRoot(packageName), active.revisionId)
-        return directory.takeIf { it.isDirectory && File(it, "base.apk").isFile }
+        return when (val result = activeLookup.read(packageName)) {
+            ActiveRevisionLookupResult.Absent -> null
+            is ActiveRevisionLookupResult.Found -> result.directory
+            is ActiveRevisionLookupResult.Corrupt ->
+                throw ActiveRevisionMetadataException(result.reason)
+        }
+    }
+
+    override fun activeRuntimeRevision(packageName: String): ActiveRuntimeRevision? {
+        val active = when (val result = activeLookup.read(packageName)) {
+            ActiveRevisionLookupResult.Absent -> return null
+            is ActiveRevisionLookupResult.Found -> result
+            is ActiveRevisionLookupResult.Corrupt ->
+                throw ActiveRevisionMetadataException(result.reason)
+        }
+        val metadata = active.metadata
+        val splitNames = metadata.getProperty("splitNames")
+            .orEmpty()
+            .split(',')
+            .filter(String::isNotBlank)
+            .sorted()
+        val splitDigests = splitNames.mapIndexed { index, splitName ->
+            val storedName = metadata.getProperty("split.$index.name")
+                ?: throw ActiveRevisionMetadataException("active split name is missing")
+            if (storedName != splitName) {
+                throw ActiveRevisionMetadataException("active split order is inconsistent")
+            }
+            splitName to (metadata.getProperty("split.$index.sha256")
+                ?: throw ActiveRevisionMetadataException("active split digest is missing"))
+        }.toMap()
+        return ActiveRuntimeRevision(
+            packageName = active.summary.packageName,
+            revisionId = active.summary.revisionId,
+            directory = active.directory,
+            artifactIdentity = PackageArtifactIdentity(
+                baseSha256 = metadata.getProperty("baseSha256")
+                    ?: throw ActiveRevisionMetadataException("active base digest is missing"),
+                splitSha256ByName = splitDigests,
+            ),
+        )
     }
 
     fun sync(packageName: String): RevisionImportResult {
         val before = runCatching { captureSource(packageName) }
             .getOrElse { return RevisionImportResult.Failed(it.safeMessage()) }
-        val current = active(packageName)
-        if (current != null && before.versionCode < current.versionCode) {
-            return RevisionImportResult.Rejected(
-                "拒絕降版：來源 ${before.versionCode}，目前 ${current.versionCode}",
+        val activeResult = activeLookup.read(packageName)
+        if (activeResult is ActiveRevisionLookupResult.Corrupt) {
+            return RevisionImportResult.Failed(
+                "active revision 資料損毀，已保留原始資料：${activeResult.reason}",
             )
         }
-        val currentMetadata = activeMetadata(packageName)
+        val current = (activeResult as? ActiveRevisionLookupResult.Found)?.summary
+        val currentMetadata = (activeResult as? ActiveRevisionLookupResult.Found)?.metadata
+        val rejection = RevisionTransitionPolicy.rejectionReason(
+            currentVersionCode = current?.versionCode,
+            currentSignerSha256 = currentMetadata?.getProperty("currentSigner"),
+            candidateVersionCode = before.versionCode,
+            candidateSigningLineageSha256 = before.signerLineage,
+        )
+        if (rejection != null) {
+            return RevisionImportResult.Rejected(
+                when (rejection) {
+                    RejectionReason.VERSION_ROLLBACK ->
+                        "拒絕降版：來源 ${before.versionCode}，目前 ${current?.versionCode}"
+
+                    RejectionReason.INCOMPATIBLE_SIGNING_LINEAGE ->
+                        "來源 App 簽章 lineage 與現有 revision 不相容"
+                },
+            )
+        }
         if (current != null && currentMetadata?.matches(before) == true) {
             return RevisionImportResult.AlreadyCurrent(current)
-        }
-        val previousSigner = currentMetadata?.getProperty("currentSigner")
-        if (previousSigner != null && previousSigner !in before.signerLineage) {
-            return RevisionImportResult.Rejected("來源 App 簽章 lineage 與現有 revision 不相容")
         }
 
         val packageRoot = packageRoot(packageName)
@@ -331,18 +379,6 @@ class AndroidPackageRevisionImporter(context: Context) {
         directory.walkTopDown()
             .filter(File::isFile)
             .forEach { file -> check(file.setReadOnly()) { "無法將 ${file.name} 設為唯讀" } }
-    }
-
-    private fun activeMetadata(packageName: String): Properties? {
-        val active = active(packageName) ?: return null
-        return readProperties(File(packageRoot(packageName), "${active.revisionId}/$METADATA"))
-    }
-
-    private fun readProperties(file: File): Properties? {
-        if (!file.isFile) return null
-        return runCatching {
-            Properties().apply { FileInputStream(file).use(::load) }
-        }.getOrNull()
     }
 
     private fun Properties.matches(source: SourcePackage): Boolean =

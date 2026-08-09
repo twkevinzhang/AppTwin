@@ -23,8 +23,11 @@ final class PackageInstallScope {
         return isUserScoped(requestedUserId) ? requestedUserId : GLOBAL_USER_ID;
     }
 
-    static boolean requiresCodeSnapshot(long existingVersionCode, long stagedVersionCode) {
-        // Equal-version installs only add the shared revision to another user; no code is written.
-        return existingVersionCode != stagedVersionCode;
+    static boolean requiresCodeSnapshot(long existingVersionCode, long stagedVersionCode,
+                                        int requestedUserId) {
+        // Equal-version user-scoped installs only add a binding and do not write code. Global
+        // installs may replace a same-version artifact (for example a rebuilt hotfix), so they
+        // must always be transactional.
+        return !isUserScoped(requestedUserId) || existingVersionCode != stagedVersionCode;
     }
 }

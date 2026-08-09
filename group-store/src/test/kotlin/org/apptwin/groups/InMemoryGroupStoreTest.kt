@@ -18,6 +18,16 @@ class InMemoryGroupStoreTest {
     }
 
     @Test
+    fun `store load contract exposes snapshot and typed lookup`() {
+        val store = InMemoryGroupStore()
+        val group = store.create(ID_1, "工作", EnvironmentBinding(8), 100)
+
+        assertEquals(GroupStoreSnapshot(listOf(group), emptyList()), store.loadSnapshot())
+        assertEquals(GroupLookupResult.Found(group), store.lookup(ID_1))
+        assertEquals(GroupLookupResult.NotFound, store.lookup(ID_2))
+    }
+
+    @Test
     fun `two active Groups cannot own the same environment`() {
         val store = InMemoryGroupStore()
         store.create(ID_1, "工作", EnvironmentBinding(8), 100)

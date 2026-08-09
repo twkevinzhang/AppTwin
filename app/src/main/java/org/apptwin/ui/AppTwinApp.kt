@@ -36,6 +36,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -63,7 +64,7 @@ fun AppTwinApp(
 ) {
     val state = viewModel.uiState
     val snackbarHostState = remember { SnackbarHostState() }
-    var showCreateGroup by remember { mutableStateOf(false) }
+    var showCreateGroup by rememberSaveable { mutableStateOf(false) }
     val pickerGroup = state.appPickerGroupId?.let { selectedId ->
         state.groups.firstOrNull { it.groupId == selectedId }
     }
@@ -218,11 +219,11 @@ private fun AppNavigationRail(
 }
 
 @Composable
-private fun CreateGroupDialog(
+internal fun CreateGroupDialog(
     onDismiss: () -> Unit,
     onConfirm: (String) -> Unit,
 ) {
-    var name by remember { mutableStateOf("") }
+    var name by rememberSaveable { mutableStateOf("") }
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("新增群組") },

@@ -13,6 +13,8 @@ import androidx.compose.material.icons.filled.Android
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -26,6 +28,8 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.foundation.Image
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 
 @Composable
 fun AppIcon(
@@ -33,11 +37,13 @@ fun AppIcon(
     size: Dp,
     grayscale: Boolean = false,
 ) {
-    val packageManager = LocalContext.current.packageManager
-    val bitmap = remember(packageName) {
-        runCatching {
-            packageManager.getApplicationIcon(packageName).toBitmap(144)
-        }.getOrNull()
+    val appContext = LocalContext.current.applicationContext
+    val bitmap by produceState<Bitmap?>(initialValue = null, packageName) {
+        value = withContext(Dispatchers.IO) {
+            runCatching {
+                appContext.packageManager.getApplicationIcon(packageName).toBitmap(144)
+            }.getOrNull()
+        }
     }
     val grayscaleFilter = remember(grayscale) {
         if (grayscale) {
@@ -56,7 +62,8 @@ fun AppIcon(
             .background(MaterialTheme.colorScheme.surfaceContainerHighest),
         contentAlignment = Alignment.Center,
     ) {
-        if (bitmap == null) {
+        val currentBitmap = bitmap
+        if (currentBitmap == null) {
             Icon(
                 Icons.Default.Android,
                 contentDescription = null,
@@ -65,7 +72,7 @@ fun AppIcon(
             )
         } else {
             Image(
-                bitmap = bitmap.asImageBitmap(),
+                bitmap = currentBitmap.asImageBitmap(),
                 contentDescription = null,
                 modifier = Modifier.size(size),
                 contentScale = ContentScale.Fit,

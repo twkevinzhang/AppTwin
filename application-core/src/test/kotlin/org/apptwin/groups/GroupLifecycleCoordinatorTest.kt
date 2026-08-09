@@ -36,6 +36,27 @@ class GroupLifecycleCoordinatorTest {
     }
 
     @Test
+    fun `reconcile reports corrupt metadata while still processing healthy Groups`() {
+        val backing = InMemoryGroupStore().apply {
+            create(GROUP_A, "工作", EnvironmentBinding(8), 1)
+        }
+        val issue = GroupStoreLoadIssue.CorruptMetadata(
+            groupId = GROUP_B,
+            metadataKind = GroupMetadataKind.GROUP,
+            metadataName = "group.properties",
+            reason = "invalid timestamp",
+        )
+        val store = object : GroupStore by backing {
+            override fun loadSnapshot() = GroupStoreSnapshot(backing.listAll(), listOf(issue))
+        }
+
+        val result = coordinator(store, FakeRuntime(nextId = 9), FakeJournal()).reconcile()
+
+        assertEquals(listOf(issue), result.loadIssues)
+        assertEquals(GroupHealth.DAMAGED, backing.find(GROUP_A)?.health)
+    }
+
+    @Test
     fun `metadata failure rolls back newly allocated environment`() {
         val backing = InMemoryGroupStore()
         val failingStore = object : GroupStore by backing {
@@ -58,6 +79,57 @@ class GroupLifecycleCoordinatorTest {
 
         assertFalse(runtime.environmentExists(EnvironmentBinding(6)))
         assertEquals(listOf(EnvironmentBinding(6)), runtime.deleted)
+        assertTrue(journal.listAll().isEmpty())
+    }
+
+    @Test
+    fun `journal cleanup failure after metadata commit keeps healthy Group and environment`() {
+        val store = InMemoryGroupStore()
+        val runtime = FakeRuntime(nextId = 6)
+        val journal = FakeJournal(failRemoveCount = 1)
+        val coordinator = coordinator(store, runtime, journal, GROUP_A)
+
+        val created = coordinator.createGroup("工作")
+
+        assertEquals(created, store.find(GROUP_A))
+        assertTrue(runtime.environmentExists(EnvironmentBinding(6)))
+        assertEquals(GroupHealth.HEALTHY, store.find(GROUP_A)?.health)
+        assertEquals(GroupOperationPhase.ENVIRONMENT_CREATED, journal.listAll().single().phase)
+
+        coordinator.reconcile()
+
+        assertEquals(created, store.find(GROUP_A))
+        assertTrue(runtime.environmentExists(EnvironmentBinding(6)))
+        assertTrue(journal.listAll().isEmpty())
+        assertTrue(runtime.deleted.isEmpty())
+    }
+
+    @Test
+    fun `rollback failure preserves journal for restart recovery`() {
+        val backing = InMemoryGroupStore()
+        val failingStore = object : GroupStore by backing {
+            override fun create(
+                id: String,
+                name: String,
+                environmentBinding: EnvironmentBinding,
+                createdAtEpochMillis: Long,
+            ): Group = error("disk full")
+        }
+        val runtime = FakeRuntime(nextId = 6, failDeleteCount = 1)
+        val journal = FakeJournal()
+
+        val failure = runCatching {
+            coordinator(failingStore, runtime, journal, GROUP_A).createGroup("工作")
+        }.exceptionOrNull()!!
+
+        assertEquals("disk full", failure.message)
+        assertEquals("environment delete failed", failure.suppressed.single().message)
+        assertTrue(runtime.environmentExists(EnvironmentBinding(6)))
+        assertEquals(GroupOperationPhase.ENVIRONMENT_CREATED, journal.listAll().single().phase)
+
+        coordinator(failingStore, runtime, journal, GROUP_A).reconcile()
+
+        assertFalse(runtime.environmentExists(EnvironmentBinding(6)))
         assertTrue(journal.listAll().isEmpty())
     }
 
@@ -117,18 +189,27 @@ class GroupLifecycleCoordinatorTest {
         clock = { 100 },
     )
 
-    private class FakeJournal : GroupOperationJournal {
+    private class FakeJournal(
+        private var failRemoveCount: Int = 0,
+    ) : GroupOperationJournal {
         private val operations = linkedMapOf<String, GroupOperation>()
         override fun listAll(): List<GroupOperation> = operations.values.toList()
         override fun write(operation: GroupOperation) {
             operations[operation.groupId] = operation
         }
         override fun remove(groupId: String) {
+            if (failRemoveCount > 0) {
+                failRemoveCount -= 1
+                error("journal remove failed")
+            }
             operations.remove(groupId)
         }
     }
 
-    private class FakeRuntime(private var nextId: Int) : GroupEnvironmentRuntime {
+    private class FakeRuntime(
+        private var nextId: Int,
+        private var failDeleteCount: Int = 0,
+    ) : GroupEnvironmentRuntime {
         val environments = linkedSetOf<EnvironmentBinding>()
         val created = mutableListOf<EnvironmentBinding>()
         val deleted = mutableListOf<EnvironmentBinding>()
@@ -146,6 +227,10 @@ class GroupLifecycleCoordinatorTest {
         override fun environmentExists(binding: EnvironmentBinding): Boolean = binding in environments
 
         override fun deleteEnvironment(binding: EnvironmentBinding) {
+            if (failDeleteCount > 0) {
+                failDeleteCount -= 1
+                error("environment delete failed")
+            }
             environments -= binding
             namedEnvironments.entries.removeAll { it.value == binding }
             deleted += binding
