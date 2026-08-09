@@ -90,14 +90,30 @@ Installed source package
 - This milestone validates ordinary private-data separation for one GroupApp; it is not a security
   boundary against a hostile guest app.
 
-## Not implemented or not accepted yet
+## Fixture-validated product boundary
 
-- Full device acceptance for multiple newly-created Groups running the same package concurrently.
-- A complete per-Group permission policy across all Android framework services.
-- Notification routing, push-service integration, deep links, camera, microphone, voice/video, and
-  background survival.
+- Two newly-created spaces run the same fixture package with distinct environment IDs, files,
+  launch counters, installed-user state, and permission-query decisions. Restart and removal of one
+  membership preserve the other space.
+- Notifications using the same guest package/id receive distinct stable host identities and expose
+  the originating space name. Deep-link resolution retains the requested virtual user and an exact
+  selected space launches the matching guest environment.
+- Removing the source package preserves membership, immutable revision, and guest data; reinstalling
+  the same-signer source resumes the original environment.
+- A same-signer fixture v1→v2 update advances shared guest code while preserving the environment and
+  version-1 private-data sentinel.
+
+## Not accepted yet
+
+- A complete per-space permission policy across Android services. Camera/microphone
+  `checkSelfPermission` decisions are fixture-validated, but actual Camera/AudioRecord service
+  enforcement, active-session revocation, voice, and video are not.
+- Real push-service delivery and notification click routing with third-party services.
+- Exported cold-start deep-link chooser interaction and pinned-launcher shortcut confirmation on a
+  physical launcher remain manual acceptance items; virtual-user resolution/launch is automated.
 - Guest update migration tests across two real Play versions.
 - Android 16 runtime acceptance on a physical locked device.
 
 See [`m0-line-acceptance.md`](m0-line-acceptance.md) and
 [`m0-shopee-acceptance.md`](m0-shopee-acceptance.md) for the exact accepted paths and evidence.
+See [`m1-m3-fixture-acceptance.md`](m1-m3-fixture-acceptance.md) for the current fixture matrix.

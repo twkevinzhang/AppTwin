@@ -1,6 +1,7 @@
 package org.apptwin
 
 import android.app.Application
+import android.content.Context
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
@@ -13,16 +14,22 @@ import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.apptwin.groups.Group
+import org.apptwin.compatibility.CompatibilityLevel
 import org.apptwin.groups.GroupApp
 import org.apptwin.groups.GroupAppRemovalResult
 import org.apptwin.groups.GroupAppState
 import org.apptwin.groups.GroupHealth
 import org.apptwin.groups.GroupReconciliationResult
+import org.apptwin.operations.OperationRecord
+import org.apptwin.repair.RepairExecutionResult
 import org.apptwin.revision.ActiveRevisionSummary
 import org.apptwin.revision.InstalledAppEntry
 import org.apptwin.runtime.GroupAppRuntimeSupport
 import org.apptwin.runtime.RuntimeCompatibility
 import org.apptwin.runtime.RuntimeLaunchResult
+import org.apptwin.spaces.CloneLifecycleState
+import org.apptwin.spaces.SpaceLifecycleState
+import org.apptwin.spaces.SpaceStatePolicy
 
 enum class MainDestination { HOME, SETTINGS }
 
@@ -31,6 +38,7 @@ data class AppItem(
     val isSynced: Boolean,
     val activeVersionCode: Long?,
     val groupCount: Int,
+    val compatibility: CompatibilityLevel = CompatibilityLevel.UNTESTED,
 )
 
 data class GroupAppItem(
@@ -42,6 +50,9 @@ data class GroupAppItem(
     val versionName: String,
     val sourceInstalled: Boolean,
     val launchStatus: String,
+    val lifecycle: CloneLifecycleState = CloneLifecycleState.READY,
+    val cameraGranted: Boolean = false,
+    val microphoneGranted: Boolean = false,
 ) {
     val launchKey: String = "$groupId:${app.packageName}"
 }
@@ -51,6 +62,7 @@ data class GroupItem(
     val name: String,
     val health: GroupHealth,
     val apps: List<GroupAppItem>,
+    val lifecycle: SpaceLifecycleState = SpaceLifecycleState.READY,
 ) {
     fun contains(packageName: String): Boolean = apps.any { it.app.packageName == packageName }
 }
@@ -59,17 +71,26 @@ data class MainUiState(
     val destination: MainDestination = MainDestination.HOME,
     val apps: List<AppItem> = emptyList(),
     val groups: List<GroupItem> = emptyList(),
+    val selectedGroupId: String? = null,
     val appPickerGroupId: String? = null,
+    val showOnboarding: Boolean = false,
     val isRefreshing: Boolean = true,
     val isCreatingGroup: Boolean = false,
     val busyPackageName: String? = null,
     val busyGroupId: String? = null,
     val launchingAppKey: String? = null,
     val uninstallingAppKey: String? = null,
+    val shortcutAppKey: String? = null,
+    val repairingAppKey: String? = null,
     val allFilesGranted: Boolean = false,
     val downloadCount: Int = 0,
     val photoCount: Int = 0,
     val dataWarnings: List<String> = emptyList(),
+    val diagnosticsReport: String? = null,
+    val diagnosticsReportId: Long = 0,
+    val pendingDeepLink: String? = null,
+    val deepLinkCandidates: List<GroupAppItem> = emptyList(),
+    val isResolvingDeepLink: Boolean = false,
     val message: String? = null,
     val messageId: Long = 0,
 )
@@ -86,6 +107,8 @@ internal data class MainRefreshSnapshot(
     val groups: List<Group>,
     val activeRevisions: Map<String, ActiveRevisionSummary?>,
     val dataWarnings: List<String>,
+    val operations: List<OperationRecord> = emptyList(),
+    val permissions: Map<String, ClonePermissionState> = emptyMap(),
 )
 
 /** Blocking application operations. MainViewModel always invokes these on its IO dispatcher. */
@@ -98,8 +121,49 @@ internal interface MainOperations {
     suspend fun addAppToGroup(groupId: String, packageName: String): Group
     suspend fun launchGroupApp(item: GroupAppItem): RuntimeLaunchResult
     suspend fun uninstallGroupApp(item: GroupAppItem): GroupAppRemovalResult
+    suspend fun createShortcut(item: GroupAppItem): ShortcutCreationResult
+    suspend fun exportDiagnostics(): String
+    suspend fun repairClone(item: GroupAppItem): RepairExecutionResult
+    suspend fun setClonePermission(
+        item: GroupAppItem,
+        permission: String,
+        granted: Boolean,
+    ): Boolean
+    suspend fun resolveDeepLink(uri: String): List<Pair<String, String>>
+    suspend fun launchDeepLink(item: GroupAppItem, uri: String): RuntimeLaunchResult
     suspend fun reconcileGroups(): GroupReconciliationResult
     suspend fun reconcileAppRemovals()
+    suspend fun reconcileApplicationOperations()
+}
+
+internal interface OnboardingStore {
+    fun isCompleted(): Boolean
+    fun markCompleted()
+}
+
+internal data class ClonePermissionState(
+    val cameraGranted: Boolean,
+    val microphoneGranted: Boolean,
+)
+
+private class AndroidOnboardingStore(application: Application) : OnboardingStore {
+    private val preferences = application.getSharedPreferences(PREFERENCES_NAME, Context.MODE_PRIVATE)
+
+    override fun isCompleted(): Boolean = preferences.getBoolean(COMPLETED_KEY, false)
+
+    override fun markCompleted() {
+        preferences.edit().putBoolean(COMPLETED_KEY, true).apply()
+    }
+
+    private companion object {
+        const val PREFERENCES_NAME = "product-onboarding"
+        const val COMPLETED_KEY = "completed"
+    }
+}
+
+private object CompletedOnboardingStore : OnboardingStore {
+    override fun isCompleted(): Boolean = true
+    override fun markCompleted() = Unit
 }
 
 class MainViewModel internal constructor(
@@ -107,6 +171,7 @@ class MainViewModel internal constructor(
     private val savedStateHandle: SavedStateHandle,
     private val operations: MainOperations,
     private val ioDispatcher: CoroutineDispatcher,
+    private val onboardingStore: OnboardingStore = CompletedOnboardingStore,
 ) : AndroidViewModel(application) {
     @OptIn(ExperimentalCoroutinesApi::class)
     constructor(application: Application, savedStateHandle: SavedStateHandle) : this(
@@ -114,9 +179,12 @@ class MainViewModel internal constructor(
         savedStateHandle = savedStateHandle,
         operations = AndroidMainOperations(application),
         ioDispatcher = Dispatchers.IO.limitedParallelism(1),
+        onboardingStore = AndroidOnboardingStore(application),
     )
 
-    private var pendingLaunchPackage: String? = null
+    private var pendingLaunch: PendingLaunch? = null
+    private var resolvingDeepLinkUri: String? = null
+    private var resolvedDeepLinkIdentities: Set<Pair<String, String>>? = null
     private var refreshGeneration = 0L
     private var pickerRequestGeneration = 0L
 
@@ -125,7 +193,9 @@ class MainViewModel internal constructor(
             destination = savedStateHandle.get<String>(DESTINATION_KEY)
                 ?.let(::destinationFromSavedState)
                 ?: MainDestination.HOME,
+            selectedGroupId = savedStateHandle[SELECTED_GROUP_KEY],
             appPickerGroupId = savedStateHandle.get<String>(APP_PICKER_GROUP_KEY),
+            showOnboarding = !onboardingStore.isCompleted(),
         ),
     )
         private set
@@ -137,8 +207,42 @@ class MainViewModel internal constructor(
     fun navigate(destination: MainDestination) {
         pickerRequestGeneration += 1
         savedStateHandle[DESTINATION_KEY] = destination.name
+        savedStateHandle[SELECTED_GROUP_KEY] = null
         savedStateHandle[APP_PICKER_GROUP_KEY] = null
-        uiState = uiState.copy(destination = destination, appPickerGroupId = null)
+        uiState = uiState.copy(
+            destination = destination,
+            selectedGroupId = null,
+            appPickerGroupId = null,
+        )
+    }
+
+    fun openGroup(groupId: String) {
+        if (uiState.groups.none { it.groupId == groupId }) {
+            showMessage("找不到這個分身空間")
+            return
+        }
+        savedStateHandle[DESTINATION_KEY] = MainDestination.HOME.name
+        savedStateHandle[SELECTED_GROUP_KEY] = groupId
+        savedStateHandle[APP_PICKER_GROUP_KEY] = null
+        uiState = uiState.copy(
+            destination = MainDestination.HOME,
+            selectedGroupId = groupId,
+            appPickerGroupId = null,
+        )
+    }
+
+    fun closeGroup() {
+        pickerRequestGeneration += 1
+        savedStateHandle[SELECTED_GROUP_KEY] = null
+        savedStateHandle[APP_PICKER_GROUP_KEY] = null
+        uiState = uiState.copy(selectedGroupId = null, appPickerGroupId = null)
+    }
+
+    fun completeOnboarding() {
+        if (!uiState.showOnboarding) return
+        onboardingStore.markCompleted()
+        uiState = uiState.copy(showOnboarding = false)
+        if (pendingLaunch != null) refresh()
     }
 
     fun openAppPicker(groupId: String) {
@@ -161,9 +265,11 @@ class MainViewModel internal constructor(
                 group.health != GroupHealth.HEALTHY -> showMessage("這個群組目前無法加入 App")
                 else -> {
                     savedStateHandle[DESTINATION_KEY] = MainDestination.HOME.name
+                    savedStateHandle[SELECTED_GROUP_KEY] = groupId
                     savedStateHandle[APP_PICKER_GROUP_KEY] = groupId
                     uiState = uiState.copy(
                         destination = MainDestination.HOME,
+                        selectedGroupId = groupId,
                         appPickerGroupId = groupId,
                     )
                 }
@@ -199,14 +305,29 @@ class MainViewModel internal constructor(
                     isSynced = active?.versionCode == entry.versionCode,
                     activeVersionCode = active?.versionCode,
                     groupCount = snapshot.groups.count { it.contains(entry.packageName) },
+                    compatibility = if (
+                        GroupAppRuntimeSupport.compatibility(
+                            entry.packageName,
+                            entry.versionCode,
+                            android.os.Build.VERSION.SDK_INT,
+                        ) ==
+                        RuntimeCompatibility.VERIFIED
+                    ) {
+                        CompatibilityLevel.PARTIAL
+                    } else {
+                        CompatibilityLevel.UNTESTED
+                    },
                 )
             }
             val groupItems = snapshot.groups.sortedByDescending(Group::createdAtEpochMillis)
                 .map { group ->
+                    val spaceState = SpaceStatePolicy.assess(group, snapshot.operations)
+                    val cloneStates = spaceState.clones.associateBy { it.packageName }
                     GroupItem(
                         groupId = group.id,
                         name = group.name,
                         health = group.health,
+                        lifecycle = spaceState.lifecycle,
                         apps = group.apps.map { app ->
                             val source = entriesByPackage[app.packageName]
                             GroupAppItem(
@@ -217,7 +338,16 @@ class MainViewModel internal constructor(
                                 appLabel = source?.label ?: app.packageName,
                                 versionName = source?.versionName.orEmpty(),
                                 sourceInstalled = source != null,
-                                launchStatus = launchStatus(app.packageName, source != null),
+                                launchStatus = launchStatus(
+                                    app.packageName,
+                                    source?.versionCode,
+                                ),
+                                lifecycle = cloneStates.getValue(app.packageName).lifecycle,
+                                cameraGranted = snapshot.permissions["${group.id}:${app.packageName}"]
+                                    ?.cameraGranted == true,
+                                microphoneGranted = snapshot.permissions[
+                                    "${group.id}:${app.packageName}"
+                                ]?.microphoneGranted == true,
                             )
                         },
                     )
@@ -225,13 +355,20 @@ class MainViewModel internal constructor(
             val restoredPickerId = uiState.appPickerGroupId?.takeIf { selectedId ->
                 groupItems.any { it.groupId == selectedId }
             }
+            val restoredSelectedId = uiState.selectedGroupId?.takeIf { selectedId ->
+                groupItems.any { it.groupId == selectedId }
+            }
             if (restoredPickerId != uiState.appPickerGroupId) {
                 savedStateHandle[APP_PICKER_GROUP_KEY] = null
+            }
+            if (restoredSelectedId != uiState.selectedGroupId) {
+                savedStateHandle[SELECTED_GROUP_KEY] = null
             }
             val warningsChanged = snapshot.dataWarnings != uiState.dataWarnings
             uiState = uiState.copy(
                 apps = appItems,
                 groups = groupItems,
+                selectedGroupId = restoredSelectedId,
                 appPickerGroupId = restoredPickerId,
                 isRefreshing = false,
                 allFilesGranted = snapshot.storage.granted,
@@ -239,15 +376,19 @@ class MainViewModel internal constructor(
                 photoCount = snapshot.storage.photoCount,
                 dataWarnings = snapshot.dataWarnings,
             )
+            presentResolvedDeepLink(groupItems, waitForRefresh = false)
             if (snapshot.dataWarnings.isNotEmpty() && warningsChanged) {
                 showMessage("偵測到 ${snapshot.dataWarnings.size} 筆資料完整性問題；原始資料已保留")
             }
-            pendingLaunchPackage?.let { packageName ->
+            pendingLaunch?.let { target ->
                 val pending = groupItems.asSequence()
                     .flatMap { it.apps.asSequence() }
-                    .firstOrNull { it.app.packageName == packageName }
+                    .firstOrNull { item ->
+                        item.app.packageName == target.packageName &&
+                            (target.groupId == null || item.groupId == target.groupId)
+                    }
                 if (pending != null) {
-                    pendingLaunchPackage = null
+                    pendingLaunch = null
                     launchGroupApp(pending)
                 }
             }
@@ -297,6 +438,7 @@ class MainViewModel internal constructor(
                     showMessage("找不到這個群組")
                 } else {
                     showMessage("已刪除「${group.name}」及其中的所有資料")
+                    if (uiState.selectedGroupId == groupId) closeGroup()
                     if (uiState.appPickerGroupId == groupId) closeAppPicker()
                 }
                 refresh()
@@ -384,11 +526,154 @@ class MainViewModel internal constructor(
         }
     }
 
+    fun createShortcut(item: GroupAppItem) {
+        if (uiState.shortcutAppKey != null) return
+        uiState = uiState.copy(shortcutAppKey = item.launchKey)
+        viewModelScope.launch {
+            val result = runCatching {
+                withContext(ioDispatcher) { operations.createShortcut(item) }
+            }.getOrElse { error -> ShortcutCreationResult.Failed(error.userMessage()) }
+            uiState = uiState.copy(shortcutAppKey = null)
+            when (result) {
+                ShortcutCreationResult.Requested ->
+                    showMessage("請在啟動器確認建立「${item.groupName} ${item.appLabel}」捷徑")
+                ShortcutCreationResult.Unsupported ->
+                    showMessage("目前的啟動器不支援固定捷徑")
+                is ShortcutCreationResult.Failed ->
+                    showMessage("建立捷徑失敗：${result.reason}")
+            }
+        }
+    }
+
+    fun exportDiagnostics() {
+        viewModelScope.launch {
+            val result = runCatching {
+                withContext(ioDispatcher) { operations.exportDiagnostics() }
+            }
+            result.onSuccess { report ->
+                uiState = uiState.copy(
+                    diagnosticsReport = report,
+                    diagnosticsReportId = uiState.diagnosticsReportId + 1,
+                )
+            }.onFailure { error ->
+                showMessage("產生診斷報告失敗：${error.userMessage()}")
+            }
+        }
+    }
+
+    fun repairClone(item: GroupAppItem) {
+        if (uiState.repairingAppKey != null || uiState.launchingAppKey != null) return
+        uiState = uiState.copy(repairingAppKey = item.launchKey)
+        viewModelScope.launch {
+            val result = runCatching {
+                withContext(ioDispatcher) { operations.repairClone(item) }
+            }.getOrElse { error ->
+                RepairExecutionResult.Failed("REPAIR_FAILED", error)
+            }
+            uiState = uiState.copy(repairingAppKey = null)
+            when (result) {
+                RepairExecutionResult.Completed ->
+                    showMessage("${item.appLabel} 已重新同步，登入與資料均保留")
+                RepairExecutionResult.ActionUnavailable ->
+                    showMessage("請先重新安裝手機上的原始 App，再嘗試修復")
+                RepairExecutionResult.DestructiveConfirmationRequired ->
+                    showMessage("此修復會刪除資料，必須另行確認")
+                is RepairExecutionResult.Failed ->
+                    showMessage("修復失敗：${result.code}")
+            }
+            refresh()
+        }
+    }
+
+    fun setClonePermission(item: GroupAppItem, permission: String, granted: Boolean) {
+        viewModelScope.launch {
+            val updated = runCatching {
+                withContext(ioDispatcher) {
+                    operations.setClonePermission(item, permission, granted)
+                }
+            }.getOrElse { false }
+            if (updated) {
+                showMessage(
+                    "${item.appLabel} 的${permissionLabel(permission)}已${if (granted) "允許" else "關閉"}",
+                )
+            } else {
+                showMessage("無法更新 ${item.appLabel} 的${permissionLabel(permission)}")
+            }
+            refresh()
+        }
+    }
+
+    fun openDeepLink(uri: String) {
+        if (uiState.pendingDeepLink != null || uiState.isResolvingDeepLink) return
+        resolvingDeepLinkUri = uri
+        uiState = uiState.copy(isResolvingDeepLink = true)
+        viewModelScope.launch {
+            val result = runCatching {
+                withContext(ioDispatcher) { operations.resolveDeepLink(uri) }
+            }
+            result.onSuccess { identities ->
+                resolvedDeepLinkIdentities = identities.toSet()
+                presentResolvedDeepLink(uiState.groups, waitForRefresh = uiState.isRefreshing)
+            }.onFailure { error ->
+                resolvingDeepLinkUri = null
+                resolvedDeepLinkIdentities = null
+                uiState = uiState.copy(isResolvingDeepLink = false)
+                showMessage("無法解析連結：${error.userMessage()}")
+            }
+        }
+    }
+
+    fun closeDeepLink() {
+        resolvingDeepLinkUri = null
+        resolvedDeepLinkIdentities = null
+        uiState = uiState.copy(
+            pendingDeepLink = null,
+            deepLinkCandidates = emptyList(),
+            isResolvingDeepLink = false,
+        )
+    }
+
+    fun launchDeepLink(item: GroupAppItem) {
+        val uri = uiState.pendingDeepLink ?: return
+        closeDeepLink()
+        uiState = uiState.copy(launchingAppKey = item.launchKey)
+        viewModelScope.launch {
+            val result = runCatching {
+                withContext(ioDispatcher) { operations.launchDeepLink(item, uri) }
+            }.getOrElse { error -> RuntimeLaunchResult.Failed(error.userMessage(), error) }
+            uiState = uiState.copy(launchingAppKey = null)
+            if (result is RuntimeLaunchResult.Failed) {
+                showMessage("連結開啟失敗：${result.reason}")
+            }
+        }
+    }
+
+    fun consumeDiagnostics(reportId: Long) {
+        if (uiState.diagnosticsReportId == reportId) {
+            uiState = uiState.copy(diagnosticsReport = null)
+        }
+    }
+
+    fun launchGroupApp(groupId: String, packageName: String) {
+        if (uiState.showOnboarding) {
+            pendingLaunch = PendingLaunch(groupId, packageName)
+            return
+        }
+        val item = uiState.groups.asSequence()
+            .flatMap { it.apps.asSequence() }
+            .firstOrNull { it.groupId == groupId && it.app.packageName == packageName }
+        if (item != null) {
+            launchGroupApp(item)
+        } else {
+            pendingLaunch = PendingLaunch(groupId, packageName)
+        }
+    }
+
     fun launchFirst(packageName: String) {
         val item = uiState.groups.asSequence()
             .flatMap { it.apps.asSequence() }
             .firstOrNull { it.app.packageName == packageName }
-        if (item != null) launchGroupApp(item) else pendingLaunchPackage = packageName
+        if (item != null) launchGroupApp(item) else pendingLaunch = PendingLaunch(null, packageName)
     }
 
     fun consumeMessage(messageId: Long) {
@@ -398,9 +683,13 @@ class MainViewModel internal constructor(
     private fun reconcileAndRefresh() {
         uiState = uiState.copy(isRefreshing = true)
         viewModelScope.launch {
-            val (groupResult, appRemovalResult) = withContext(ioDispatcher) {
-                runCatching { operations.reconcileGroups() } to
-                    runCatching { operations.reconcileAppRemovals() }
+            val (groupResult, appRemovalResult, applicationOperationResult) =
+                withContext(ioDispatcher) {
+                    Triple(
+                        runCatching { operations.reconcileGroups() },
+                        runCatching { operations.reconcileAppRemovals() },
+                        runCatching { operations.reconcileApplicationOperations() },
+                    )
             }
             val notices = buildList {
                 groupResult.onSuccess { result ->
@@ -413,15 +702,22 @@ class MainViewModel internal constructor(
                 appRemovalResult.onFailure { error ->
                     add("部分 App 解除安裝作業需要處理：${error.userMessage()}")
                 }
+                applicationOperationResult.onFailure { error ->
+                    add("部分分身空間作業需要處理：${error.userMessage()}")
+                }
             }
             if (notices.isNotEmpty()) showMessage(notices.joinToString("\n"))
             refresh()
         }
     }
 
-    private fun launchStatus(packageName: String, sourceInstalled: Boolean): String = when {
-        !sourceInstalled -> "來源 App 已移除"
-        GroupAppRuntimeSupport.compatibility(packageName) == RuntimeCompatibility.VERIFIED ->
+    private fun launchStatus(packageName: String, versionCode: Long?): String = when {
+        versionCode == null -> "來源 App 已移除"
+        GroupAppRuntimeSupport.compatibility(
+            packageName,
+            versionCode,
+            android.os.Build.VERSION.SDK_INT,
+        ) == RuntimeCompatibility.VERIFIED ->
             "已通過實機啟動驗證"
         else -> "尚未完成實機相容驗證"
     }
@@ -430,13 +726,48 @@ class MainViewModel internal constructor(
         uiState = uiState.copy(message = message, messageId = uiState.messageId + 1)
     }
 
+    private fun presentResolvedDeepLink(
+        groups: List<GroupItem>,
+        waitForRefresh: Boolean,
+    ) {
+        val uri = resolvingDeepLinkUri ?: return
+        val identitySet = resolvedDeepLinkIdentities ?: return
+        val candidates = groups.asSequence()
+            .flatMap { it.apps.asSequence() }
+            .filter { (it.groupId to it.app.packageName) in identitySet }
+            .toList()
+        if (candidates.isEmpty() && waitForRefresh) return
+
+        resolvingDeepLinkUri = null
+        resolvedDeepLinkIdentities = null
+        if (candidates.isEmpty()) {
+            uiState = uiState.copy(isResolvingDeepLink = false)
+            showMessage("沒有可開啟此連結的分身 App；請先啟動並完成 App 設定")
+        } else {
+            uiState = uiState.copy(
+                pendingDeepLink = uri,
+                deepLinkCandidates = candidates,
+                isResolvingDeepLink = false,
+            )
+        }
+    }
+
+    private fun permissionLabel(permission: String): String = when (permission) {
+        android.Manifest.permission.CAMERA -> "相機權限"
+        android.Manifest.permission.RECORD_AUDIO -> "麥克風權限"
+        else -> "權限"
+    }
+
     private companion object {
         const val DESTINATION_KEY = "main.destination"
+        const val SELECTED_GROUP_KEY = "main.selectedGroupId"
         const val APP_PICKER_GROUP_KEY = "main.appPickerGroupId"
 
         fun destinationFromSavedState(value: String): MainDestination? =
             runCatching { MainDestination.valueOf(value) }.getOrNull()
     }
+
+    private data class PendingLaunch(val groupId: String?, val packageName: String)
 }
 
 private fun Throwable.userMessage(): String = message ?: javaClass.simpleName

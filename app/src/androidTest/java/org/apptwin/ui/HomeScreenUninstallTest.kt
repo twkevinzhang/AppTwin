@@ -30,7 +30,7 @@ class HomeScreenUninstallTest {
     @Test
     fun shortTapLaunchesApp() {
         var launched: GroupAppItem? = null
-        setHome(onLaunch = { launched = it })
+        setSpaceDetail(onLaunch = { launched = it })
 
         composeRule.onNodeWithTag(tileTag).performClick()
 
@@ -43,7 +43,7 @@ class HomeScreenUninstallTest {
     fun longPressDoesNotLaunchAndCancelThenConfirmControlsUninstall() {
         var launched: GroupAppItem? = null
         var uninstalled: GroupAppItem? = null
-        setHome(
+        setSpaceDetail(
             onLaunch = { launched = it },
             onUninstallApp = { uninstalled = it },
         )
@@ -75,44 +75,53 @@ class HomeScreenUninstallTest {
     @Test
     fun uninstallBusyDisablesTileAndShowsProgressLabel() {
         var launched: GroupAppItem? = null
-        setHome(
+        setSpaceDetail(
             state = uiState.copy(uninstallingAppKey = appItem.launchKey),
             onLaunch = { launched = it },
         )
 
         composeRule.onNodeWithTag(tileTag).assertIsNotEnabled()
-        composeRule.onNodeWithText("解除安裝中…").assertIsDisplayed()
+        composeRule.onNodeWithText("移除中…").assertIsDisplayed()
         composeRule.runOnIdle { assertNull(launched) }
     }
 
     @Test
     fun metadataWarningRemainsVisibleWhenNoValidGroupCanBeLoaded() {
-        setHome(
-            state = MainUiState(
-                isRefreshing = false,
-                dataWarnings = listOf("corrupt group metadata"),
-            ),
-        )
+        composeRule.setContent {
+            AppTwinTheme {
+                HomeScreen(
+                    state = MainUiState(
+                        isRefreshing = false,
+                        dataWarnings = listOf("corrupt group metadata"),
+                    ),
+                    onOpenSpace = {},
+                    onCreateGroup = {},
+                )
+            }
+        }
 
         composeRule.onNodeWithTag("data-integrity-warning").assertIsDisplayed()
-        composeRule.onNodeWithText("偵測到 1 筆資料完整性問題").assertIsDisplayed()
+        composeRule.onNodeWithText("偵測到 1 筆空間資料問題").assertIsDisplayed()
     }
 
-    private fun setHome(
+    private fun setSpaceDetail(
         state: MainUiState = uiState,
         onLaunch: (GroupAppItem) -> Unit = {},
         onUninstallApp: (GroupAppItem) -> Unit = {},
     ) {
         composeRule.setContent {
             AppTwinTheme {
-                HomeScreen(
+                SpaceDetailScreen(
                     state = state,
+                    space = state.groups.single(),
                     onLaunch = onLaunch,
                     onAddApp = {},
-                    onRenameGroup = { _, _ -> },
-                    onDeleteGroup = {},
+                    onRenameSpace = { _, _ -> },
+                    onDeleteSpace = {},
                     onUninstallApp = onUninstallApp,
-                    onCreateGroup = {},
+                    onCreateShortcut = {},
+                    onRepairApp = {},
+                    onSetPermission = { _, _, _ -> },
                 )
             }
         }

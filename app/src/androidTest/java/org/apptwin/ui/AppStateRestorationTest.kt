@@ -3,7 +3,10 @@ package org.apptwin.ui
 import androidx.compose.ui.test.assertTextContains
 import androidx.compose.ui.test.junit4.StateRestorationTester
 import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performTextClearance
 import androidx.compose.ui.test.performTextInput
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import org.apptwin.GroupItem
@@ -27,11 +30,11 @@ class AppStateRestorationTest {
                 CreateGroupDialog(onDismiss = {}, onConfirm = {})
             }
         }
-        composeRule.onNodeWithText("群組名稱").performTextInput("工作")
+        composeRule.onNodeWithText("空間名稱").performTextInput("工作")
 
         restorationTester.emulateSavedInstanceStateRestore()
 
-        composeRule.onNodeWithText("群組名稱").assertTextContains("工作")
+        composeRule.onNodeWithText("空間名稱").assertTextContains("工作")
     }
 
     @Test
@@ -57,6 +60,42 @@ class AppStateRestorationTest {
 
         composeRule.onNodeWithText("搜尋 App 或套件名稱")
             .assertTextContains("LINE")
+    }
+
+    @Test
+    fun renameSpaceDialogAndDraftSurviveSavedStateRestoration() {
+        val restorationTester = StateRestorationTester(composeRule)
+        val space = GroupItem(
+            groupId = GROUP_ID,
+            name = "工作",
+            health = GroupHealth.HEALTHY,
+            apps = emptyList(),
+        )
+        restorationTester.setContent {
+            AppTwinTheme {
+                SpaceDetailScreen(
+                    state = MainUiState(isRefreshing = false, groups = listOf(space)),
+                    space = space,
+                    onLaunch = {},
+                    onAddApp = {},
+                    onRenameSpace = { _, _ -> },
+                    onDeleteSpace = {},
+                    onUninstallApp = {},
+                    onCreateShortcut = {},
+                    onRepairApp = {},
+                    onSetPermission = { _, _, _ -> },
+                )
+            }
+        }
+        composeRule.onNodeWithContentDescription("空間選單").performClick()
+        composeRule.onNodeWithText("重新命名空間").performClick()
+        composeRule.onNodeWithText("空間名稱").performTextClearance()
+        composeRule.onNodeWithText("空間名稱").performTextInput("專案 A")
+
+        restorationTester.emulateSavedInstanceStateRestore()
+
+        composeRule.onNodeWithText("重新命名空間").assertExists()
+        composeRule.onNodeWithText("空間名稱").assertTextContains("專案 A")
     }
 
     private companion object {

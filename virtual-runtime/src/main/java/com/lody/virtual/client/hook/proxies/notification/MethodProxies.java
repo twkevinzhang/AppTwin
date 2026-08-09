@@ -9,6 +9,8 @@ import com.lody.virtual.client.hook.utils.MethodParameterUtils;
 import com.lody.virtual.client.ipc.VNotificationManager;
 import com.lody.virtual.helper.utils.ArrayUtils;
 import com.lody.virtual.helper.utils.VLog;
+import com.lody.virtual.os.VUserInfo;
+import com.lody.virtual.os.VUserManager;
 
 import java.lang.reflect.Method;
 import java.util.Collections;
@@ -68,6 +70,7 @@ class MethodProxies {
             id = VNotificationManager.get().dealNotificationId(id, pkg, null, getAppUserId());
             args[idIndex] = id;
             Notification notification = (Notification) args[notificationIndex];
+            applySpaceLabel(notification, getAppUserId());
             if (!VNotificationManager.get().dealNotification(id, notification, pkg)) {
                 return 0;
             }
@@ -102,6 +105,7 @@ class MethodProxies {
             args[tagIndex] = tag;
             //key(tag,id)
             Notification notification = (Notification) args[notificationIndex];
+            applySpaceLabel(notification, getAppUserId());
             if (!VNotificationManager.get().dealNotification(id, notification, pkg)) {
                 return 0;
             }
@@ -112,6 +116,18 @@ class MethodProxies {
             }
             return method.invoke(who, args);
         }
+    }
+
+    private static void applySpaceLabel(Notification notification, int userId) {
+        if (notification == null || notification.extras == null) {
+            return;
+        }
+        VUserInfo user = VUserManager.get().getUserInfo(userId);
+        String spaceName = user == null ? null : user.name;
+        CharSequence existing = notification.extras.getCharSequence(Notification.EXTRA_SUB_TEXT);
+        notification.extras.putCharSequence(
+                Notification.EXTRA_SUB_TEXT,
+                NotificationSpaceLabeler.label(spaceName, existing));
     }
 
     /* package */ static class EnqueueNotificationWithTagPriority extends EnqueueNotificationWithTag {

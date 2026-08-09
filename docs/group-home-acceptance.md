@@ -36,8 +36,8 @@ BUILD SUCCESSFUL
 The pure Kotlin tests cover per-Group package uniqueness, the same package across separate Groups,
 rename/state transitions, and deletion isolation.
 
-## Remaining boundary
+## Superseded remaining boundary
 
-This acceptance proves Group persistence, navigation, and environment cleanup. It does not yet
-prove two newly-created Groups running the same guest package concurrently, nor notification
-isolation across those Groups.
+This historical acceptance proved Group persistence, navigation, and environment cleanup. The two
+newly-created-space and notification-identity gaps were subsequently covered by the fixture matrix
+in [`m1-m3-fixture-acceptance.md`](m1-m3-fixture-acceptance.md).

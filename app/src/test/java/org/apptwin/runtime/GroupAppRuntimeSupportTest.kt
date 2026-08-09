@@ -16,18 +16,30 @@ class GroupAppRuntimeSupportTest {
     }
 
     @Test
-    fun `only verified packages receive compatibility status`() {
+    fun `only the exact device-tested package version and api are verified`() {
         assertTrue(
-            GroupAppRuntimeSupport.compatibility(GroupAppRuntimeSupport.LINE_PACKAGE) ==
+            GroupAppRuntimeSupport.compatibility(
+                GroupAppRuntimeSupport.LINE_PACKAGE,
+                150_540_375L,
+                31,
+            ) ==
                 RuntimeCompatibility.VERIFIED,
         )
         assertEquals(
             RuntimeCompatibility.UNVERIFIED,
-            GroupAppRuntimeSupport.compatibility("com.google.android.youtube"),
+            GroupAppRuntimeSupport.compatibility(
+                GroupAppRuntimeSupport.LINE_PACKAGE,
+                150_540_376L,
+                31,
+            ),
         )
         assertEquals(
             RuntimeCompatibility.UNVERIFIED,
-            GroupAppRuntimeSupport.compatibility("com.google.android.apps.maps"),
+            GroupAppRuntimeSupport.compatibility(
+                GroupAppRuntimeSupport.SHOPEE_PACKAGE,
+                37_927L,
+                32,
+            ),
         )
     }
 
@@ -35,7 +47,7 @@ class GroupAppRuntimeSupportTest {
     fun `unknown packages are marked unverified without a launch policy`() {
         assertEquals(
             RuntimeCompatibility.UNVERIFIED,
-            GroupAppRuntimeSupport.compatibility("com.example.unaccepted"),
+            GroupAppRuntimeSupport.compatibility("com.example.unaccepted", 1L, 31),
         )
     }
 

@@ -45,7 +45,10 @@ public class VNotificationManagerService extends INotificationManager.Stub {
      */
     @Override
     public int dealNotificationId(int id, String packageName, String tag, int userId) {
-        return id;
+        if (TextUtils.equals(mContext.getPackageName(), packageName) || tag != null) {
+            return id;
+        }
+        return NotificationIdentity.namespaceUntaggedId(id, packageName, userId);
     }
 
     /***
@@ -63,7 +66,9 @@ public class VNotificationManagerService extends INotificationManager.Stub {
             return tag;
         }
         if (tag == null) {
-            return packageName + "@" + userId;
+            // Untagged calls are isolated by dealNotificationId(). Keeping this null is required
+            // so enqueueNotification(id) and cancelNotification(null, id) address the same record.
+            return null;
         }
         return packageName + ":" + tag + "@" + userId;
     }

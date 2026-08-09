@@ -1,6 +1,7 @@
 package com.lody.virtual.client.hook.proxies.am;
 
 import android.annotation.TargetApi;
+import android.Manifest;
 import android.app.ActivityManager;
 import android.app.Application;
 import android.app.IServiceConnection;
@@ -1238,6 +1239,11 @@ class MethodProxies {
             }
             if (SpecialComponentList.isWhitePermission(permission)) {
                 return PackageManager.PERMISSION_GRANTED;
+            }
+            if (Manifest.permission.CAMERA.equals(permission)
+                    || Manifest.permission.RECORD_AUDIO.equals(permission)) {
+                return VPackageManager.get().checkPermission(
+                        permission, getAppPkg(), getAppUserId());
             }
             args[args.length - 1] = getRealUid();
             return method.invoke(who, args);

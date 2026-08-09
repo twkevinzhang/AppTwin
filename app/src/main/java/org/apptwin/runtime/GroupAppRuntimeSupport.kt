@@ -12,14 +12,32 @@ object GroupAppRuntimeSupport {
     private const val SHOPEE_LOGIN_ACTIVITY =
         "com.shopee.app.ui.auth2.login.origin.LoginActivity_"
 
-    private val verifiedPackages = setOf(LINE_PACKAGE, SHOPEE_PACKAGE)
-    fun compatibility(packageName: String): RuntimeCompatibility = when (packageName) {
-        in verifiedPackages -> RuntimeCompatibility.VERIFIED
-        else -> RuntimeCompatibility.UNVERIFIED
+    private val deviceValidations = mapOf(
+        LINE_PACKAGE to DeviceValidation(androidApi = 31, versionCode = 150_540_375L),
+        SHOPEE_PACKAGE to DeviceValidation(androidApi = 31, versionCode = 37_927L),
+    )
+
+    fun compatibility(
+        packageName: String,
+        versionCode: Long,
+        androidApi: Int,
+    ): RuntimeCompatibility = if (
+        deviceValidations[packageName] == DeviceValidation(androidApi, versionCode)
+    ) {
+        RuntimeCompatibility.VERIFIED
+    } else {
+        RuntimeCompatibility.UNVERIFIED
     }
+
+    fun validation(packageName: String, versionCode: Long, androidApi: Int): DeviceValidation? =
+        deviceValidations[packageName]?.takeIf {
+            it.versionCode == versionCode && it.androidApi == androidApi
+        }
 
     fun loginActivity(packageName: String): String? = when (packageName) {
         SHOPEE_PACKAGE -> SHOPEE_LOGIN_ACTIVITY
         else -> null
     }
 }
+
+data class DeviceValidation(val androidApi: Int, val versionCode: Long)

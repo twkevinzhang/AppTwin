@@ -4,13 +4,15 @@ AppTwin is an experimental, open-source Android app-level multi-account containe
 an unrooted, bootloader-locked `ASUS_I002D` running Android 12 / API 31. The target remains Android
 16 compatibility (`compileSdk` and `targetSdk` 36).
 
-> **M0 status:** the sideload-only `runtimeProbe` build imports installed base/split APKs into a
+> **Current status:** the sideload-only `runtimeProbe` build imports installed base/split APKs into a
 > GPL-3.0 runtime and launches accepted LINE and Shopee GroupApps with host-private data.
 > LINE 15.5.4 reached its fresh login screen, while Shopee Taiwan 3.79.27 reached its live home and
-> native login screens on the ASUS_I002D acceptance device. This is a focused compatibility
-> milestone, not general Android 16 or arbitrary-app support.
+> native login screens on the ASUS_I002D acceptance device. Local fixtures also validate two-space
+> data isolation, source uninstall/reinstall, same-signer updates, deep-link user routing,
+> notification identity/labels, and per-space camera/microphone permission-query decisions. This is
+> not general Android 16, arbitrary-app, push-service, or camera/microphone hardware acceptance.
 
-## M0 architecture
+## Product architecture
 
 ```text
 System updates main-system app
@@ -39,8 +41,10 @@ replace Group data.
 
 ## Modules
 
-- `app`: Material 3 launcher showing independent Groups, installed package import, all-files access
-  status, and persistent GroupApp data roots.
+- `app`: Material 3 launcher showing independent 分身空間, installed package import, explicit
+  compatibility/repair states, diagnostics, shortcuts, and persistent clone data roots.
+- `application-core`: pure Kotlin lifecycle/use-case, durable operation, repair, compatibility,
+  and diagnostics policies.
 - `package-source`: pure Kotlin immutable models and completeness validation for base/split APKs,
   signature lineage, and supported ABIs.
 - `revision-store`: pure Kotlin revision state machine for staging and atomic activation. The app
@@ -58,6 +62,8 @@ recorded for [LINE](docs/m0-line-acceptance.md) and
 [Shopee Taiwan](docs/m0-shopee-acceptance.md).
 Group-scoped long-press uninstall and cross-Group data-preservation evidence is recorded in
 [`docs/group-app-uninstall-acceptance.md`](docs/group-app-uninstall-acceptance.md).
+The current fixture acceptance matrix is recorded in
+[`docs/m1-m3-fixture-acceptance.md`](docs/m1-m3-fixture-acceptance.md).
 
 For Shopee, select the imported package and use **開啟登入** to enter Shopee's declared native
 login activity. The normal GroupApp action continues to open Shopee's home activity. AppTwin
