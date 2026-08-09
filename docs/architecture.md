@@ -72,6 +72,44 @@ Installed source package
 - `MANAGE_EXTERNAL_STORAGE` is explicitly user-granted. The launcher probes direct visibility of
   `Download`, `DCIM`, and `Pictures` without recording file names.
 
+## Per-Group microG compatibility boundary
+
+```text
+reviewed release manifest
+  + pinned GmsCore APK
+  + pinned Companion/FakeStore APK
+          |
+   digest + signer + package + version verification
+          |
+          v
+ host-only trusted install transaction
+          |
+          +------ Group A virtual user: microG packages, accounts, tokens, data
+          |
+          `------ Group B virtual user: absent unless separately consented/enabled
+```
+
+- `gms-compat-core` owns the product profile, lifecycle state machine, operation records,
+  capability evidence, and diagnostics policy. `microg-artifact-source` owns the reviewed release
+  pair; `gms-runtime-adapter` owns the VirtualCore bridge; Android UI and durable file adapters stay
+  in `app`.
+- Signature replacement is accepted only for the exact pinned `com.google.android.gms` and
+  `com.android.vending` artifacts after independent APK digest and real-signer verification.
+  Generic APK metadata, legacy signature caches, and guest Binder callers cannot authorize it.
+- Enable, suspend-preserving-data, reset, and Group deletion are user-scoped, durable, and
+  fail-closed. Account state, runtime permissions, jobs, notifications, pending-intent epochs,
+  device/location/virtual-storage state, CE/DE data, and private external data are retired before a
+  virtual user id may be reused.
+- Server-side Binder authority derives from a registered virtual caller. Host administration is
+  limited to the engine and exact AppTwin main process; unknown or stale guest processes never
+  inherit host authority. User/package/session ownership is rechecked at service entry points.
+- Physical Google packages are never a fallback for a Group where the trusted pair is absent.
+  Play Billing and Play Integrity components are removed from fresh and cached Companion package
+  models and remain product-policy `UNSUPPORTED`.
+- Google Play services availability and the local per-Group lifecycle/isolation matrix are
+  accepted on the ASUS API 31 fixture. FCM, Maps, Sign-In, Cast, and Nearby remain real-service
+  `UNTESTED`; fixture evidence cannot promote those capabilities to production support.
+
 ## M0 device-validated boundary
 
 - One LINE 15.5.4 GroupApp launches through the virtual PackageManager/ActivityManager path on an
@@ -114,7 +152,12 @@ Installed source package
   selected guest launch are accepted on the ASUS fixture device.
 - Guest update migration tests across two real Play versions.
 - Android 16 runtime acceptance on a physical locked device.
+- Real-service FCM registration/delivery, Maps, Google Sign-In, Cast, and Nearby acceptance for the
+  pinned microG release. Play Billing and Play Integrity are intentionally out of scope rather
+  than pending acceptance.
 
 See [`m0-line-acceptance.md`](m0-line-acceptance.md) and
 [`m0-shopee-acceptance.md`](m0-shopee-acceptance.md) for the exact accepted paths and evidence.
 See [`m1-m3-fixture-acceptance.md`](m1-m3-fixture-acceptance.md) for the current fixture matrix.
+See [`microg-asus-fixture-acceptance.md`](microg-asus-fixture-acceptance.md) for the exact microG
+artifact pins, destructive device procedure, capability claims, and executed evidence.

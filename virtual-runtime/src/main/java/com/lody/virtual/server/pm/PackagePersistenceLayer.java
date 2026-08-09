@@ -20,7 +20,8 @@ import java.util.Arrays;
 class PackagePersistenceLayer extends PersistenceLayer {
 
     private static final char[] MAGIC = {'v', 'p', 'k', 'g'};
-    private static final int CURRENT_VERSION = 3;
+    private static final int CURRENT_VERSION = 4;
+    private int mReadingVersion = CURRENT_VERSION;
 
     private VAppManagerService mService;
 
@@ -103,14 +104,19 @@ class PackagePersistenceLayer extends PersistenceLayer {
     public void readPersistenceData(Parcel p) {
         int count = p.readInt();
         while (count-- > 0) {
-            PackageSetting setting = new PackageSetting(p);
+            PackageSetting setting = new PackageSetting(p, mReadingVersion >= 4);
             mService.loadPackage(setting);
         }
     }
 
     @Override
     public boolean onVersionConflict(int fileVersion, int currentVersion) {
-        // I am so lazy to process it...
+        // Version 3 has no trusted provenance. It is safe for ordinary packages, while the load
+        // path rejects legacy com.google.android.gms state that could contain an arbitrary spoof.
+        if (fileVersion == 3 && currentVersion == CURRENT_VERSION) {
+            mReadingVersion = fileVersion;
+            return true;
+        }
         return false;
     }
 

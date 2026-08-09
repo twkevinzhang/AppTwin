@@ -2,6 +2,8 @@ package com.lody.virtual.helper;
 
 import android.os.Parcel;
 
+import com.lody.virtual.helper.utils.AtomicFile;
+
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileNotFoundException;
@@ -44,16 +46,32 @@ public abstract class PersistenceLayer {
     }
 
     public void save() {
+        try {
+            saveAtomicallyOrThrow();
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+    }
+
+    /** Atomically persists state and reports failure to privacy-sensitive cleanup callers. */
+    public void saveAtomicallyOrThrow() throws IOException {
         Parcel p = Parcel.obtain();
+        AtomicFile atomicFile = new AtomicFile(mPersistenceFile);
+        FileOutputStream fos = null;
         try {
             writeMagic(p);
             p.writeInt(getCurrentVersion());
             writePersistenceData(p);
-            FileOutputStream fos = new FileOutputStream(mPersistenceFile);
+            fos = atomicFile.startWrite();
             fos.write(p.marshall());
-            fos.close();
+            atomicFile.finishWrite(fos);
+            fos = null;
         } catch (Exception e) {
-            e.printStackTrace();
+            atomicFile.failWrite(fos);
+            if (e instanceof IOException) {
+                throw (IOException) e;
+            }
+            throw new IOException("Unable to persist virtual runtime state", e);
         } finally {
             p.recycle();
         }

@@ -91,6 +91,14 @@ public class VEnvironment {
         return new File(getSystemSecureDirectory(), "uid-list.ini.bak");
     }
 
+    public static File getPackagePendingIntentGenerationFile() {
+        return new File(getSystemSecureDirectory(), "pending-intent-generations.bin");
+    }
+
+    public static File getTrustedPackageQuarantineDirectory() {
+        return ensureCreated(new File(getSystemSecureDirectory(), "trusted-package-quarantine"));
+    }
+
     public static File getAccountConfigFile() {
         return new File(getSystemSecureDirectory(), "account-list.ini");
     }
@@ -101,6 +109,10 @@ public class VEnvironment {
 
     public static File getDeviceInfoFile() {
         return new File(getSystemSecureDirectory(), "device-info.ini");
+    }
+
+    public static File getNotificationConfigFile() {
+        return new File(getSystemSecureDirectory(), "notification-list.bin");
     }
 
     public static File getPackageListFile() {

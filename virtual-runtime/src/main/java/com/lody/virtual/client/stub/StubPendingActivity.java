@@ -19,7 +19,7 @@ public class StubPendingActivity extends Activity {
         finish();
         Intent intent = getIntent();
         StubActivityRecord r = new StubActivityRecord(intent);
-        if (r.intent == null) {
+        if (r.intent == null || !PendingIntentUserGeneration.isCurrent(intent, r.userId)) {
             return;
         }
         r.intent.addFlags(Intent.FLAG_ACTIVITY_FORWARD_RESULT);

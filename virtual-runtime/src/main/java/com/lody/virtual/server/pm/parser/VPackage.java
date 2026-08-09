@@ -21,6 +21,7 @@ import android.os.Parcel;
 import android.os.Parcelable;
 
 import com.lody.virtual.helper.compat.BuildCompat;
+import com.lody.virtual.remote.TrustedPackageProvenance;
 
 import java.util.ArrayList;
 import java.util.HashSet;
@@ -54,6 +55,10 @@ public class VPackage implements Parcelable {
     public ArrayList<String> protectedBroadcasts;
     public ApplicationInfo applicationInfo;
     public Signature[] mSignatures;
+    /** Actual APK signer lineage; never replaced by the compatibility signer. */
+    public Signature[] mRealSignatures;
+    /** Non-null only while/past a dedicated trusted-bundle install. Persisted in PackageSetting. */
+    public TrustedPackageProvenance trustedPackageProvenance;
     public Bundle mAppMetaData;
     public String packageName;
     public int mPreferredOrder;

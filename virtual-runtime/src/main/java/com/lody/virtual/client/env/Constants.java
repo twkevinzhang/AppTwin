@@ -15,15 +15,6 @@ import java.util.List;
 public class Constants {
 
 	public static final String EXTRA_USER_HANDLE = "android.intent.extra.user_handle";
-	/**
-	 * If an apk declared the "fake-signature" attribute on its Application TAG,
-	 * we will use its signature instead of the real signature.
-	 *
-	 * For more detail, please see :
-	 * https://github.com/microg/android_packages_apps_GmsCore/blob/master/
-	 * patches/android_frameworks_base-M.patch.
-	 */
-	public static final String FEATURE_FAKE_SIGNATURE = "fake-signature";
 	public static final String ACTION_PACKAGE_ADDED = "virtual." + Intent.ACTION_PACKAGE_ADDED;
 	public static final String ACTION_PACKAGE_REMOVED = "virtual." + Intent.ACTION_PACKAGE_REMOVED;
 	public static final String ACTION_PACKAGE_CHANGED = "virtual." + Intent.ACTION_PACKAGE_CHANGED;
@@ -35,7 +26,6 @@ public class Constants {
 	public static String META_VALUE_STUB = "Stub-User";
 
 	public static String NO_NOTIFICATION_FLAG = ".no_notification";
-	public static String FAKE_SIGNATURE_FLAG = ".fake_signature";
 
 	public static final String WECHAT_PACKAGE = EncodeUtils.decode("Y29tLnRlbmNlbnQubW0="); // wechat
 	public static final List<String> PRIVILEGE_APP = Arrays.asList(

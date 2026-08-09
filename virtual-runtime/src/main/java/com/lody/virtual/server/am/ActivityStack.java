@@ -21,6 +21,7 @@ import com.lody.virtual.helper.utils.ClassUtils;
 import com.lody.virtual.helper.utils.ComponentUtils;
 import com.lody.virtual.remote.AppTaskInfo;
 import com.lody.virtual.remote.StubActivityRecord;
+import com.lody.virtual.os.VUserHandle;
 
 import java.util.ArrayList;
 import java.util.Iterator;
@@ -701,6 +702,13 @@ import static android.content.pm.ActivityInfo.LAUNCH_SINGLE_TOP;
                 return task.getAppTaskInfo();
             }
             return null;
+        }
+    }
+
+    int getTaskUserId(int taskId) {
+        synchronized (mHistory) {
+            TaskRecord task = mHistory.get(taskId);
+            return task == null ? VUserHandle.USER_NULL : task.userId;
         }
     }
 

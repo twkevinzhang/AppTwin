@@ -92,6 +92,12 @@ class MethodProxies {
         @Override
         public Object call(Object who, Method method, Object... args) throws Throwable {
             String pkgName = (String) args[0];
+            if (TrustedPackageVisibilityPolicy.isReserved(pkgName)) {
+                boolean virtualInstalled = VPackageManager.get().getPackageInfo(
+                        pkgName, 0, VUserHandle.myUserId()) != null;
+                return TrustedPackageVisibilityPolicy.isAvailableToVirtualUser(
+                        pkgName, virtualInstalled, false);
+            }
             if (isAppPkg(pkgName)) {
                 return true;
             }
@@ -114,7 +120,28 @@ class MethodProxies {
 
         @Override
         public Object call(Object who, Method method, Object... args) throws Throwable {
-            return "com.android.vending";
+            // AppTwin does not claim Play Billing/install provenance. In particular, never expose
+            // a physical Play Store installation as the installer of a virtual package.
+            return null;
+        }
+
+        @Override
+        public boolean isEnable() {
+            return isAppProcess();
+        }
+    }
+
+    /** API 30+ replacement for getInstallerPackageName; never leak physical Play provenance. */
+    static class GetInstallSourceInfo extends MethodProxy {
+
+        @Override
+        public String getMethodName() {
+            return "getInstallSourceInfo";
+        }
+
+        @Override
+        public Object call(Object who, Method method, Object... args) {
+            return null;
         }
 
         @Override
@@ -150,7 +177,18 @@ class MethodProxies {
             // NOTE: 有4个状态: 0默认 1可用 2禁止 3User Disable
             ComponentName component = (ComponentName) args[0];
             if (component != null) {
-                return 1;
+                if (TrustedPackageVisibilityPolicy.isReserved(component.getPackageName())) {
+                    int userId = VUserHandle.myUserId();
+                    int flags = 0;
+                    boolean present = VPackageManager.get().getActivityInfo(
+                            component, flags, userId) != null
+                            || VPackageManager.get().getReceiverInfo(component, flags, userId) != null
+                            || VPackageManager.get().getServiceInfo(component, flags, userId) != null
+                            || VPackageManager.get().getProviderInfo(component, flags, userId) != null;
+                    return present ? PackageManager.COMPONENT_ENABLED_STATE_DEFAULT
+                            : PackageManager.COMPONENT_ENABLED_STATE_DISABLED;
+                }
+                return PackageManager.COMPONENT_ENABLED_STATE_ENABLED;
             }
             return method.invoke(who, args);
         }
@@ -220,7 +258,12 @@ class MethodProxies {
             if (pkgName.equals(getHostPkg())) {
                 return method.invoke(who, args);
             }
-            int uid = VPackageManager.get().getPackageUid(pkgName, 0);
+            int userId = VUserHandle.myUserId();
+            if (TrustedPackageVisibilityPolicy.isReserved(pkgName)
+                    && VPackageManager.get().getPackageInfo(pkgName, 0, userId) == null) {
+                return -1;
+            }
+            int uid = VPackageManager.get().getPackageUid(pkgName, userId);
             return VUserHandle.getAppId(uid);
         }
 
@@ -400,6 +443,13 @@ class MethodProxies {
 
         @Override
         public Object call(Object who, Method method, Object... args) throws Throwable {
+            String packageName = (String) args[0];
+            if (TrustedPackageVisibilityPolicy.isReserved(packageName)) {
+                PackageInfo virtualPackage = VPackageManager.get().getPackageInfo(
+                        packageName, 0, VUserHandle.myUserId());
+                if (!TrustedPackageVisibilityPolicy.allowSupplementalGids(
+                        packageName, virtualPackage != null)) return new int[0];
+            }
             MethodParameterUtils.replaceFirstAppPkg(args);
             return method.invoke(who, args);
         }
@@ -611,6 +661,10 @@ class MethodProxies {
             ResolveInfo resolveInfo = VPackageManager.get().resolveService(intent, resolvedType, flags, userId);
             if (resolveInfo == null) {
                 resolveInfo = (ResolveInfo) method.invoke(who, args);
+                if (resolveInfo != null && resolveInfo.serviceInfo != null
+                        && !isVisiblePackage(resolveInfo.serviceInfo.applicationInfo)) {
+                    return null;
+                }
             }
             return resolveInfo;
         }
@@ -733,6 +787,13 @@ class MethodProxies {
 
         @Override
         public Object call(Object who, Method method, Object... args) throws Throwable {
+            String packageName = (String) args[0];
+            if (TrustedPackageVisibilityPolicy.isReserved(packageName)) {
+                return VPackageManager.get().getApplicationInfo(
+                        packageName, 0, VUserHandle.myUserId()) == null
+                        ? PackageManager.COMPONENT_ENABLED_STATE_DISABLED
+                        : PackageManager.COMPONENT_ENABLED_STATE_DEFAULT;
+            }
             MethodParameterUtils.replaceFirstAppPkg(args);
             return method.invoke(who, args);
         }
@@ -887,6 +948,18 @@ class MethodProxies {
                 PackageManager pm = VirtualCore.getPM();
 
                 String pkgNameOne = (String) args[0], pkgNameTwo = (String) args[1];
+                if (TrustedPackageVisibilityPolicy.isReserved(pkgNameOne)
+                        || TrustedPackageVisibilityPolicy.isReserved(pkgNameTwo)) {
+                    PackageInfo pkgOne = VPackageManager.get().getPackageInfo(
+                            pkgNameOne, PackageManager.GET_SIGNATURES, VUserHandle.myUserId());
+                    PackageInfo pkgTwo = VPackageManager.get().getPackageInfo(
+                            pkgNameTwo, PackageManager.GET_SIGNATURES, VUserHandle.myUserId());
+                    if (pkgOne == null || pkgTwo == null) {
+                        return PackageManager.SIGNATURE_UNKNOWN_PACKAGE;
+                    }
+                    return Arrays.equals(pkgOne.signatures, pkgTwo.signatures)
+                            ? PackageManager.SIGNATURE_MATCH : PackageManager.SIGNATURE_NO_MATCH;
+                }
                 try {
                     PackageInfo pkgOne = pm.getPackageInfo(pkgNameOne, PackageManager.GET_SIGNATURES);
                     PackageInfo pkgTwo = pm.getPackageInfo(pkgNameTwo, PackageManager.GET_SIGNATURES);
@@ -931,8 +1004,19 @@ class MethodProxies {
         public Object call(Object who, Method method, Object... args) throws Throwable {
             int uid1 = (int) args[0];
             int uid2 = (int) args[1];
-            // TODO: verify the signatures by uid.
-            return PackageManager.SIGNATURE_MATCH;
+            if (uid1 == uid2) return PackageManager.SIGNATURE_MATCH;
+            String[] first = VPackageManager.get().getPackagesForUid(uid1);
+            String[] second = VPackageManager.get().getPackagesForUid(uid2);
+            if (ArrayUtils.isEmpty(first) || ArrayUtils.isEmpty(second)) {
+                return PackageManager.SIGNATURE_UNKNOWN_PACKAGE;
+            }
+            PackageInfo one = VPackageManager.get().getPackageInfo(
+                    first[0], PackageManager.GET_SIGNATURES, VUserHandle.myUserId());
+            PackageInfo two = VPackageManager.get().getPackageInfo(
+                    second[0], PackageManager.GET_SIGNATURES, VUserHandle.myUserId());
+            if (one == null || two == null) return PackageManager.SIGNATURE_UNKNOWN_PACKAGE;
+            return Arrays.equals(one.signatures, two.signatures)
+                    ? PackageManager.SIGNATURE_MATCH : PackageManager.SIGNATURE_NO_MATCH;
         }
     }
 
@@ -1010,6 +1094,10 @@ class MethodProxies {
             ResolveInfo resolveInfo = VPackageManager.get().resolveIntent(intent, resolvedType, flags, userId);
             if (resolveInfo == null) {
                 resolveInfo = (ResolveInfo) method.invoke(who, args);
+                if (resolveInfo != null && resolveInfo.activityInfo != null
+                        && !isVisiblePackage(resolveInfo.activityInfo.applicationInfo)) {
+                    return null;
+                }
             }
             return resolveInfo;
         }
@@ -1192,7 +1280,8 @@ class MethodProxies {
                 return method.invoke(who, args);
             }
             int flags = packageManagerFlagsToInt(args[1]);
-            ActivityInfo info = VPackageManager.get().getReceiverInfo(componentName, flags, 0);
+            ActivityInfo info = VPackageManager.get().getReceiverInfo(
+                    componentName, flags, VUserHandle.myUserId());
             if (info == null) {
                 info = (ActivityInfo) method.invoke(who, args);
                 if (info == null || !isVisiblePackage(info.applicationInfo)) {

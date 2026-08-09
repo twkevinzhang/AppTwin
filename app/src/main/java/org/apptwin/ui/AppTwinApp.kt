@@ -248,6 +248,9 @@ fun AppTwinApp(
                                     onCreateShortcut = viewModel::createShortcut,
                                     onRepairApp = viewModel::repairClone,
                                     onSetPermission = onSetClonePermission,
+                                    onEnableGms = viewModel::enableGms,
+                                    onDisableGms = viewModel::disableGms,
+                                    onResetGms = viewModel::resetGms,
                                 )
                                 state.destination == MainDestination.HOME -> HomeScreen(
                                     state = state,

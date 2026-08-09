@@ -11,6 +11,10 @@ an unrooted, bootloader-locked `ASUS_I002D` running Android 12 / API 31. The tar
 > data isolation, source uninstall/reinstall, same-signer updates, deep-link user routing,
 > notification identity/labels, and per-space camera/microphone permission-query decisions. This is
 > not general Android 16, arbitrary-app, push-service, or camera/microphone hardware acceptance.
+> The optional per-space Google-services compatibility layer uses a pinned microG GmsCore and
+> Companion/FakeStore pair; it is not Google GMS. Availability and local isolation are ASUS-fixture
+> validated. FCM, Maps, Sign-In, Cast, and Nearby still require real-service acceptance, while Play
+> Billing and Play Integrity are deliberately unsupported.
 
 ## Product architecture
 
@@ -55,6 +59,15 @@ replace Group data.
   `VirtualApp/lib`. It supplies virtual package/component routing, guest process startup, and
   native path redirection. Provenance and downstream changes are recorded in
   [`virtual-runtime/UPSTREAM.md`](virtual-runtime/UPSTREAM.md).
+- `gms-compat-core`: pure Kotlin per-Group compatibility profiles, lifecycle operations,
+  capability evidence, diagnostics, and explicit unsupported-feature policy.
+- `microg-artifact-source`: verifies the exact reviewed microG GmsCore and Companion/FakeStore
+  release pair before either artifact can be staged. APK bytes are build inputs and are not stored
+  in Git.
+- `gms-runtime-adapter`: binds the verified pair to one Group environment through host-only runtime
+  operations. Generic package installation cannot request signature replacement.
+- `gms-capability-fixture`: local/ASUS fixture for availability and isolation evidence. It contains
+  no Play Billing or Play Integrity client dependency or success path.
 
 The historical candidate review and the reason for selecting the exact GPL release tree are
 recorded in [`docs/core-engine-audit.md`](docs/core-engine-audit.md). Device acceptance evidence is
@@ -64,6 +77,8 @@ Group-scoped long-press uninstall and cross-Group data-preservation evidence is 
 [`docs/group-app-uninstall-acceptance.md`](docs/group-app-uninstall-acceptance.md).
 The current fixture acceptance matrix is recorded in
 [`docs/m1-m3-fixture-acceptance.md`](docs/m1-m3-fixture-acceptance.md).
+The exact per-Group microG boundary and destructive ASUS fixture procedure are recorded in
+[`docs/microg-asus-fixture-acceptance.md`](docs/microg-asus-fixture-acceptance.md).
 
 For Shopee, select the imported package and use **開啟登入** to enter Shopee's declared native
 login activity. The normal GroupApp action continues to open Shopee's home activity. AppTwin

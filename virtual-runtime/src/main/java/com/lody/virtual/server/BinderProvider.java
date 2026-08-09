@@ -60,6 +60,10 @@ public final class BinderProvider extends ContentProvider {
         addService(ServiceManagerNative.VS, VirtualStorageService.get());
         addService(ServiceManagerNative.DEVICE, VDeviceManagerService.get());
         addService(ServiceManagerNative.VIRTUAL_LOC, VirtualLocationService.get());
+        VAppManagerService.get().completeTrustedPackageQuarantine();
+        // Recovery must run after scanApps and every durable user-scoped service is ready. Running
+        // it from VUserManagerService's constructor would miss persisted PackageSetting entries.
+        VUserManagerService.get().recoverPartialUsers();
         return true;
     }
 
@@ -114,6 +118,7 @@ public final class BinderProvider extends ContentProvider {
 
         @Override
         public void addService(String name, IBinder service) throws RemoteException {
+            com.lody.virtual.server.VirtualUserAccessPolicy.enforceHost();
             if (name != null && service != null) {
                 ServiceCache.addService(name, service);
             }
@@ -121,6 +126,7 @@ public final class BinderProvider extends ContentProvider {
 
         @Override
         public void removeService(String name) throws RemoteException {
+            com.lody.virtual.server.VirtualUserAccessPolicy.enforceHost();
             if (name != null) {
                 ServiceCache.removeService(name);
             }

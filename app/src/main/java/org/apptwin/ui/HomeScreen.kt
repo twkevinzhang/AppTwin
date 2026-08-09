@@ -31,6 +31,7 @@ import androidx.compose.material.icons.filled.HourglassTop
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Security
+import androidx.compose.material.icons.filled.Cloud
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Button
@@ -47,6 +48,7 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.Switch
+import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -70,6 +72,13 @@ import org.apptwin.GroupItem
 import org.apptwin.MainUiState
 import org.apptwin.spaces.CloneLifecycleState
 import org.apptwin.spaces.SpaceLifecycleState
+import org.apptwin.gms.capabilities.GmsCapability
+import org.apptwin.gms.capabilities.GmsCapabilityAssessment
+import org.apptwin.gms.capabilities.GmsCapabilityStatus
+import org.apptwin.gms.capabilities.GmsEvidenceTier
+import org.apptwin.gms.model.GmsDesiredState
+import org.apptwin.gms.model.GmsNetworkConsent
+import org.apptwin.gms.model.GmsObservedState
 
 @Composable
 fun HomeScreen(
@@ -135,11 +144,17 @@ fun SpaceDetailScreen(
     onCreateShortcut: (GroupAppItem) -> Unit,
     onRepairApp: (GroupAppItem) -> Unit,
     onSetPermission: (GroupAppItem, String, Boolean) -> Unit,
+    onEnableGms: (String, Boolean) -> Unit = { _, _ -> },
+    onDisableGms: (String) -> Unit = {},
+    onResetGms: (String, Boolean) -> Unit = { _, _ -> },
 ) {
     var showRename by rememberSaveable(space.groupId) { mutableStateOf(false) }
     var showDelete by rememberSaveable(space.groupId) { mutableStateOf(false) }
     var uninstallTargetKey by rememberSaveable(space.groupId) { mutableStateOf<String?>(null) }
     var permissionTargetKey by rememberSaveable(space.groupId) { mutableStateOf<String?>(null) }
+    var showGmsConsent by rememberSaveable(space.groupId) { mutableStateOf(false) }
+    var showGmsDisable by rememberSaveable(space.groupId) { mutableStateOf(false) }
+    var showGmsReset by rememberSaveable(space.groupId) { mutableStateOf(false) }
     val uninstallTarget = space.apps.firstOrNull { it.launchKey == uninstallTargetKey }
     val permissionTarget = space.apps.firstOrNull { it.launchKey == permissionTargetKey }
 
@@ -154,6 +169,24 @@ fun SpaceDetailScreen(
                 isBusy = state.busyGroupId == space.groupId,
                 onRename = { showRename = true },
                 onDelete = { showDelete = true },
+            )
+        }
+        item {
+            GmsCompatibilityCard(
+                state = space.gmsCompatibility,
+                isBusy = state.gmsBusyGroupId == space.groupId,
+                onEnable = {
+                    if (
+                        space.gmsCompatibility?.profile?.networkConsent ==
+                        GmsNetworkConsent.GRANTED
+                    ) {
+                        onEnableGms(space.groupId, false)
+                    } else {
+                        showGmsConsent = true
+                    }
+                },
+                onDisable = { showGmsDisable = true },
+                onReset = { showGmsReset = true },
             )
         }
         if (!space.apps.any() && space.lifecycle == SpaceLifecycleState.READY) {
@@ -219,6 +252,86 @@ fun SpaceDetailScreen(
         )
     }
 
+    if (showGmsConsent) {
+        AlertDialog(
+            modifier = Modifier.testTag("gms-consent-dialog"),
+            onDismissRequest = { showGmsConsent = false },
+            icon = { Icon(Icons.Default.Cloud, contentDescription = null) },
+            title = { Text("啟用 Google 服務相容功能？") },
+            text = {
+                Text(
+                    "此功能由 microG 提供，並非 Google 官方服務。啟用後，只有「${space.name}」會連線至 Google 的裝置註冊、帳號及推播端點；帳號、token 與資料不會與其他空間共用。",
+                )
+            },
+            confirmButton = {
+                Button(
+                    modifier = Modifier.testTag("confirm-gms-consent"),
+                    onClick = {
+                        onEnableGms(space.groupId, true)
+                        showGmsConsent = false
+                    },
+                ) { Text("同意並啟用") }
+            },
+            dismissButton = {
+                TextButton(onClick = { showGmsConsent = false }) { Text("取消") }
+            },
+        )
+    }
+
+    if (showGmsDisable) {
+        AlertDialog(
+            modifier = Modifier.testTag("gms-disable-dialog"),
+            onDismissRequest = { showGmsDisable = false },
+            title = { Text("停用相容功能？") },
+            text = { Text("將停止此空間的 microG 背景服務；既有相容服務資料會保留，之後可重新啟用。") },
+            confirmButton = {
+                Button(
+                    modifier = Modifier.testTag("confirm-gms-disable"),
+                    onClick = {
+                        onDisableGms(space.groupId)
+                        showGmsDisable = false
+                    },
+                ) { Text("停用") }
+            },
+            dismissButton = {
+                TextButton(onClick = { showGmsDisable = false }) { Text("取消") }
+            },
+        )
+    }
+
+    if (showGmsReset) {
+        val reenable = space.gmsCompatibility?.profile?.desiredState == GmsDesiredState.ENABLED
+        AlertDialog(
+            modifier = Modifier.testTag("gms-reset-dialog"),
+            onDismissRequest = { showGmsReset = false },
+            icon = {
+                Icon(
+                    Icons.Default.Delete,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.error,
+                )
+            },
+            title = { Text("永久重設相容服務資料？") },
+            text = {
+                Text(
+                    "將永久刪除此空間的 microG 帳號、check-in 身分、FCM token 與資料庫。分身 App 資料及其他空間不受影響；此操作無法復原。",
+                )
+            },
+            confirmButton = {
+                Button(
+                    modifier = Modifier.testTag("confirm-gms-reset"),
+                    onClick = {
+                        onResetGms(space.groupId, reenable)
+                        showGmsReset = false
+                    },
+                ) { Text("永久重設") }
+            },
+            dismissButton = {
+                TextButton(onClick = { showGmsReset = false }) { Text("取消") }
+            },
+        )
+    }
+
     uninstallTarget?.let { app ->
         AlertDialog(
             modifier = Modifier.testTag("uninstall-app-dialog"),
@@ -263,6 +376,172 @@ fun SpaceDetailScreen(
             },
         )
     }
+}
+
+@Composable
+private fun GmsCompatibilityCard(
+    state: org.apptwin.gms.GmsGroupProductState?,
+    isBusy: Boolean,
+    onEnable: () -> Unit,
+    onDisable: () -> Unit,
+    onReset: () -> Unit,
+) {
+    val profile = state?.profile
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .testTag("gms-compatibility-card"),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer),
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(20.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Icon(Icons.Default.Cloud, contentDescription = null)
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        "Google 服務相容功能",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
+                    )
+                    Text(
+                        "由 microG 提供，實驗性；並非 Google 官方服務",
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                Surface(
+                    shape = MaterialTheme.shapes.small,
+                    color = MaterialTheme.colorScheme.secondaryContainer,
+                ) {
+                    Text(
+                        gmsProfileLabel(profile?.observedState),
+                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                        style = MaterialTheme.typography.labelMedium,
+                    )
+                }
+            }
+            if (state?.hasDataWarning == true) {
+                Text(
+                    "相容服務資料無法安全讀取；已停止變更並保留原始資料。",
+                    color = MaterialTheme.colorScheme.error,
+                    modifier = Modifier.testTag("gms-data-warning"),
+                )
+            }
+            Column(verticalArrangement = Arrangement.spacedBy(7.dp)) {
+                state?.capabilities.orEmpty().forEach { assessment ->
+                    GmsCapabilityRow(assessment)
+                }
+            }
+            if (profile?.failureCode != null) {
+                Text(
+                    "狀態代碼：${profile.failureCode}",
+                    color = MaterialTheme.colorScheme.error,
+                )
+            }
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    if (profile?.desiredState == GmsDesiredState.ENABLED) {
+                        OutlinedButton(
+                            onClick = onDisable,
+                            enabled = !isBusy && state?.hasDataWarning != true,
+                        ) {
+                            Text("停用")
+                        }
+                    } else {
+                        Button(
+                            onClick = onEnable,
+                            enabled = !isBusy && state?.hasDataWarning != true,
+                        ) {
+                            Text("啟用")
+                        }
+                    }
+                    if (isBusy) {
+                        CircularProgressIndicator(modifier = Modifier.size(24.dp), strokeWidth = 2.dp)
+                    }
+                }
+                OutlinedButton(
+                    onClick = onReset,
+                    enabled = !isBusy && state?.hasDataWarning != true,
+                ) {
+                    Text("重設資料")
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun GmsCapabilityRow(assessment: GmsCapabilityAssessment) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(gmsCapabilityLabel(assessment.capability), modifier = Modifier.weight(1f))
+        Text(
+            gmsCapabilityStatusLabel(assessment),
+            modifier = Modifier.testTag("gms-capability-status-${assessment.capability.name}"),
+            color = if (assessment.status == GmsCapabilityStatus.UNSUPPORTED) {
+                MaterialTheme.colorScheme.error
+            } else {
+                MaterialTheme.colorScheme.onSurfaceVariant
+            },
+            style = MaterialTheme.typography.labelMedium,
+            textAlign = TextAlign.End,
+        )
+    }
+}
+
+private fun gmsProfileLabel(state: GmsObservedState?): String = when (state) {
+    GmsObservedState.ABSENT, null -> "未啟用"
+    GmsObservedState.ENABLING -> "啟用中"
+    GmsObservedState.READY_PARTIAL -> "部分可用"
+    GmsObservedState.DEGRADED -> "需要處理"
+    GmsObservedState.DISABLING -> "停用中"
+    GmsObservedState.RESETTING -> "重設中"
+    GmsObservedState.UPDATE_REQUIRED -> "需要更新"
+    GmsObservedState.REVOKED -> "版本已撤銷"
+}
+
+private fun gmsCapabilityLabel(capability: GmsCapability): String = when (capability) {
+    GmsCapability.PLAY_SERVICES_AVAILABILITY -> "Play services availability"
+    GmsCapability.FCM_REGISTRATION -> "FCM token"
+    GmsCapability.FCM_MESSAGE -> "FCM 訊息接收"
+    GmsCapability.FCM_NOTIFICATION_ROUTING -> "通知與空間路由"
+    GmsCapability.FUSED_LOCATION -> "Fused Location"
+    GmsCapability.MAPS_SDK_V2 -> "Maps SDK v2"
+    GmsCapability.GOOGLE_SIGN_IN_LEGACY -> "Google Sign-In (legacy)"
+    GmsCapability.GOOGLE_SIGN_IN_GIS -> "Google Identity Services"
+    GmsCapability.CAST_SENDER -> "Cast sender"
+    GmsCapability.NEARBY -> "Nearby"
+    GmsCapability.PLAY_BILLING -> "Play Billing"
+    GmsCapability.PLAY_INTEGRITY -> "Play Integrity"
+}
+
+private fun gmsCapabilityStatusLabel(assessment: GmsCapabilityAssessment): String = when {
+    assessment.capability in setOf(GmsCapability.PLAY_BILLING, GmsCapability.PLAY_INTEGRITY) ->
+        "不支援"
+    assessment.status == GmsCapabilityStatus.KNOWN_FAILURE ->
+        "Fixture 失敗${assessment.failureCode?.let { " ($it)" }.orEmpty()}"
+    assessment.status == GmsCapabilityStatus.FIXTURE_PASSED_EXTERNAL_UNTESTED -> when (
+        assessment.evidenceTier
+    ) {
+        GmsEvidenceTier.ASUS_FIXTURE -> "ASUS fixture 通過／外部待驗"
+        else -> "Local fixture 通過／外部待驗"
+    }
+    // The agreed product boundary does not promote stored external evidence in this build.
+    assessment.status in setOf(
+        GmsCapabilityStatus.REAL_EXTERNAL_VERIFIED,
+        GmsCapabilityStatus.THIRD_PARTY_APP_VERIFIED,
+    ) -> "Fixture 通過／外部待驗"
+    else -> "尚未驗證"
 }
 
 @Composable

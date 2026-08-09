@@ -1,8 +1,11 @@
 package mirror.android.app;
 
+import android.app.ActivityManager;
 import android.content.pm.ProviderInfo;
 import android.os.IBinder;
 import android.os.IInterface;
+
+import java.util.List;
 
 import mirror.MethodParams;
 import mirror.RefBoolean;
@@ -20,6 +23,13 @@ public class IActivityManager {
     public static RefMethod<Void> overridePendingTransition;
     public static RefMethod<Integer> startActivity;
     public static RefMethod<Integer> startActivities;
+    public static RefMethod<List<ActivityManager.RunningAppProcessInfo>> getRunningAppProcesses;
+
+    public static class Stub {
+        public static Class<?> TYPE = RefClass.load(Stub.class, "android.app.IActivityManager$Stub");
+        @MethodParams({IBinder.class})
+        public static mirror.RefStaticMethod<IInterface> asInterface;
+    }
 
     public static class ContentProviderHolder {
         public static Class<?> TYPE = RefClass.load(ContentProviderHolder.class, "android.app.IActivityManager$ContentProviderHolder");

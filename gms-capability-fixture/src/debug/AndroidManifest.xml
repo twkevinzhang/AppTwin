@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <application>
+        <activity
+            android:name=".MaliciousCrossUserActivity"
+            android:exported="false" />
+
+        <provider
+            android:name=".CrossUserFixtureProvider"
+            android:authorities="org.apptwin.gms.fixture.crossuser"
+            android:exported="false" />
+
+        <receiver
+            android:name=".FixtureControlReceiver"
+            android:exported="true"
+            android:permission="org.apptwin.gms.fixture.permission.TEST_CONTROL">
+            <intent-filter>
+                <action android:name="org.apptwin.gms.fixture.action.READ_RESULTS" />
+                <action android:name="org.apptwin.gms.fixture.action.RUN_LOCAL_PROBES" />
+            </intent-filter>
+        </receiver>
+    </application>
+</manifest>

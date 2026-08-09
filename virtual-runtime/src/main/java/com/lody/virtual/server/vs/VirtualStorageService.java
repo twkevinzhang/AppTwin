@@ -6,6 +6,7 @@ import android.util.SparseArray;
 import com.lody.virtual.server.IVirtualStorageService;
 import com.lody.virtual.server.pm.VUserManagerService;
 
+import java.io.IOException;
 import java.util.HashMap;
 
 /**
@@ -26,12 +27,22 @@ public class VirtualStorageService extends IVirtualStorageService.Stub {
         mLayer.read();
     }
 
+    /** Removes all virtual-storage mappings for one virtual user. */
+    public void clearUserState(int userId) throws IOException {
+        synchronized (mConfigs) {
+            mConfigs.remove(userId);
+            mLayer.saveAtomicallyOrThrow();
+        }
+    }
+
     SparseArray<HashMap<String, VSConfig>> getConfigs() {
         return mConfigs;
     }
 
     @Override
     public void setVirtualStorage(String packageName, int userId, String vsPath) throws RemoteException {
+        com.lody.virtual.server.VirtualUserAccessPolicy
+                .enforceCallerPackageOrHost(packageName, userId);
         checkUserId(userId);
         synchronized (mConfigs) {
             VSConfig config = getOrCreateVSConfigLocked(packageName, userId);
@@ -58,6 +69,8 @@ public class VirtualStorageService extends IVirtualStorageService.Stub {
 
     @Override
     public String getVirtualStorage(String packageName, int userId) throws RemoteException {
+        com.lody.virtual.server.VirtualUserAccessPolicy
+                .enforceCallerPackageOrHost(packageName, userId);
         checkUserId(userId);
         synchronized (mConfigs) {
             VSConfig config = getOrCreateVSConfigLocked(packageName, userId);
@@ -67,6 +80,8 @@ public class VirtualStorageService extends IVirtualStorageService.Stub {
 
     @Override
     public void setVirtualStorageState(String packageName, int userId, boolean enable) throws RemoteException {
+        com.lody.virtual.server.VirtualUserAccessPolicy
+                .enforceCallerPackageOrHost(packageName, userId);
         checkUserId(userId);
         synchronized (mConfigs) {
             VSConfig config = getOrCreateVSConfigLocked(packageName, userId);
@@ -78,6 +93,8 @@ public class VirtualStorageService extends IVirtualStorageService.Stub {
 
     @Override
     public boolean isVirtualStorageEnable(String packageName, int userId) throws RemoteException {
+        com.lody.virtual.server.VirtualUserAccessPolicy
+                .enforceCallerPackageOrHost(packageName, userId);
         checkUserId(userId);
         synchronized (mConfigs) {
             VSConfig config = getOrCreateVSConfigLocked(packageName, userId);

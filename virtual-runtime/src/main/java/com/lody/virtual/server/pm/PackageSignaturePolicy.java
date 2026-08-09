@@ -13,6 +13,10 @@ final class PackageSignaturePolicy {
         return isCompatible(toByteArrays(existing), toByteArrays(staged));
     }
 
+    static Signature[] signerForUpdate(com.lody.virtual.server.pm.parser.VPackage pkg) {
+        return pkg.mRealSignatures != null ? pkg.mRealSignatures : pkg.mSignatures;
+    }
+
     static boolean isCompatible(byte[][] existing, byte[][] staged) {
         if (existing == null || staged == null || existing.length == 0
                 || existing.length != staged.length) {

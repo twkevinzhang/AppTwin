@@ -21,6 +21,7 @@ import com.lody.virtual.helper.utils.FastXmlSerializer;
 import com.lody.virtual.helper.utils.VLog;
 import com.lody.virtual.os.VBinder;
 import com.lody.virtual.os.VEnvironment;
+import com.lody.virtual.os.VirtualExternalStorageLayout;
 import com.lody.virtual.os.VUserHandle;
 import com.lody.virtual.os.VUserInfo;
 import com.lody.virtual.os.VUserManager;
@@ -38,10 +39,16 @@ import java.io.FileInputStream;
 import java.io.FileNotFoundException;
 import java.io.FileOutputStream;
 import java.io.IOException;
+import java.nio.file.FileVisitResult;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.SimpleFileVisitor;
+import java.nio.file.attribute.BasicFileAttributes;
 import java.io.PrintWriter;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
+import java.security.SecureRandom;
 
 
 /**
@@ -62,6 +69,7 @@ public class VUserManagerService extends IUserManager.Stub {
     private static final String ATTR_SERIAL_NO = "serialNumber";
     private static final String ATTR_NEXT_SERIAL_NO = "nextSerialNumber";
     private static final String ATTR_PARTIAL = "partial";
+    private static final String ATTR_PENDING_INTENT_GENERATION = "pendingIntentGeneration";
     private static final String ATTR_USER_VERSION = "version";
     private static final String TAG_USERS = "users";
     private static final String TAG_USER = "user";
@@ -83,6 +91,10 @@ public class VUserManagerService extends IUserManager.Stub {
     private final File mUsersDir;
     private final File mUserListFile;
     private final File mBaseUserPath;
+    private final VirtualUserCleanupCoordinator mCleanupCoordinator;
+    private final PackagePendingIntentGenerationStore mPendingIntentGenerations =
+            new PackagePendingIntentGenerationStore(
+                    VEnvironment.getPackagePendingIntentGenerationFile());
     private SparseArray<VUserInfo> mUsers = new SparseArray<VUserInfo>();
     private HashSet<Integer> mRemovingUserIds = new HashSet<Integer>();
     private int[] mUserIds;
@@ -92,6 +104,7 @@ public class VUserManagerService extends IUserManager.Stub {
     // not reused in quick succession
     private int mNextUserId = MIN_USER_ID;
     private int mUserVersion = 0;
+    private static final SecureRandom GENERATION_RANDOM = new SecureRandom();
 
     /**
      * Called by package manager to create the service.  This is closely
@@ -115,6 +128,7 @@ public class VUserManagerService extends IUserManager.Stub {
         mPm = pm;
         mInstallLock = installLock;
         mPackagesLock = packagesLock;
+        mCleanupCoordinator = VirtualUserCleanupCoordinator.create(pm);
         synchronized (mInstallLock) {
             synchronized (mPackagesLock) {
                 mUsersDir = new File(dataDir, USER_INFO_DIR);
@@ -129,20 +143,6 @@ public class VUserManagerService extends IUserManager.Stub {
 //                        -1, -1);
                 mUserListFile = new File(mUsersDir, USER_LIST_FILENAME);
                 readUserListLocked();
-                // Prune out any partially created/partially removed users.
-                ArrayList<VUserInfo> partials = new ArrayList<VUserInfo>();
-                for (int i = 0; i < mUsers.size(); i++) {
-                    VUserInfo ui = mUsers.valueAt(i);
-                    if (ui.partial && i != 0) {
-                        partials.add(ui);
-                    }
-                }
-                for (int i = 0; i < partials.size(); i++) {
-                    VUserInfo ui = partials.get(i);
-                    VLog.w(LOG_TAG, "Removing partially created user #" + i
-                            + " (name=" + ui.name + ")");
-                    removeUserStateLocked(ui.id);
-                }
                 sInstance = this;
             }
         }
@@ -151,6 +151,27 @@ public class VUserManagerService extends IUserManager.Stub {
     public static VUserManagerService get() {
         synchronized (VUserManagerService.class) {
             return sInstance;
+        }
+    }
+
+    /** Called only after package settings and every user-scoped service have loaded durable state. */
+    public void recoverPartialUsers() {
+        synchronized (mInstallLock) {
+            synchronized (mPackagesLock) {
+                ArrayList<VUserInfo> partials = new ArrayList<>();
+                for (int i = 0; i < mUsers.size(); i++) {
+                    VUserInfo user = mUsers.valueAt(i);
+                    if (user.partial && user.id != 0) partials.add(user);
+                }
+                for (VUserInfo user : partials) {
+                    try {
+                        removeUserStateLocked(user.id);
+                    } catch (IllegalStateException failure) {
+                        // Keep the partial record durable. A later process restart retries it.
+                        VLog.e(LOG_TAG, "Partial virtual-user cleanup remains incomplete");
+                    }
+                }
+            }
         }
     }
 
@@ -171,6 +192,7 @@ public class VUserManagerService extends IUserManager.Stub {
 
     @Override
     public List<VUserInfo> getUsers(boolean excludeDying) {
+        com.lody.virtual.server.VirtualUserAccessPolicy.enforceHost();
         //checkManageUsersPermission("query users");
         synchronized (mPackagesLock) {
             ArrayList<VUserInfo> users = new ArrayList<VUserInfo>(mUsers.size());
@@ -189,6 +211,7 @@ public class VUserManagerService extends IUserManager.Stub {
 
     @Override
     public VUserInfo getUserInfo(int userId) {
+        com.lody.virtual.server.VirtualUserAccessPolicy.enforceCallerUserOrHost(userId);
         //checkManageUsersPermission("query user");
         synchronized (mPackagesLock) {
             return getUserInfoLocked(userId);
@@ -216,6 +239,7 @@ public class VUserManagerService extends IUserManager.Stub {
 
     @Override
     public void setUserName(int userId, String name) {
+        com.lody.virtual.server.VirtualUserAccessPolicy.enforceHost();
         checkManageUsersPermission("rename users");
         boolean changed = false;
         synchronized (mPackagesLock) {
@@ -237,6 +261,7 @@ public class VUserManagerService extends IUserManager.Stub {
 
     @Override
     public void setUserIcon(int userId, Bitmap bitmap) {
+        com.lody.virtual.server.VirtualUserAccessPolicy.enforceHost();
         checkManageUsersPermission("update users");
         synchronized (mPackagesLock) {
             VUserInfo info = mUsers.get(userId);
@@ -259,6 +284,7 @@ public class VUserManagerService extends IUserManager.Stub {
 
     @Override
     public Bitmap getUserIcon(int userId) {
+        com.lody.virtual.server.VirtualUserAccessPolicy.enforceCallerUserOrHost(userId);
         //checkManageUsersPermission("read users");
         synchronized (mPackagesLock) {
             VUserInfo info = mUsers.get(userId);
@@ -275,6 +301,7 @@ public class VUserManagerService extends IUserManager.Stub {
 
     @Override
     public boolean isGuestEnabled() {
+        com.lody.virtual.server.VirtualUserAccessPolicy.enforceHost();
         synchronized (mPackagesLock) {
             return mGuestEnabled;
         }
@@ -282,6 +309,7 @@ public class VUserManagerService extends IUserManager.Stub {
 
     @Override
     public void setGuestEnabled(boolean enable) {
+        com.lody.virtual.server.VirtualUserAccessPolicy.enforceHost();
         checkManageUsersPermission("enable guest users");
         synchronized (mPackagesLock) {
             if (mGuestEnabled != enable) {
@@ -306,6 +334,7 @@ public class VUserManagerService extends IUserManager.Stub {
 
     @Override
     public void wipeUser(int userHandle) {
+        com.lody.virtual.server.VirtualUserAccessPolicy.enforceHost();
         checkManageUsersPermission("wipe user");
         // TODO:
     }
@@ -424,8 +453,9 @@ public class VUserManagerService extends IUserManager.Stub {
                         if (user.isGuest()) {
                             mGuestEnabled = true;
                         }
-                        if (mNextSerialNumber < 0 || mNextSerialNumber <= user.id) {
-                            mNextSerialNumber = user.id + 1;
+                        if (mNextSerialNumber < 0
+                                || mNextSerialNumber <= user.serialNumber) {
+                            mNextSerialNumber = user.serialNumber + 1;
                         }
                     }
                 }
@@ -493,6 +523,14 @@ public class VUserManagerService extends IUserManager.Stub {
      * </user>
      */
     private void writeUserLocked(VUserInfo userInfo) {
+        try {
+            writeUserOrThrow(userInfo);
+        } catch (IOException failure) {
+            VLog.e(LOG_TAG, "Error writing user info " + userInfo.id);
+        }
+    }
+
+    private void writeUserOrThrow(VUserInfo userInfo) throws IOException {
         FileOutputStream fos = null;
         AtomicFile userFile = new AtomicFile(new File(mUsersDir, userInfo.id + ".xml"));
         try {
@@ -512,6 +550,8 @@ public class VUserManagerService extends IUserManager.Stub {
             serializer.attribute(null, ATTR_CREATION_TIME, Long.toString(userInfo.creationTime));
             serializer.attribute(null, ATTR_LAST_LOGGED_IN_TIME,
                     Long.toString(userInfo.lastLoggedInTime));
+            serializer.attribute(null, ATTR_PENDING_INTENT_GENERATION,
+                    Long.toString(userInfo.pendingIntentGeneration));
             if (userInfo.iconPath != null) {
                 serializer.attribute(null,  ATTR_ICON_PATH, userInfo.iconPath);
             }
@@ -528,8 +568,8 @@ public class VUserManagerService extends IUserManager.Stub {
             serializer.endDocument();
             userFile.finishWrite(fos);
         } catch (Exception ioe) {
-            VLog.e(LOG_TAG, "Error writing user info " + userInfo.id + "\n" + ioe);
             userFile.failWrite(fos);
+            throw new IOException("Unable to persist virtual user", ioe);
         }
     }
 
@@ -582,6 +622,7 @@ public class VUserManagerService extends IUserManager.Stub {
         String iconPath = null;
         long creationTime = 0L;
         long lastLoggedInTime = 0L;
+        long pendingIntentGeneration = 0L;
         boolean partial = false;
 
         FileInputStream fis = null;
@@ -613,6 +654,8 @@ public class VUserManagerService extends IUserManager.Stub {
                 iconPath = parser.getAttributeValue(null, ATTR_ICON_PATH);
                 creationTime = readLongAttribute(parser, ATTR_CREATION_TIME, 0);
                 lastLoggedInTime = readLongAttribute(parser, ATTR_LAST_LOGGED_IN_TIME, 0);
+                pendingIntentGeneration = readLongAttribute(
+                        parser, ATTR_PENDING_INTENT_GENERATION, 0);
                 String valueString = parser.getAttributeValue(null, ATTR_PARTIAL);
                 if ("true".equals(valueString)) {
                     partial = true;
@@ -633,6 +676,8 @@ public class VUserManagerService extends IUserManager.Stub {
             userInfo.serialNumber = serialNumber;
             userInfo.creationTime = creationTime;
             userInfo.lastLoggedInTime = lastLoggedInTime;
+            userInfo.pendingIntentGeneration = pendingIntentGeneration != 0L
+                    ? pendingIntentGeneration : nextPendingIntentGeneration();
             userInfo.partial = partial;
             return userInfo;
 
@@ -671,6 +716,7 @@ public class VUserManagerService extends IUserManager.Stub {
 
     @Override
     public VUserInfo createUser(String name, int flags) {
+        com.lody.virtual.server.VirtualUserAccessPolicy.enforceHost();
         checkManageUsersPermission("Only the system can create users");
 
         final long ident = Binder.clearCallingIdentity();
@@ -683,6 +729,7 @@ public class VUserManagerService extends IUserManager.Stub {
                     userInfo = new VUserInfo(userId, name, null, flags);
                     File userPath = new File(mBaseUserPath, Integer.toString(userId));
                     userInfo.serialNumber = mNextSerialNumber++;
+                    userInfo.pendingIntentGeneration = nextPendingIntentGeneration();
                     long now = System.currentTimeMillis();
                     userInfo.creationTime = (now > EPOCH_PLUS_30_YEARS) ? now : 0;
                     userInfo.partial = true;
@@ -712,6 +759,7 @@ public class VUserManagerService extends IUserManager.Stub {
      * @param userHandle the user's id
      */
     public boolean removeUser(int userHandle) {
+        com.lody.virtual.server.VirtualUserAccessPolicy.enforceHost();
         checkManageUsersPermission("Only the system can remove users");
         final VUserInfo user;
         synchronized (mPackagesLock) {
@@ -776,8 +824,28 @@ public class VUserManagerService extends IUserManager.Stub {
     }
 
     private void removeUserStateLocked(int userHandle) {
-        // Cleanup package manager settings
-        mPm.cleanUpUser(userHandle);
+        // This must finish before the numeric id becomes reusable. A failure deliberately leaves
+        // the partial user record in place so startup recovery retries the full idempotent cleanup.
+        mCleanupCoordinator.clearUserState(userHandle);
+        try {
+            mPendingIntentGenerations.clearUser(userHandle);
+        } catch (IOException generationFailure) {
+            throw new IllegalStateException("PendingIntent generation cleanup is incomplete");
+        }
+
+        try {
+            removeDirectoryRecursiveOrThrow(VEnvironment.getUserSystemDirectory(userHandle));
+            removeDirectoryRecursiveOrThrow(VEnvironment.getDeUserSystemDirectory(userHandle));
+            File externalFiles = requireExternalFilesRoot(mContext.getExternalFilesDir(null));
+            removeDirectoryRecursiveOrThrow(
+                    VirtualExternalStorageLayout.sharedStorageForUser(
+                            externalFiles, userHandle));
+            removeDirectoryRecursiveOrThrow(
+                    VirtualExternalStorageLayout.privateStorageForUser(
+                            externalFiles, userHandle));
+        } catch (IOException cleanupFailure) {
+            throw new IllegalStateException("Virtual-user filesystem cleanup is incomplete");
+        }
 
         // Remove this user from the list
         mUsers.remove(userHandle);
@@ -788,22 +856,82 @@ public class VUserManagerService extends IUserManager.Stub {
         // Update the user list
         writeUserListLocked();
         updateUserIdsLocked();
-        removeDirectoryRecursive(VEnvironment.getUserSystemDirectory(userHandle));
     }
 
-    private void removeDirectoryRecursive(File parent) {
-        if (parent.isDirectory()) {
-            String[] files = parent.list();
-            for (String filename : files) {
-                File child = new File(parent, filename);
-                removeDirectoryRecursive(child);
+    @android.annotation.SuppressLint("NewApi") // AppTwin's production app minSdk is 26.
+    static void removeDirectoryRecursiveOrThrow(File target) throws IOException {
+        if (target == null) return;
+        Path root = target.toPath();
+        if (!Files.exists(root, java.nio.file.LinkOption.NOFOLLOW_LINKS)) return;
+        // walkFileTree does not follow symbolic links unless FOLLOW_LINKS is explicitly requested.
+        // A link (including a dangling link) is visited/deleted as a file, never enumerated.
+        Files.walkFileTree(root, new SimpleFileVisitor<Path>() {
+            @Override
+            public FileVisitResult visitFile(Path file, BasicFileAttributes attributes)
+                    throws IOException {
+                Files.delete(file);
+                return FileVisitResult.CONTINUE;
             }
+
+            @Override
+            public FileVisitResult visitFileFailed(Path file, IOException failure)
+                    throws IOException {
+                throw failure;
+            }
+
+            @Override
+            public FileVisitResult postVisitDirectory(Path directory, IOException failure)
+                    throws IOException {
+                if (failure != null) throw failure;
+                Files.delete(directory);
+                return FileVisitResult.CONTINUE;
+            }
+        });
+    }
+
+    static File requireExternalFilesRoot(File externalFiles) throws IOException {
+        if (externalFiles == null) throw new IOException("External user state is unavailable");
+        return externalFiles;
+    }
+
+    @Override
+    public synchronized long getPackagePendingIntentGeneration(String packageName, int userId) {
+        if (packageName == null || packageName.isEmpty() || mUsers.get(userId) == null) return 0L;
+        int callingVuid = VBinder.getCallingUid();
+        if (!PendingIntentGenerationAccessPolicy.canRead(
+                callingVuid,
+                VirtualCore.get().myUid(),
+                packageName,
+                userId,
+                VPackageManagerService.get().getPackagesForUid(callingVuid))) {
+            return 0L;
         }
-        parent.delete();
+        try {
+            return mPendingIntentGenerations.currentOrCreate(packageName, userId);
+        } catch (IOException failure) {
+            return 0L;
+        }
+    }
+
+    synchronized long bumpPackagePendingIntentGenerationOrThrow(
+            String packageName, int userId) throws IOException {
+        if (packageName == null || packageName.isEmpty() || mUsers.get(userId) == null) {
+            throw new IOException("Virtual package user is unavailable");
+        }
+        return mPendingIntentGenerations.bump(packageName, userId);
+    }
+
+    private static long nextPendingIntentGeneration() {
+        long value;
+        do {
+            value = GENERATION_RANDOM.nextLong();
+        } while (value == 0L);
+        return value;
     }
 
     @Override
     public int getUserSerialNumber(int userHandle) {
+        com.lody.virtual.server.VirtualUserAccessPolicy.enforceCallerUserOrHost(userHandle);
         synchronized (mPackagesLock) {
             if (!exists(userHandle)) return -1;
             return getUserInfoLocked(userHandle).serialNumber;
@@ -812,6 +940,7 @@ public class VUserManagerService extends IUserManager.Stub {
 
     @Override
     public int getUserHandle(int userSerialNumber) {
+        com.lody.virtual.server.VirtualUserAccessPolicy.enforceHost();
         synchronized (mPackagesLock) {
             for (int userId : mUserIds) {
                 if (getUserInfoLocked(userId).serialNumber == userSerialNumber) return userId;

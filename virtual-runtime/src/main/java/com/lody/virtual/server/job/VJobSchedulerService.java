@@ -16,13 +16,14 @@ import android.text.TextUtils;
 import com.lody.virtual.client.core.VirtualCore;
 import com.lody.virtual.client.ipc.VJobScheduler;
 import com.lody.virtual.client.stub.VASettings;
+import com.lody.virtual.helper.utils.AtomicFile;
 import com.lody.virtual.helper.utils.Singleton;
 import com.lody.virtual.os.VBinder;
 import com.lody.virtual.os.VEnvironment;
+import com.lody.virtual.os.VUserHandle;
 import com.lody.virtual.server.IJobScheduler;
 
 import java.io.File;
-import java.io.FileInputStream;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.util.HashMap;
@@ -184,16 +185,27 @@ public class VJobSchedulerService extends IJobScheduler.Stub {
         int vuid = VBinder.getCallingUid();
         int id = job.getId();
         ComponentName service = job.getService();
-        JobId jobId = new JobId(vuid, service.getPackageName(), id);
-        JobConfig config = mJobStore.get(jobId);
-        if (config == null) {
-            config = new JobConfig(mGlobalJobId++, service.getClassName(), job.getExtras());
-            mJobStore.put(jobId, config);
-        } else {
-            config.serviceName = service.getClassName();
-            config.extras = job.getExtras();
+        if (service == null) throw new SecurityException("Job service is required");
+        int userId = com.lody.virtual.os.VUserHandle.getUserId(vuid);
+        com.lody.virtual.server.VirtualUserAccessPolicy
+                .enforceCallerPackageOrHost(service.getPackageName(), userId);
+        if (com.lody.virtual.server.pm.VPackageManagerService.get().getServiceInfo(
+                service, 0, userId) == null) {
+            throw new SecurityException("Job service is not installed for caller");
         }
-        saveJobs();
+        JobId jobId = new JobId(vuid, service.getPackageName(), id);
+        JobConfig config;
+        synchronized (mJobStore) {
+            config = mJobStore.get(jobId);
+            if (config == null) {
+                config = new JobConfig(mGlobalJobId++, service.getClassName(), job.getExtras());
+                mJobStore.put(jobId, config);
+            } else {
+                config.serviceName = service.getClassName();
+                config.extras = job.getExtras();
+            }
+            saveJobs();
+        }
         mirror.android.app.job.JobInfo.jobId.set(job, config.virtualJobId);
         mirror.android.app.job.JobInfo.service.set(job, mJobProxyComponent);
         return mScheduler.schedule(job);
@@ -201,7 +213,9 @@ public class VJobSchedulerService extends IJobScheduler.Stub {
 
     private void saveJobs() {
         File jobFile = VEnvironment.getJobConfigFile();
+        AtomicFile atomicFile = new AtomicFile(jobFile);
         Parcel p = Parcel.obtain();
+        FileOutputStream fos = null;
         try {
             p.writeInt(JOB_FILE_VERSION);
             p.writeInt(mJobStore.size());
@@ -209,11 +223,13 @@ public class VJobSchedulerService extends IJobScheduler.Stub {
                 entry.getKey().writeToParcel(p, 0);
                 entry.getValue().writeToParcel(p, 0);
             }
-            FileOutputStream fos = new FileOutputStream(jobFile);
+            fos = atomicFile.startWrite();
             fos.write(p.marshall());
-            fos.close();
+            atomicFile.finishWrite(fos);
+            fos = null;
         } catch (Exception e) {
-            e.printStackTrace();
+            atomicFile.failWrite(fos);
+            throw new IllegalStateException("Unable to persist virtual job state", e);
         } finally {
             p.recycle();
         }
@@ -226,31 +242,39 @@ public class VJobSchedulerService extends IJobScheduler.Stub {
         }
         Parcel p = Parcel.obtain();
         try {
-            FileInputStream fis = new FileInputStream(jobFile);
-            byte[] bytes = new byte[(int) jobFile.length()];
-            int len = fis.read(bytes);
-            fis.close();
-            if (len != bytes.length) {
-                throw new IOException("Unable to read job config.");
-            }
+            byte[] bytes = new AtomicFile(jobFile).readFully();
             p.unmarshall(bytes, 0, bytes.length);
             p.setDataPosition(0);
             int version = p.readInt();
             if (version != JOB_FILE_VERSION) {
                 throw new IOException("Bad version of job file: " + version);
             }
-            if (!mJobStore.isEmpty()) {
-                mJobStore.clear();
-            }
+            Map<JobId, JobConfig> loadedJobs = new HashMap<>();
+            int nextGlobalJobId = 0;
             int count = p.readInt();
+            if (count < 0 || count > 100_000) {
+                throw new IOException("Invalid virtual job count");
+            }
             for (int i = 0; i < count; i++) {
                 JobId jobId = new JobId(p);
                 JobConfig config = new JobConfig(p);
-                mJobStore.put(jobId, config);
-                mGlobalJobId = Math.max(mGlobalJobId, config.virtualJobId);
+                loadedJobs.put(jobId, config);
+                nextGlobalJobId = Math.max(nextGlobalJobId, config.virtualJobId + 1);
+            }
+            if (p.dataAvail() != 0) {
+                throw new IOException("Trailing virtual job state data");
+            }
+            synchronized (mJobStore) {
+                mJobStore.clear();
+                mJobStore.putAll(loadedJobs);
+                mGlobalJobId = nextGlobalJobId;
             }
         } catch (Exception e) {
-            e.printStackTrace();
+            synchronized (mJobStore) {
+                mJobStore.clear();
+                mGlobalJobId = 0;
+            }
+            new AtomicFile(jobFile).delete();
         } finally {
             p.recycle();
         }
@@ -284,23 +308,73 @@ public class VJobSchedulerService extends IJobScheduler.Stub {
     public void cancelAll() throws RemoteException {
         int vuid = VBinder.getCallingUid();
         synchronized (mJobStore) {
-            boolean changed = false;
-            Iterator<Map.Entry<JobId, JobConfig>> iterator = mJobStore.entrySet().iterator();
-            while (iterator.hasNext()) {
-                Map.Entry<JobId, JobConfig> entry = iterator.next();
-                JobId job = entry.getKey();
-                if (job.vuid == vuid) {
-                    JobConfig config = entry.getValue();
-                    mScheduler.cancel(config.virtualJobId);
-                    changed = true;
-                    iterator.remove();
-                    break;
-                }
-            }
+            boolean changed = removeMatchingJobs(
+                    mJobStore, job -> job.vuid == vuid, mScheduler::cancel);
             if (changed) {
                 saveJobs();
             }
         }
+    }
+
+    /** Removes every persisted and platform-scheduled job owned by one virtual user. */
+    public void clearUserState(int userId) {
+        synchronized (mJobStore) {
+            removeMatchingJobs(
+                    mJobStore,
+                    job -> VUserHandle.getUserId(job.vuid) == userId,
+                    mScheduler::cancel);
+            // Always rewrite. A previous atomic write may have failed after the in-memory entries
+            // were removed; an idempotent retry must still erase the durable records.
+            saveJobs();
+        }
+    }
+
+    /** Cancels durable jobs for one package binding without affecting the user's other apps. */
+    public void clearPackageState(String packageName, int userId) {
+        synchronized (mJobStore) {
+            removeMatchingJobs(
+                    mJobStore,
+                    job -> VUserHandle.getUserId(job.vuid) == userId
+                            && TextUtils.equals(job.packageName, packageName),
+                    mScheduler::cancel);
+            // Rewrite even when already empty so retry after a failed atomic write converges.
+            saveJobs();
+        }
+    }
+
+    public boolean hasPackageState(String packageName, int userId) {
+        synchronized (mJobStore) {
+            for (JobId job : mJobStore.keySet()) {
+                if (VUserHandle.getUserId(job.vuid) == userId
+                        && TextUtils.equals(job.packageName, packageName)) {
+                    return true;
+                }
+            }
+            return false;
+        }
+    }
+
+    interface JobMatcher {
+        boolean matches(JobId jobId);
+    }
+
+    interface JobCanceller {
+        void cancel(int virtualJobId);
+    }
+
+    static boolean removeMatchingJobs(Map<JobId, JobConfig> jobs, JobMatcher matcher,
+                                      JobCanceller canceller) {
+        boolean changed = false;
+        Iterator<Map.Entry<JobId, JobConfig>> iterator = jobs.entrySet().iterator();
+        while (iterator.hasNext()) {
+            Map.Entry<JobId, JobConfig> entry = iterator.next();
+            if (matcher.matches(entry.getKey())) {
+                canceller.cancel(entry.getValue().virtualJobId);
+                iterator.remove();
+                changed = true;
+            }
+        }
+        return changed;
     }
 
     @Override
@@ -336,7 +410,7 @@ public class VJobSchedulerService extends IJobScheduler.Stub {
 
     @Override
     public int enqueue(JobInfo job, JobWorkItem work) throws RemoteException {
-        return 0;
+        return schedule(job);
     }
 
     @Override

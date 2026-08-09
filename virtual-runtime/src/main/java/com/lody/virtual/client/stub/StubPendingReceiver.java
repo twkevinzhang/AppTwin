@@ -17,7 +17,7 @@ public class StubPendingReceiver extends BroadcastReceiver {
     public void onReceive(Context context, Intent intent) {
                 Intent realIntent = intent.getParcelableExtra("_VA_|_intent_");
         int userId = intent.getIntExtra("_VA_|_user_id_", VUserHandle.USER_ALL);
-        if (realIntent != null) {
+        if (realIntent != null && PendingIntentUserGeneration.isCurrent(intent, userId)) {
             Intent newIntent = ComponentUtils.redirectBroadcastIntent(realIntent, userId);
             if (newIntent != null) {
                 context.sendBroadcast(newIntent);

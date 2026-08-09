@@ -25,6 +25,9 @@ import org.apptwin.groups.GroupStoreLoadIssue
 import org.apptwin.revision.InstalledAppEntry
 import org.apptwin.repair.RepairExecutionResult
 import org.apptwin.runtime.RuntimeLaunchResult
+import org.apptwin.gms.GmsStartupResult
+import org.apptwin.gms.usecases.GmsLifecycleResult
+import org.apptwin.gms.usecases.GmsReconciliationResult
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -249,6 +252,43 @@ class MainViewModelLifecycleTest {
         assertEquals(1, operations.refreshCalls)
     }
 
+    @Test
+    fun `GMS consent and enable action run through operations then refresh`() = runTest {
+        val dispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(dispatcher)
+        val operations = FakeOperations(groups = listOf(group()))
+        val viewModel = viewModel(SavedStateHandle(), operations, dispatcher)
+        advanceUntilIdle()
+
+        viewModel.enableGms(GROUP_ID, grantConsent = true)
+        advanceUntilIdle()
+
+        assertEquals(listOf(GROUP_ID), operations.gmsConsentGroups)
+        assertEquals(listOf(GROUP_ID), operations.gmsEnableGroups)
+        assertEquals(null, viewModel.uiState.gmsBusyGroupId)
+        assertTrue(viewModel.uiState.message.orEmpty().contains("沒有可用且受信任"))
+        assertEquals(2, operations.refreshCalls)
+    }
+
+    @Test
+    fun `corrupt GMS startup state becomes warning without losing the space snapshot`() = runTest {
+        val dispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(dispatcher)
+        val operations = FakeOperations(
+            groups = listOf(group()),
+            gmsReconcileError = IllegalStateException("corrupt GMS profile"),
+            refreshWarnings = listOf("Group $GROUP_ID/data/gms/profile.properties 無法讀取"),
+        )
+
+        val viewModel = viewModel(SavedStateHandle(), operations, dispatcher)
+        advanceUntilIdle()
+
+        assertFalse(viewModel.uiState.isRefreshing)
+        assertEquals(listOf(GROUP_ID), viewModel.uiState.groups.map(GroupItem::groupId))
+        assertEquals(1, viewModel.uiState.dataWarnings.size)
+        assertTrue(viewModel.uiState.message.orEmpty().contains("資料完整性問題"))
+    }
+
     private fun viewModel(
         savedState: SavedStateHandle,
         operations: MainOperations,
@@ -263,11 +303,15 @@ class MainViewModelLifecycleTest {
         private val findGroupGate: CompletableDeferred<Unit>? = null,
         private val diagnostics: String? = null,
         private val deepLinkCandidates: List<Pair<String, String>>? = null,
+        private val gmsReconcileError: Throwable? = null,
+        private val refreshWarnings: List<String> = emptyList(),
     ) : MainOperations {
         var reconcileStarted = false
         var refreshCalls = 0
         var refreshRanOnIoDispatcher = false
         var refreshRanOnMainDispatcher = false
+        val gmsConsentGroups = mutableListOf<String>()
+        val gmsEnableGroups = mutableListOf<String>()
 
         override suspend fun refreshSnapshot(): MainRefreshSnapshot {
             refreshCalls++
@@ -279,7 +323,7 @@ class MainViewModelLifecycleTest {
                 entries = emptyList<InstalledAppEntry>(),
                 groups = groups,
                 activeRevisions = emptyMap(),
-                dataWarnings = loadIssues.map { "corrupt metadata" },
+                dataWarnings = loadIssues.map { "corrupt metadata" } + refreshWarnings,
             )
         }
 
@@ -320,6 +364,35 @@ class MainViewModelLifecycleTest {
 
         override suspend fun reconcileAppRemovals() = Unit
         override suspend fun reconcileApplicationOperations() = Unit
+        override suspend fun reconcileGms(): GmsStartupResult {
+            gmsReconcileError?.let { throw it }
+            return GmsStartupResult(
+                reconciliation = GmsReconciliationResult(
+                    completed = emptyList(),
+                    retainedForRetry = emptyList(),
+                    terminalFailures = emptyList(),
+                    releaseMismatches = emptyList(),
+                ),
+                profiles = emptyList(),
+            )
+        }
+        override suspend fun grantGmsConsent(groupId: String) {
+            gmsConsentGroups += groupId
+        }
+        override suspend fun enableGms(groupId: String): GmsLifecycleResult {
+            gmsEnableGroups += groupId
+            return GmsLifecycleResult.TrustedReleaseUnavailable
+        }
+        override suspend fun disableGms(groupId: String): GmsLifecycleResult =
+            GmsLifecycleResult.AlreadySatisfied(
+                org.apptwin.gms.model.GmsProfile.disabled(
+                    org.apptwin.gms.model.GmsGroupId(groupId),
+                ),
+            )
+        override suspend fun resetGms(
+            groupId: String,
+            reenable: Boolean,
+        ): GmsLifecycleResult = GmsLifecycleResult.TrustedReleaseUnavailable
     }
 
     private class FakeOnboardingStore : OnboardingStore {

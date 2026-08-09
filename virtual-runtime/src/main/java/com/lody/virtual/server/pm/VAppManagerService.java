@@ -5,6 +5,7 @@ import android.net.Uri;
 import android.os.Build;
 import android.os.RemoteCallbackList;
 import android.os.RemoteException;
+import android.text.TextUtils;
 
 import com.lody.virtual.client.core.InstallStrategy;
 import com.lody.virtual.client.core.VirtualCore;
@@ -14,6 +15,7 @@ import com.lody.virtual.helper.utils.ArrayUtils;
 import com.lody.virtual.helper.utils.FileUtils;
 import com.lody.virtual.helper.utils.VLog;
 import com.lody.virtual.os.VEnvironment;
+import com.lody.virtual.os.VBinder;
 import com.lody.virtual.os.VUserHandle;
 import com.lody.virtual.remote.InstallResult;
 import com.lody.virtual.remote.InstalledAppInfo;
@@ -22,12 +24,15 @@ import com.lody.virtual.server.accounts.VAccountManagerService;
 import com.lody.virtual.server.am.BroadcastSystem;
 import com.lody.virtual.server.am.UidSystem;
 import com.lody.virtual.server.am.VActivityManagerService;
+import com.lody.virtual.server.job.VJobSchedulerService;
+import com.lody.virtual.server.notification.VNotificationManagerService;
 import com.lody.virtual.server.interfaces.IAppRequestListener;
 import com.lody.virtual.server.interfaces.IPackageObserver;
 import com.lody.virtual.server.pm.parser.PackageParserEx;
 import com.lody.virtual.server.pm.parser.VPackage;
 
 import java.io.File;
+import java.io.FileOutputStream;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.HashSet;
@@ -48,6 +53,7 @@ public class VAppManagerService extends IAppManager.Stub {
     private boolean mBooting;
     private RemoteCallbackList<IPackageObserver> mRemoteCallbackList = new RemoteCallbackList<>();
     private IAppRequestListener mAppRequestListener;
+    private boolean mTrustedQuarantineWriteFailed;
 
     public static VAppManagerService get() {
         return sService.get();
@@ -72,8 +78,18 @@ public class VAppManagerService extends IAppManager.Stub {
         return mBooting;
     }
 
+    synchronized void removeUserFromPackageSettingsOrThrow(int userId) throws IOException {
+        for (VPackage pkg : PackageCacheManager.PACKAGE_CACHE.values()) {
+            PackageSetting setting = (PackageSetting) pkg.mExtras;
+            setting.removeUser(userId);
+        }
+        // Persist even when every in-memory state was already removed by an earlier failed attempt.
+        mPersistenceLayer.saveOrThrow();
+    }
+
     @Override
     public void scanApps() {
+        com.lody.virtual.server.VirtualUserAccessPolicy.enforceHost();
         if (mBooting) {
             return;
         }
@@ -107,6 +123,12 @@ public class VAppManagerService extends IAppManager.Stub {
     }
 
     private boolean loadPackageInnerLocked(PackageSetting ps) {
+        if (com.lody.virtual.server.pm.parser.TrustedSignatureOverridePolicy
+                .isTrustedPackage(ps.packageName) && ps.trustedPackageProvenance == null) {
+            markTrustedPackageQuarantine(ps);
+            VLog.e(TAG, "Rejecting legacy Google services package without trusted provenance");
+            return false;
+        }
         if (ps.dependSystem) {
             if (!VirtualCore.get().isOutsideInstalled(ps.packageName)) {
                 return false;
@@ -122,6 +144,12 @@ public class VAppManagerService extends IAppManager.Stub {
         if (pkg == null || pkg.packageName == null) {
             return false;
         }
+        pkg.trustedPackageProvenance = ps.trustedPackageProvenance;
+        PackageParserEx.readSignature(pkg, new File(ps.apkPath), ps.trustedPackageProvenance);
+        if (pkg.mSignatures == null || pkg.mRealSignatures == null) {
+            VLog.e(TAG, "Rejecting package whose activated signer cannot be verified");
+            return false;
+        }
         chmodPackageDictionary(cacheFile);
         PackageCacheManager.put(pkg, ps);
         BroadcastSystem.get().startApp(pkg);
@@ -135,6 +163,7 @@ public class VAppManagerService extends IAppManager.Stub {
 
     @Override
     public void addVisibleOutsidePackage(String pkg) {
+        com.lody.virtual.server.VirtualUserAccessPolicy.enforceHost();
         if (pkg != null) {
             mVisibleOutsidePackages.add(pkg);
         }
@@ -142,6 +171,7 @@ public class VAppManagerService extends IAppManager.Stub {
 
     @Override
     public void removeVisibleOutsidePackage(String pkg) {
+        com.lody.virtual.server.VirtualUserAccessPolicy.enforceHost();
         if (pkg != null) {
             mVisibleOutsidePackages.remove(pkg);
         }
@@ -149,10 +179,12 @@ public class VAppManagerService extends IAppManager.Stub {
 
     @Override
     public InstallResult installPackage(String path, int flags) {
+        com.lody.virtual.server.VirtualUserAccessPolicy.enforceHost();
         return installPackage(path, flags, true);
     }
 
     public synchronized InstallResult installPackage(String path, int flags, boolean notify) {
+        com.lody.virtual.server.VirtualUserAccessPolicy.enforceHost();
         return installPackageTransactional(
                 path, flags, notify, PackageInstallScope.GLOBAL_USER_ID);
     }
@@ -162,16 +194,228 @@ public class VAppManagerService extends IAppManager.Stub {
      * Existing users keep their installed state when the shared code is updated.
      */
     public synchronized InstallResult installPackageForUser(String path, int flags, int userId) {
+        com.lody.virtual.server.VirtualUserAccessPolicy.enforceHost();
         if (!VUserManagerService.get().exists(userId)) {
             return InstallResult.makeFailure("User " + userId + " does not exist.");
         }
 
-        return installPackageTransactional(path, flags, true, userId);
+        return installPackageTransactional(path, flags, true, userId, null);
+    }
+
+    @Override
+    public synchronized InstallResult installTrustedPackageForUser(
+            String path,
+            int flags,
+            int userId,
+            com.lody.virtual.remote.TrustedPackageProvenance provenance) {
+        enforceTrustedGmsHostCaller();
+        if (mTrustedQuarantineWriteFailed || hasTrustedPackageQuarantine()) {
+            return InstallResult.makeFailure("Trusted package quarantine is incomplete.");
+        }
+        if (!VUserManagerService.get().exists(userId)) {
+            return InstallResult.makeFailure("User " + userId + " does not exist.");
+        }
+        if (provenance == null) {
+            return InstallResult.makeFailure("Trusted provenance is required.");
+        }
+        return installPackageTransactional(path, flags, true, userId, provenance);
+    }
+
+    private void markTrustedPackageQuarantine(PackageSetting setting) {
+        for (int userId : VUserManagerService.get().getUserIds()) {
+            // Legacy fake-signature provenance cannot prove which virtual users previously owned
+            // authenticator-only residual state. Quarantine every active user fail-closed; the
+            // product explicitly does not preserve compatibility with these unsafe installs.
+            File marker = trustedQuarantineMarker(setting.packageName, userId);
+            try (FileOutputStream output = new FileOutputStream(marker)) {
+                output.write(1);
+                output.getFD().sync();
+                PackageInstallTransaction.syncDirectory(marker.getParentFile());
+            } catch (IOException failure) {
+                mTrustedQuarantineWriteFailed = true;
+            }
+        }
+    }
+
+    private File trustedQuarantineMarker(String packageName, int userId) {
+        return new File(VEnvironment.getTrustedPackageQuarantineDirectory(),
+                packageName.replace('.', '_') + "-" + userId);
+    }
+
+    private boolean hasTrustedPackageQuarantine() {
+        File[] markers = VEnvironment.getTrustedPackageQuarantineDirectory().listFiles();
+        return markers == null || markers.length > 0;
+    }
+
+    /** Completes legacy trusted-package purge after AccountManager and all ownership services load. */
+    public synchronized void completeTrustedPackageQuarantine() {
+        File directory = VEnvironment.getTrustedPackageQuarantineDirectory();
+        File[] markers = directory.listFiles();
+        if (markers == null) {
+            mTrustedQuarantineWriteFailed = true;
+            return;
+        }
+        for (File marker : markers) {
+            String name = marker.getName();
+            int separator = name.lastIndexOf('-');
+            if (separator < 0) continue;
+            int userId;
+            try {
+                userId = Integer.parseInt(name.substring(separator + 1));
+            } catch (NumberFormatException malformed) {
+                continue;
+            }
+            String packageName = name.substring(0, separator).replace('_', '.');
+            if (!com.lody.virtual.server.pm.parser.TrustedSignatureOverridePolicy
+                    .isTrustedPackage(packageName)) continue;
+            try {
+                // No compatibility is promised for legacy generic-spoof installs. Clear only the
+                // fixed trusted package account types; unrelated clone authenticators must survive.
+                boolean gmsCore = com.lody.virtual.server.pm.parser
+                        .TrustedSignatureOverridePolicy.TRUSTED_PACKAGE.equals(packageName);
+                if (!VAccountManagerService.get()
+                        .clearPackageState(packageName, userId, gmsCore)) continue;
+                VJobSchedulerService.get().clearPackageState(packageName, userId);
+                VNotificationManagerService.getOrCreate(VirtualCore.get().getContext())
+                        .clearPackageState(packageName, userId);
+                VActivityManagerService.get().clearPendingIntentState(packageName, userId);
+                if (!VPackageManagerService.get()
+                        .clearRuntimePermissionsInternal(packageName, userId)) continue;
+                deletePackageDataOrThrow(packageName, userId);
+                VUserManagerService.get().bumpPackagePendingIntentGenerationOrThrow(
+                        packageName, userId);
+                if (hasPackageDataState(packageName, userId)) continue;
+                if (!marker.delete()) continue;
+                PackageInstallTransaction.syncDirectory(marker.getParentFile());
+            } catch (Throwable incomplete) {
+                // Marker remains durable and installTrusted continues to reject.
+            }
+        }
+        mTrustedQuarantineWriteFailed = false;
+    }
+
+    /**
+     * Suspends the one trusted GmsCore binding while preserving CE/DE/private data and permissions.
+     * This is intentionally package-fixed so it cannot become a generic host uninstall primitive.
+     */
+    @Override
+    public synchronized boolean suspendTrustedGmsPackageForUser(int userId) {
+        enforceTrustedGmsHostCaller();
+        if (userId <= 0 || !VUserManagerService.get().exists(userId)) return false;
+        return suspendTrustedPackageForUser(
+                com.lody.virtual.server.pm.parser.TrustedSignatureOverridePolicy
+                        .TRUSTED_COMPANION_PACKAGE,
+                userId)
+                && suspendTrustedPackageForUser(
+                com.lody.virtual.server.pm.parser.TrustedSignatureOverridePolicy.TRUSTED_PACKAGE,
+                userId);
+    }
+
+    private boolean suspendTrustedPackageForUser(final String packageName, final int userId) {
+        PackageSetting setting = PackageCacheManager.getSetting(packageName);
+        if (setting == null) return true;
+        if (setting.trustedPackageProvenance == null) return false;
+        try {
+            // Persist the revocation before cancelling in-memory tokens. A crash immediately after
+            // this point leaves every old host PendingIntent harmless on the next dispatch.
+            VUserManagerService.get().bumpPackagePendingIntentGenerationOrThrow(
+                    packageName, userId);
+        } catch (IOException epochFailure) {
+            return false;
+        }
+
+        final VActivityManagerService activityManager = VActivityManagerService.get();
+        final boolean wasInstalled = setting.isInstalled(userId);
+        boolean suspended = TrustedGmsSuspensionCoordinator.suspend(
+                new TrustedGmsSuspensionCoordinator.Operations() {
+                    @Override
+                    public void killProcesses() {
+                        activityManager.killAppByPkg(packageName, userId);
+                    }
+
+                    @Override
+                    public void clearJobs() {
+                        VJobSchedulerService.get().clearPackageState(packageName, userId);
+                    }
+
+                    @Override
+                    public void clearNotifications() throws IOException {
+                        VNotificationManagerService.getOrCreate(VirtualCore.get().getContext())
+                                .clearPackageState(packageName, userId);
+                    }
+
+                    @Override
+                    public void clearPendingIntents() {
+                        activityManager.clearPendingIntentState(packageName, userId);
+                    }
+
+                    @Override
+                    public boolean isInstalled() {
+                        return setting.isInstalled(userId);
+                    }
+
+                    @Override
+                    public void commitUnbind() throws IOException {
+                        EqualVersionUserBinding.unbind(
+                                installedStateAccessor(setting),
+                                userId,
+                                mPersistenceLayer::saveOrThrow);
+                    }
+
+                    @Override
+                    public boolean hasBackgroundOwnership() {
+                        return hasPackageBackgroundState(packageName, userId);
+                    }
+                });
+        if (!suspended) {
+            VLog.e(TAG, "Unable to suspend trusted GmsCore for user %d", userId);
+            return false;
+        }
+        if (wasInstalled) notifyAppUninstalled(setting, userId);
+        return true;
+    }
+
+    @Override
+    public boolean hasTrustedGmsBackgroundStateForUser(int userId) {
+        enforceTrustedGmsHostCaller();
+        if (userId <= 0 || !VUserManagerService.get().exists(userId)) return true;
+        try {
+            for (String packageName : new String[]{
+                    com.lody.virtual.server.pm.parser.TrustedSignatureOverridePolicy.TRUSTED_PACKAGE,
+                    com.lody.virtual.server.pm.parser.TrustedSignatureOverridePolicy
+                            .TRUSTED_COMPANION_PACKAGE}) {
+                if (hasPackageBackgroundState(packageName, userId)) return true;
+            }
+            return false;
+        } catch (Throwable observationFailure) {
+            return true;
+        }
+    }
+
+    private boolean hasPackageBackgroundState(String packageName, int userId) {
+        return VJobSchedulerService.get().hasPackageState(packageName, userId)
+                || VNotificationManagerService.getOrCreate(VirtualCore.get().getContext())
+                .hasPackageState(packageName, userId)
+                || VActivityManagerService.get().hasPendingIntentState(packageName, userId);
+    }
+
+    private void enforceTrustedGmsHostCaller() {
+        TrustedGmsCallerPolicy.enforceHost(
+                VBinder.getCallingUid(), VirtualCore.get().myUid());
     }
 
     private InstallResult installPackageTransactional(String path, int flags, boolean notify,
                                                        int requestedUserId) {
-        VPackage stagedPackage = parseStagedPackage(path);
+        return installPackageTransactional(path, flags, notify, requestedUserId, null);
+    }
+
+    private InstallResult installPackageTransactional(
+            String path,
+            int flags,
+            boolean notify,
+            int requestedUserId,
+            com.lody.virtual.remote.TrustedPackageProvenance provenance) {
+        VPackage stagedPackage = parseStagedPackage(path, provenance);
         VPackage existingPackage = stagedPackage == null
                 ? null : PackageCacheManager.get(stagedPackage.packageName);
         boolean equalVersionUserBinding = existingPackage != null
@@ -221,7 +465,7 @@ public class VAppManagerService extends IAppManager.Stub {
                         snapshotTargets, cleanupTargets);
             }
 
-            InstallResult result = installPackageInternal(path, flags, requestedUserId);
+            InstallResult result = installPackageInternal(path, flags, requestedUserId, provenance);
             if (result.isSuccess) {
                 if (installTransaction != null) {
                     installTransaction.commit();
@@ -278,12 +522,13 @@ public class VAppManagerService extends IAppManager.Stub {
         }
     }
 
-    private VPackage parseStagedPackage(String path) {
+    private VPackage parseStagedPackage(
+            String path, com.lody.virtual.remote.TrustedPackageProvenance provenance) {
         if (path == null) {
             return null;
         }
         try {
-            return PackageParserEx.parsePackage(new File(path));
+            return PackageParserEx.parsePackage(new File(path), provenance);
         } catch (Throwable ignored) {
             // The normal install path will return the canonical parse error.
             return null;
@@ -340,6 +585,14 @@ public class VAppManagerService extends IAppManager.Stub {
     }
 
     private InstallResult installPackageInternal(String path, int flags, int requestedUserId) {
+        return installPackageInternal(path, flags, requestedUserId, null);
+    }
+
+    private InstallResult installPackageInternal(
+            String path,
+            int flags,
+            int requestedUserId,
+            com.lody.virtual.remote.TrustedPackageProvenance provenance) {
         long installTime = System.currentTimeMillis();
         if (path == null) {
             return InstallResult.makeFailure("path = NULL");
@@ -350,7 +603,7 @@ public class VAppManagerService extends IAppManager.Stub {
         }
         VPackage pkg = null;
         try {
-            pkg = PackageParserEx.parsePackage(packageFile);
+            pkg = PackageParserEx.parsePackage(packageFile, provenance);
         } catch (Throwable e) {
             e.printStackTrace();
         }
@@ -364,7 +617,9 @@ public class VAppManagerService extends IAppManager.Stub {
         PackageSetting existSetting = existOne != null ? (PackageSetting) existOne.mExtras : null;
         PackageInstalledStateSnapshot installedStateBeforeUpdate = null;
         if (existOne != null) {
-            if (!PackageSignaturePolicy.isCompatible(existOne.mSignatures, pkg.mSignatures)) {
+            if (!PackageSignaturePolicy.isCompatible(
+                    PackageSignaturePolicy.signerForUpdate(existOne),
+                    PackageSignaturePolicy.signerForUpdate(pkg))) {
                 return InstallResult.makeFailure(
                         "Can not update the package because its signing certificates differ.");
             }
@@ -412,6 +667,12 @@ public class VAppManagerService extends IAppManager.Stub {
         boolean dependSystem = (flags & InstallStrategy.DEPEND_SYSTEM_IF_EXIST) != 0
                 && VirtualCore.get().isOutsideInstalled(pkg.packageName);
 
+        if (provenance != null) {
+            // Trusted artifacts must always use the bytes verified by AppTwin, never a mutable
+            // package exposed by the physical ROM.
+            dependSystem = false;
+        }
+
         if (existSetting != null && existSetting.dependSystem) {
             dependSystem = false;
         }
@@ -434,7 +695,8 @@ public class VAppManagerService extends IAppManager.Stub {
                 return InstallResult.makeFailure("Unable to copy the package file.");
             }
             // copy lib in base apk
-            if (NativeLibraryHelperCompat.copyNativeBinaries(baseApkFile, libDir) < 0) {
+            if (NativeLibraryHelperCompat.copyNativeBinaries(
+                    ActivatedPackageInputs.nativeLibrarySource(privatePackageFile), libDir) < 0) {
                 privatePackageFile.delete();
                 return InstallResult.makeFailure("Unable to extract native libraries from base APK.");
             }
@@ -464,6 +726,23 @@ public class VAppManagerService extends IAppManager.Stub {
                     }
                     splitCodePaths[i] = privateSplitFile.getPath();
                 }
+            }
+        }
+
+        if (!dependSystem) {
+            try {
+                // The source path is caller-controlled and can change after the first parse. Build
+                // the activated cache only from the private bytes that were actually copied.
+                File activatedPath = ActivatedPackageInputs.parseRoot(
+                        packageFile, appDir, splitCodePaths != null);
+                VPackage activatedPackage = PackageParserEx.parsePackage(activatedPath, provenance);
+                if (!TextUtils.equals(pkg.packageName, activatedPackage.packageName)
+                        || pkg.mVersionCode != activatedPackage.mVersionCode) {
+                    return InstallResult.makeFailure("Activated package identity changed while copying.");
+                }
+                pkg = activatedPackage;
+            } catch (Throwable verificationFailure) {
+                return InstallResult.makeFailure("Unable to verify activated package bytes.");
             }
         }
 
@@ -504,6 +783,7 @@ public class VAppManagerService extends IAppManager.Stub {
             ps.setInstalled(requestedUserId, true);
         }
         ps.splitCodePaths = splitCodePaths;
+        ps.trustedPackageProvenance = pkg.trustedPackageProvenance;
         PackageParserEx.savePackageCache(pkg);
         PackageCacheManager.put(pkg, ps);
         try {
@@ -519,6 +799,13 @@ public class VAppManagerService extends IAppManager.Stub {
 
     @Override
     public synchronized boolean installPackageAsUser(int userId, String packageName) {
+        com.lody.virtual.server.VirtualUserAccessPolicy.enforceCallerUserOrHost(userId);
+        if (com.lody.virtual.server.pm.parser.TrustedSignatureOverridePolicy
+                .isTrustedPackage(packageName)) {
+            // Trusted compatibility bindings require pinned bytes + provenance through the
+            // dedicated host-only transaction; cached shared code is never sufficient authority.
+            return false;
+        }
         if (VUserManagerService.get().exists(userId)) {
             PackageSetting ps = PackageCacheManager.getSetting(packageName);
             if (ps != null) {
@@ -604,31 +891,45 @@ public class VAppManagerService extends IAppManager.Stub {
 
     @Override
     public synchronized boolean uninstallPackage(String packageName) {
+        com.lody.virtual.server.VirtualUserAccessPolicy.enforceHost();
         PackageSetting ps = PackageCacheManager.getSetting(packageName);
         if (ps != null) {
-            uninstallPackageFully(ps);
-            return true;
+            return uninstallPackageFully(ps);
         }
         return false;
     }
 
     @Override
     public boolean clearPackageAsUser(int userId, String packageName) throws RemoteException {
+        com.lody.virtual.server.VirtualUserAccessPolicy.enforceCallerUserOrHost(userId);
+        if (com.lody.virtual.server.pm.parser.TrustedSignatureOverridePolicy
+                .isTrustedPackage(packageName)) {
+            com.lody.virtual.server.VirtualUserAccessPolicy.enforceHost();
+        }
         if (!VUserManagerService.get().exists(userId)) {
             return false;
         }
         PackageSetting ps = PackageCacheManager.getSetting(packageName);
         if (ps != null) {
-            int[] userIds = getPackageInstalledUsers(packageName);
+            int[] userIds = getPackageInstalledUsersInternal(packageName);
             if (!ArrayUtils.contains(userIds, userId)) {
                 return false;
             }
             if (!VPackageManagerService.get()
                     .clearRuntimePermissionsInternal(packageName, userId)) {
+                VLog.e(TAG, "UNINSTALL_PERMISSION_RETRYABLE");
                 return false;
             }
             if (userIds.length == 1) {
-                clearPackage(packageName);
+                // Self clear is user-scoped. Do not route through the host-only global helper,
+                // which would kill/erase other virtual users if residual state exists.
+                VActivityManagerService.get().killAppByPkg(packageName, userId);
+                FileUtils.deleteDir(
+                        VEnvironment.getDataUserPackageDirectory(userId, packageName));
+                FileUtils.deleteDir(
+                        VEnvironment.getDeDataUserPackageDirectory(userId, packageName));
+                FileUtils.deleteDir(
+                        VEnvironment.getVirtualPrivateStorageDir(userId, packageName));
             } else {
                 // Just hidden it
                 VActivityManagerService.get().killAppByPkg(packageName, userId);
@@ -645,6 +946,11 @@ public class VAppManagerService extends IAppManager.Stub {
 
     @Override
     public boolean clearPackage(String packageName) throws RemoteException {
+        com.lody.virtual.server.VirtualUserAccessPolicy.enforceHost();
+        return clearPackageInternal(packageName);
+    }
+
+    private boolean clearPackageInternal(String packageName) {
         try {
             BroadcastSystem.get().stopApp(packageName);
             VActivityManagerService.get().killAppByPkg(packageName, VUserHandle.USER_ALL);
@@ -666,14 +972,24 @@ public class VAppManagerService extends IAppManager.Stub {
 
     @Override
     public synchronized boolean uninstallPackageAsUser(String packageName, int userId) {
+        com.lody.virtual.server.VirtualUserAccessPolicy.enforceCallerUserOrHost(userId);
+        if (com.lody.virtual.server.pm.parser.TrustedSignatureOverridePolicy
+                .isTrustedPackage(packageName)) {
+            com.lody.virtual.server.VirtualUserAccessPolicy.enforceHost();
+        }
         if (!VUserManagerService.get().exists(userId)) {
             return false;
         }
         PackageSetting ps = PackageCacheManager.getSetting(packageName);
         if (ps != null) {
-            int[] userIds = getPackageInstalledUsers(packageName);
-            if (!ArrayUtils.contains(userIds, userId)) {
-                return false;
+            if (com.lody.virtual.server.pm.parser.TrustedSignatureOverridePolicy
+                    .isTrustedPackage(packageName)) {
+                try {
+                    VUserManagerService.get().bumpPackagePendingIntentGenerationOrThrow(
+                            packageName, userId);
+                } catch (IOException epochFailure) {
+                    return false;
+                }
             }
             if (!VPackageManagerService.get()
                     .clearRuntimePermissionsInternal(packageName, userId)) {
@@ -682,24 +998,123 @@ public class VAppManagerService extends IAppManager.Stub {
             }
             // User-scoped uninstall only removes the binding and private data. Shared code remains
             // available as a revision cache even when this was the last installed user.
-            VActivityManagerService.get().killAppByPkg(packageName, userId);
+            VActivityManagerService activityManager = VActivityManagerService.get();
+            activityManager.killAppByPkg(packageName, userId);
             try {
-                EqualVersionUserBinding.unbind(
-                        installedStateAccessor(ps),
-                        userId,
-                        mPersistenceLayer::saveOrThrow);
-            } catch (IOException commitFailure) {
-                VLog.e(TAG, "Unable to persist package removal for user %d: %s",
-                        userId, commitFailure.getMessage());
+                VJobSchedulerService.get().clearPackageState(packageName, userId);
+                VNotificationManagerService.getOrCreate(VirtualCore.get().getContext())
+                        .clearPackageState(packageName, userId);
+                activityManager.clearPendingIntentState(packageName, userId);
+                VAccountManagerService accountManager = VAccountManagerService.get();
+                boolean trustedGms = com.lody.virtual.server.pm.parser
+                        .TrustedSignatureOverridePolicy.TRUSTED_PACKAGE.equals(packageName);
+                if (accountManager == null
+                        || !accountManager.clearPackageState(packageName, userId, trustedGms)) {
+                    VLog.e(TAG, "UNINSTALL_ACCOUNT_RETRYABLE");
+                    return false;
+                }
+            } catch (Throwable cleanupFailure) {
+                VLog.e(TAG, "UNINSTALL_OWNERSHIP_RETRYABLE");
                 return false;
             }
-            notifyAppUninstalled(ps, userId);
-            FileUtils.deleteDir(VEnvironment.getDataUserPackageDirectory(userId, packageName));
-            FileUtils.deleteDir(VEnvironment.getDeDataUserPackageDirectory(userId, packageName));
-            FileUtils.deleteDir(VEnvironment.getVirtualPrivateStorageDir(userId, packageName));
-            return true;
+            boolean wasInstalled = ps.isInstalled(userId);
+            try {
+                if (wasInstalled) {
+                    EqualVersionUserBinding.unbind(
+                            installedStateAccessor(ps),
+                            userId,
+                            mPersistenceLayer::saveOrThrow);
+                }
+            } catch (IOException commitFailure) {
+                VLog.e(TAG, "Unable to persist package removal for user %d: %s",
+                        userId, "UNINSTALL_UNBIND_RETRYABLE");
+                return false;
+            }
+            if (wasInstalled) notifyAppUninstalled(ps, userId);
+            try {
+                deletePackageDataOrThrow(packageName, userId);
+            } catch (IOException dataFailure) {
+                VLog.e(TAG, "UNINSTALL_DATA_RETRYABLE");
+                return false;
+            }
+            VAccountManagerService accountManager = VAccountManagerService.get();
+            boolean trustedGms = com.lody.virtual.server.pm.parser
+                    .TrustedSignatureOverridePolicy.TRUSTED_PACKAGE.equals(packageName);
+            boolean terminal = !ps.isInstalled(userId)
+                    && !VJobSchedulerService.get().hasPackageState(packageName, userId)
+                    && !VNotificationManagerService.getOrCreate(VirtualCore.get().getContext())
+                    .hasPackageState(packageName, userId)
+                    && !activityManager.hasPendingIntentState(packageName, userId)
+                    && accountManager != null
+                    && !accountManager.hasPackageState(packageName, userId, trustedGms)
+                    && !hasPackageDataState(packageName, userId);
+            if (!terminal) VLog.e(TAG, "UNINSTALL_TERMINAL_RETRYABLE");
+            return terminal;
         }
-        return false;
+        return com.lody.virtual.server.pm.parser.TrustedSignatureOverridePolicy
+                .isTrustedPackage(packageName)
+                && clearTrustedResidualState(packageName, userId);
+    }
+
+    @Override
+    public synchronized boolean clearTrustedPackageStateForUser(
+            String packageName, int userId) {
+        enforceTrustedGmsHostCaller();
+        if (!com.lody.virtual.server.pm.parser.TrustedSignatureOverridePolicy
+                .isTrustedPackage(packageName)
+                || userId <= 0 || !VUserManagerService.get().exists(userId)) return false;
+        return uninstallPackageAsUser(packageName, userId);
+    }
+
+    private boolean clearTrustedResidualState(String packageName, int userId) {
+        try {
+            VUserManagerService.get().bumpPackagePendingIntentGenerationOrThrow(
+                    packageName, userId);
+            if (!VPackageManagerService.get()
+                    .clearRuntimePermissionsInternal(packageName, userId)) return false;
+            VActivityManagerService activityManager = VActivityManagerService.get();
+            activityManager.killAppByPkg(packageName, userId);
+            VJobSchedulerService.get().clearPackageState(packageName, userId);
+            VNotificationManagerService.getOrCreate(VirtualCore.get().getContext())
+                    .clearPackageState(packageName, userId);
+            activityManager.clearPendingIntentState(packageName, userId);
+            VAccountManagerService accountManager = VAccountManagerService.get();
+            boolean gmsCore = com.lody.virtual.server.pm.parser
+                    .TrustedSignatureOverridePolicy.TRUSTED_PACKAGE.equals(packageName);
+            if (accountManager == null
+                    || !accountManager.clearPackageState(packageName, userId, gmsCore)) return false;
+            deletePackageDataOrThrow(packageName, userId);
+            return !VJobSchedulerService.get().hasPackageState(packageName, userId)
+                    && !VNotificationManagerService.getOrCreate(VirtualCore.get().getContext())
+                    .hasPackageState(packageName, userId)
+                    && !activityManager.hasPendingIntentState(packageName, userId)
+                    && !accountManager.hasPackageState(packageName, userId, gmsCore)
+                    && !hasPackageDataState(packageName, userId);
+        } catch (Throwable incomplete) {
+            return false;
+        }
+    }
+
+    private boolean hasPackageDataState(String packageName, int userId) {
+        if (new File(VEnvironment.getUserSystemDirectory(userId), packageName).exists()) return true;
+        if (new File(VEnvironment.getDeUserSystemDirectory(userId), packageName).exists()) return true;
+        File externalFiles = VirtualCore.get().getContext().getExternalFilesDir(null);
+        // External storage is part of trusted GMS private state.  Unmounted is unknown, not absent.
+        return externalFiles == null || new File(
+                com.lody.virtual.os.VirtualExternalStorageLayout.privateStorageForUser(
+                        externalFiles, userId), packageName).exists();
+    }
+
+    private void deletePackageDataOrThrow(String packageName, int userId) throws IOException {
+        File externalFiles = VirtualCore.get().getContext().getExternalFilesDir(null);
+        if (externalFiles == null) throw new IOException("External private storage unavailable");
+        VUserManagerService.removeDirectoryRecursiveOrThrow(
+                new File(VEnvironment.getUserSystemDirectory(userId), packageName));
+        VUserManagerService.removeDirectoryRecursiveOrThrow(
+                new File(VEnvironment.getDeUserSystemDirectory(userId), packageName));
+        VUserManagerService.removeDirectoryRecursiveOrThrow(new File(
+                com.lody.virtual.os.VirtualExternalStorageLayout.privateStorageForUser(
+                        externalFiles, userId), packageName));
     }
 
     private static final class PackageSettingSnapshot {
@@ -761,9 +1176,15 @@ public class VAppManagerService extends IAppManager.Stub {
         return VEnvironment.getDataDirectory().getParentFile();
     }
 
-    private void uninstallPackageFully(PackageSetting ps) {
+    private boolean uninstallPackageFully(PackageSetting ps) {
         String packageName = ps.packageName;
         try {
+            if (com.lody.virtual.server.pm.parser.TrustedSignatureOverridePolicy
+                    .isTrustedPackage(packageName)) {
+                for (int userId : VUserManagerService.get().getUserIds()) {
+                    if (!uninstallPackageAsUser(packageName, userId)) return false;
+                }
+            }
             BroadcastSystem.get().stopApp(packageName);
             VActivityManagerService.get().killAppByPkg(packageName, VUserHandle.USER_ALL);
             VEnvironment.getPackageResourcePath(packageName).delete();
@@ -776,15 +1197,21 @@ public class VAppManagerService extends IAppManager.Stub {
                 FileUtils.deleteDir(VEnvironment.getVirtualPrivateStorageDir(id, packageName));
             }
             PackageCacheManager.remove(packageName);
+            notifyAppUninstalled(ps, -1);
+            return true;
         } catch (Exception e) {
             e.printStackTrace();
-        } finally {
-            notifyAppUninstalled(ps, -1);
+            return false;
         }
     }
 
     @Override
     public int[] getPackageInstalledUsers(String packageName) {
+        com.lody.virtual.server.VirtualUserAccessPolicy.enforceHost();
+        return getPackageInstalledUsersInternal(packageName);
+    }
+
+    private int[] getPackageInstalledUsersInternal(String packageName) {
         PackageSetting ps = PackageCacheManager.getSetting(packageName);
         if (ps != null) {
             IntArray installedUsers = new IntArray(5);
@@ -801,6 +1228,10 @@ public class VAppManagerService extends IAppManager.Stub {
 
     @Override
     public List<InstalledAppInfo> getInstalledApps(int flags) {
+        if (!com.lody.virtual.server.VirtualUserAccessPolicy.isHostCaller()) {
+            int callerUser = VUserHandle.getUserId(VBinder.getCallingUid());
+            return getInstalledAppsAsUser(callerUser, flags);
+        }
         List<InstalledAppInfo> infoList = new ArrayList<>(getInstalledAppCount());
         for (VPackage p : PackageCacheManager.PACKAGE_CACHE.values()) {
             PackageSetting setting = (PackageSetting) p.mExtras;
@@ -811,7 +1242,8 @@ public class VAppManagerService extends IAppManager.Stub {
 
     @Override
     public List<InstalledAppInfo> getInstalledAppsAsUser(int userId, int flags) {
-        List<InstalledAppInfo> infoList = new ArrayList<>(getInstalledAppCount());
+        com.lody.virtual.server.VirtualUserAccessPolicy.enforceCallerUserOrHost(userId);
+        List<InstalledAppInfo> infoList = new ArrayList<>(PackageCacheManager.PACKAGE_CACHE.size());
         for (VPackage p : PackageCacheManager.PACKAGE_CACHE.values()) {
             PackageSetting setting = (PackageSetting) p.mExtras;
             boolean visible = setting.isInstalled(userId);
@@ -827,16 +1259,27 @@ public class VAppManagerService extends IAppManager.Stub {
 
     @Override
     public int getInstalledAppCount() {
+        if (!com.lody.virtual.server.VirtualUserAccessPolicy.isHostCaller()) {
+            return getInstalledAppsAsUser(
+                    VUserHandle.getUserId(VBinder.getCallingUid()), 0).size();
+        }
         return PackageCacheManager.PACKAGE_CACHE.size();
     }
 
     @Override
     public boolean isAppInstalled(String packageName) {
-        return packageName != null && PackageCacheManager.PACKAGE_CACHE.containsKey(packageName);
+        if (packageName == null) return false;
+        PackageSetting setting = PackageCacheManager.getSetting(packageName);
+        if (setting == null) return false;
+        if (com.lody.virtual.server.VirtualUserAccessPolicy.isHostCaller()) return true;
+        int callingVuid = VBinder.getCallingUid();
+        return callingVuid >= 0
+                && setting.isInstalled(VUserHandle.getUserId(callingVuid));
     }
 
     @Override
     public boolean isAppInstalledAsUser(int userId, String packageName) {
+        com.lody.virtual.server.VirtualUserAccessPolicy.enforceCallerUserOrHost(userId);
         if (packageName == null || !VUserManagerService.get().exists(userId)) {
             return false;
         }
@@ -903,6 +1346,7 @@ public class VAppManagerService extends IAppManager.Stub {
 
     @Override
     public void registerObserver(IPackageObserver observer) {
+        com.lody.virtual.server.VirtualUserAccessPolicy.enforceHost();
         try {
             mRemoteCallbackList.register(observer);
         } catch (Throwable e) {
@@ -912,6 +1356,7 @@ public class VAppManagerService extends IAppManager.Stub {
 
     @Override
     public void unregisterObserver(IPackageObserver observer) {
+        com.lody.virtual.server.VirtualUserAccessPolicy.enforceHost();
         try {
             mRemoteCallbackList.unregister(observer);
         } catch (Throwable e) {
@@ -926,6 +1371,7 @@ public class VAppManagerService extends IAppManager.Stub {
 
     @Override
     public void setAppRequestListener(final IAppRequestListener listener) {
+        com.lody.virtual.server.VirtualUserAccessPolicy.enforceHost();
         this.mAppRequestListener = listener;
         if (listener != null) {
             try {
@@ -944,6 +1390,7 @@ public class VAppManagerService extends IAppManager.Stub {
 
     @Override
     public void clearAppRequestListener() {
+        com.lody.virtual.server.VirtualUserAccessPolicy.enforceHost();
         this.mAppRequestListener = null;
     }
 
@@ -952,7 +1399,10 @@ public class VAppManagerService extends IAppManager.Stub {
         synchronized (PackageCacheManager.class) {
             if (packageName != null) {
                 PackageSetting setting = PackageCacheManager.getSetting(packageName);
-                if (setting != null) {
+                int callingVuid = VBinder.getCallingUid();
+                if (setting != null && (com.lody.virtual.server.VirtualUserAccessPolicy
+                        .isHostCaller() || (callingVuid >= 0 && setting.isInstalled(
+                        VUserHandle.getUserId(callingVuid))))) {
                     return setting.getAppInfo();
                 }
             }
@@ -961,11 +1411,13 @@ public class VAppManagerService extends IAppManager.Stub {
     }
 
     public boolean isPackageLaunched(int userId, String packageName) {
+        com.lody.virtual.server.VirtualUserAccessPolicy.enforceCallerUserOrHost(userId);
         PackageSetting ps = PackageCacheManager.getSetting(packageName);
         return ps != null && ps.isLaunched(userId);
     }
 
     public void setPackageHidden(int userId, String packageName, boolean hidden) {
+        com.lody.virtual.server.VirtualUserAccessPolicy.enforceCallerUserOrHost(userId);
         PackageSetting ps = PackageCacheManager.getSetting(packageName);
         if (ps != null && VUserManagerService.get().exists(userId)) {
             ps.setHidden(userId, hidden);

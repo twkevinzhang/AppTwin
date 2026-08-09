@@ -413,7 +413,30 @@ class MethodProxies {
                 default:
                     return null;
             }
-            newIntent.putExtra("_VA_|_user_id_", VUserHandle.myUserId());
+            int virtualUserId = VUserHandle.myUserId();
+            newIntent.putExtra("_VA_|_user_id_", virtualUserId);
+            int userSerial = com.lody.virtual.os.VUserManager.get()
+                    .getUserSerialNumber(virtualUserId);
+            newIntent.putExtra(
+                    com.lody.virtual.client.stub.PendingIntentUserGeneration.EXTRA_SERIAL,
+                    userSerial);
+            com.lody.virtual.os.VUserInfo pendingIntentUser =
+                    com.lody.virtual.os.VUserManager.get().getUserInfo(virtualUserId);
+            long userEpoch = pendingIntentUser == null
+                    ? 0L : pendingIntentUser.pendingIntentGeneration;
+            newIntent.putExtra(
+                    com.lody.virtual.client.stub.PendingIntentUserGeneration.EXTRA_EPOCH,
+                    userEpoch);
+            long packageEpoch = com.lody.virtual.os.VUserManager.get()
+                    .getPackagePendingIntentGeneration(creator, virtualUserId);
+            newIntent.putExtra(
+                    com.lody.virtual.client.stub.PendingIntentUserGeneration.EXTRA_PACKAGE_EPOCH,
+                    packageEpoch);
+            String generationIdentity =
+                    com.lody.virtual.client.stub.PendingIntentUserGeneration.identityCategory(
+                            creator, virtualUserId, userSerial, userEpoch, packageEpoch);
+            if (generationIdentity == null) return null;
+            newIntent.addCategory(generationIdentity);
             newIntent.putExtra("_VA_|_intent_", intent);
             newIntent.putExtra("_VA_|_creator_", creator);
             newIntent.putExtra("_VA_|_from_inner_", true);

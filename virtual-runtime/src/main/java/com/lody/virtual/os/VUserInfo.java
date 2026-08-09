@@ -67,6 +67,7 @@ public class VUserInfo implements Parcelable {
     public long creationTime;
     public long lastLoggedInTime;
     public int profileGroupId;
+    public long pendingIntentGeneration;
 
     /** User is only partially created. */
     public boolean partial;
@@ -120,6 +121,7 @@ public class VUserInfo implements Parcelable {
         lastLoggedInTime = orig.lastLoggedInTime;
         partial = orig.partial;
         profileGroupId = orig.profileGroupId;
+        pendingIntentGeneration = orig.pendingIntentGeneration;
     }
 
     @Override
@@ -141,6 +143,7 @@ public class VUserInfo implements Parcelable {
         dest.writeLong(lastLoggedInTime);
         dest.writeInt(partial ? 1 : 0);
         dest.writeInt(profileGroupId);
+        dest.writeLong(pendingIntentGeneration);
     }
 
     public static final Parcelable.Creator<VUserInfo> CREATOR
@@ -163,5 +166,6 @@ public class VUserInfo implements Parcelable {
         lastLoggedInTime = source.readLong();
         partial = source.readInt() != 0;
         profileGroupId = source.readInt();
+        pendingIntentGeneration = source.readLong();
     }
 }

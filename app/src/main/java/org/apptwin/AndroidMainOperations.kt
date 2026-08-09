@@ -28,6 +28,16 @@ import org.apptwin.groups.GroupAppState
 import org.apptwin.groups.GroupHealth
 import org.apptwin.groups.GroupLifecycleCoordinator
 import org.apptwin.groups.GroupReconciliationResult
+import org.apptwin.gms.AndroidGmsOperations
+import org.apptwin.gms.GmsGroupProductState
+import org.apptwin.gms.GmsStartupResult
+import org.apptwin.gms.capabilities.GmsCapability
+import org.apptwin.gms.capabilities.GmsCapabilityAssessment
+import org.apptwin.gms.capabilities.GmsCapabilityStatus
+import org.apptwin.gms.model.GmsGroupId
+import org.apptwin.gms.model.GmsProfile
+import org.apptwin.gms.usecases.GmsLifecycleResult
+import org.apptwin.gms.production
 import org.apptwin.operations.FileOperationRecordStore
 import org.apptwin.operations.OperationKind
 import org.apptwin.operations.OperationReconciler
@@ -114,6 +124,7 @@ internal class AndroidMainOperations(private val application: Application) : Mai
         runtime = runtimeController,
         journal = FileGroupAppRemovalJournal(application),
     )
+    private val gms = AndroidGmsOperations.production(application, groupStore)
 
     override suspend fun refreshSnapshot(): MainRefreshSnapshot {
         val storage = readStorageStatus()
@@ -126,6 +137,33 @@ internal class AndroidMainOperations(private val application: Application) : Mai
         val warnings = groupSnapshot.issues.map { issue ->
             "Group ${issue.groupId}/${issue.metadataName} 無法讀取"
         }.toMutableList()
+        val gmsCompatibility = groupSnapshot.groups.associate { group ->
+            group.id to runCatching { gms.snapshot(group.id) }.getOrElse { error ->
+                warnings += "Group ${group.id}/data/gms 無法讀取：${error.userMessage()}"
+                GmsGroupProductState(
+                    profile = GmsProfile.disabled(GmsGroupId(group.id)),
+                    capabilities = GmsCapability.entries.map { capability ->
+                        GmsCapabilityAssessment(
+                            capability,
+                            if (capability in setOf(
+                                    GmsCapability.PLAY_BILLING,
+                                    GmsCapability.PLAY_INTEGRITY,
+                                )
+                            ) {
+                                GmsCapabilityStatus.UNSUPPORTED
+                            } else {
+                                GmsCapabilityStatus.UNTESTED
+                            },
+                        )
+                    },
+                    hasDataWarning = true,
+                )
+            }
+        }
+        gms.warnings().forEach { warning ->
+            val message = "Group ${warning.groupId}/data/gms/${warning.metadataName} 無法讀取"
+            if (message !in warnings) warnings += message
+        }
         entries.forEach { entry ->
             activeRevisions[entry.packageName] = runCatching { importer.active(entry.packageName) }
                 .getOrElse { error ->
@@ -161,6 +199,7 @@ internal class AndroidMainOperations(private val application: Application) : Mai
             dataWarnings = warnings,
             operations = operationStore.listPending(),
             permissions = permissions,
+            gmsCompatibility = gmsCompatibility,
         )
     }
 
@@ -441,6 +480,22 @@ internal class AndroidMainOperations(private val application: Application) : Mai
     override suspend fun reconcileApplicationOperations() {
         operationReconciler.reconcile()
     }
+
+    override suspend fun reconcileGms(): GmsStartupResult {
+        val groupIds = groupStore.loadSnapshot().groups.map(Group::id)
+        return gms.startupReconcile(groupIds)
+    }
+
+    override suspend fun grantGmsConsent(groupId: String) = gms.grantNetworkConsent(groupId)
+
+    override suspend fun enableGms(groupId: String): GmsLifecycleResult = gms.enable(groupId)
+
+    override suspend fun disableGms(groupId: String): GmsLifecycleResult = gms.disable(groupId)
+
+    override suspend fun resetGms(
+        groupId: String,
+        reenable: Boolean,
+    ): GmsLifecycleResult = gms.reset(groupId, reenable)
 
     private fun prepareCloneSource(packageName: String): CloneSourcePreparationResult {
         val sourceInstalled = runCatching { importer.listCloneableApps() }

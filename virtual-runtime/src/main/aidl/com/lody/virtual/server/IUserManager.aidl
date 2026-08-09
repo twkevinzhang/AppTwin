@@ -20,4 +20,5 @@ interface IUserManager {
     void wipeUser(int userHandle);
     int getUserSerialNumber(int userHandle);
     int getUserHandle(int userSerialNumber);
+    long getPackagePendingIntentGeneration(String packageName, int userId);
 }

@@ -96,6 +96,7 @@ public class VPackageInstallerService extends IPackageInstaller.Stub {
 
     @Override
     public int createSession(SessionParams params, String installerPackageName, int userId) throws RemoteException {
+        com.lody.virtual.server.VirtualUserAccessPolicy.enforceCallerUserOrHost(userId);
         try {
             return createSessionInternal(params, installerPackageName, userId);
         } catch (IOException e) {
@@ -188,12 +189,13 @@ public class VPackageInstallerService extends IPackageInstaller.Stub {
     public SessionInfo getSessionInfo(int sessionId) throws RemoteException {
         synchronized (mSessions) {
             final PackageInstallerSession session = mSessions.get(sessionId);
-            return session != null ? session.generateInfo() : null;
+            return session != null && isCallingUidOwner(session) ? session.generateInfo() : null;
         }
     }
 
     @Override
     public VParceledListSlice getAllSessions(int userId) throws RemoteException {
+        com.lody.virtual.server.VirtualUserAccessPolicy.enforceCallerUserOrHost(userId);
         final List<SessionInfo> result = new ArrayList<>();
         synchronized (mSessions) {
             for (int i = 0; i < mSessions.size(); i++) {
@@ -208,6 +210,7 @@ public class VPackageInstallerService extends IPackageInstaller.Stub {
 
     @Override
     public VParceledListSlice getMySessions(String installerPackageName, int userId) throws RemoteException {
+        com.lody.virtual.server.VirtualUserAccessPolicy.enforceCallerUserOrHost(userId);
         final List<SessionInfo> result = new ArrayList<>();
         synchronized (mSessions) {
             for (int i = 0; i < mSessions.size(); i++) {
@@ -223,6 +226,7 @@ public class VPackageInstallerService extends IPackageInstaller.Stub {
 
     @Override
     public void registerCallback(IPackageInstallerCallback callback, int userId) throws RemoteException {
+        com.lody.virtual.server.VirtualUserAccessPolicy.enforceCallerUserOrHost(userId);
         mCallbacks.register(callback, userId);
     }
 
@@ -233,6 +237,7 @@ public class VPackageInstallerService extends IPackageInstaller.Stub {
 
     @Override
     public void uninstall(String packageName, String callerPackageName, int flags, IntentSender statusReceiver, int userId) throws RemoteException {
+        com.lody.virtual.server.VirtualUserAccessPolicy.enforceCallerUserOrHost(userId);
         boolean success = VAppManagerService.get().uninstallPackageAsUser(packageName, userId);
         if (statusReceiver != null) {
             final Intent fillIn = new Intent();
@@ -252,14 +257,18 @@ public class VPackageInstallerService extends IPackageInstaller.Stub {
     public void setPermissionsResult(int sessionId, boolean accepted) throws RemoteException {
         synchronized (mSessions) {
             PackageInstallerSession session = mSessions.get(sessionId);
-            if (session != null) {
+            if (session != null && isCallingUidOwner(session)) {
                 session.setPermissionsResult(accepted);
+            } else if (session != null) {
+                throw new SecurityException("Caller has no access to session " + sessionId);
             }
         }
     }
 
     private boolean isCallingUidOwner(PackageInstallerSession session) {
-        return true;
+        int callingVuid = VBinder.getCallingUid();
+        return callingVuid == com.lody.virtual.client.core.VirtualCore.get().myUid()
+                || session.installerUid == callingVuid;
     }
 
     private int allocateSessionIdLocked() {

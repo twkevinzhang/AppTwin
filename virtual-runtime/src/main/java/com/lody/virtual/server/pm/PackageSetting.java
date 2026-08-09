@@ -5,6 +5,7 @@ import android.os.Parcelable;
 import android.util.SparseArray;
 
 import com.lody.virtual.remote.InstalledAppInfo;
+import com.lody.virtual.remote.TrustedPackageProvenance;
 
 /**
  * @author Lody
@@ -33,6 +34,7 @@ public class PackageSetting implements Parcelable {
     public int appId;
     public long firstInstallTime;
     public long lastUpdateTime;
+    public TrustedPackageProvenance trustedPackageProvenance;
 
     public String[] splitCodePaths;
     private SparseArray<PackageUserState> userState = new SparseArray<>();
@@ -41,6 +43,10 @@ public class PackageSetting implements Parcelable {
     }
 
     protected PackageSetting(Parcel in) {
+        this(in, true);
+    }
+
+    PackageSetting(Parcel in, boolean hasTrustedProvenance) {
         this.packageName = in.readString();
         this.apkPath = in.readString();
         this.libPath = in.readString();
@@ -50,6 +56,10 @@ public class PackageSetting implements Parcelable {
         this.userState = in.readSparseArray(PackageUserState.class.getClassLoader());
         this.skipDexOpt = in.readByte() != 0;
         this.splitCodePaths = in.createStringArray();
+        if (hasTrustedProvenance) {
+            this.trustedPackageProvenance = in.readParcelable(
+                    TrustedPackageProvenance.class.getClassLoader());
+        }
     }
 
     public InstalledAppInfo getAppInfo() {
@@ -100,6 +110,7 @@ public class PackageSetting implements Parcelable {
         dest.writeSparseArray((SparseArray) this.userState);
         dest.writeByte(this.skipDexOpt ? (byte) 1 : (byte) 0);
         dest.writeStringArray(this.splitCodePaths);
+        dest.writeParcelable(this.trustedPackageProvenance, flags);
     }
 
     public boolean isLaunched(int userId) {

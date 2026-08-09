@@ -20,6 +20,9 @@ import org.apptwin.groups.GroupAppRemovalResult
 import org.apptwin.groups.GroupAppState
 import org.apptwin.groups.GroupHealth
 import org.apptwin.groups.GroupReconciliationResult
+import org.apptwin.gms.GmsGroupProductState
+import org.apptwin.gms.GmsStartupResult
+import org.apptwin.gms.usecases.GmsLifecycleResult
 import org.apptwin.operations.OperationRecord
 import org.apptwin.repair.RepairExecutionResult
 import org.apptwin.revision.ActiveRevisionSummary
@@ -63,6 +66,7 @@ data class GroupItem(
     val health: GroupHealth,
     val apps: List<GroupAppItem>,
     val lifecycle: SpaceLifecycleState = SpaceLifecycleState.READY,
+    val gmsCompatibility: GmsGroupProductState? = null,
 ) {
     fun contains(packageName: String): Boolean = apps.any { it.app.packageName == packageName }
 }
@@ -78,6 +82,7 @@ data class MainUiState(
     val isCreatingGroup: Boolean = false,
     val busyPackageName: String? = null,
     val busyGroupId: String? = null,
+    val gmsBusyGroupId: String? = null,
     val launchingAppKey: String? = null,
     val uninstallingAppKey: String? = null,
     val shortcutAppKey: String? = null,
@@ -109,6 +114,7 @@ internal data class MainRefreshSnapshot(
     val dataWarnings: List<String>,
     val operations: List<OperationRecord> = emptyList(),
     val permissions: Map<String, ClonePermissionState> = emptyMap(),
+    val gmsCompatibility: Map<String, GmsGroupProductState> = emptyMap(),
 )
 
 /** Blocking application operations. MainViewModel always invokes these on its IO dispatcher. */
@@ -134,6 +140,11 @@ internal interface MainOperations {
     suspend fun reconcileGroups(): GroupReconciliationResult
     suspend fun reconcileAppRemovals()
     suspend fun reconcileApplicationOperations()
+    suspend fun reconcileGms(): GmsStartupResult
+    suspend fun grantGmsConsent(groupId: String)
+    suspend fun enableGms(groupId: String): GmsLifecycleResult
+    suspend fun disableGms(groupId: String): GmsLifecycleResult
+    suspend fun resetGms(groupId: String, reenable: Boolean): GmsLifecycleResult
 }
 
 internal interface OnboardingStore {
@@ -328,6 +339,7 @@ class MainViewModel internal constructor(
                         name = group.name,
                         health = group.health,
                         lifecycle = spaceState.lifecycle,
+                        gmsCompatibility = snapshot.gmsCompatibility[group.id],
                         apps = group.apps.map { app ->
                             val source = entriesByPackage[app.packageName]
                             GroupAppItem(
@@ -447,6 +459,21 @@ class MainViewModel internal constructor(
                 refresh()
             }
         }
+    }
+
+    fun enableGms(groupId: String, grantConsent: Boolean = false) {
+        runGmsAction(groupId, "啟用") {
+            if (grantConsent) operations.grantGmsConsent(groupId)
+            operations.enableGms(groupId)
+        }
+    }
+
+    fun disableGms(groupId: String) {
+        runGmsAction(groupId, "停用") { operations.disableGms(groupId) }
+    }
+
+    fun resetGms(groupId: String, reenable: Boolean) {
+        runGmsAction(groupId, "重設") { operations.resetGms(groupId, reenable) }
     }
 
     fun selectApp(app: AppItem) {
@@ -683,14 +710,17 @@ class MainViewModel internal constructor(
     private fun reconcileAndRefresh() {
         uiState = uiState.copy(isRefreshing = true)
         viewModelScope.launch {
-            val (groupResult, appRemovalResult, applicationOperationResult) =
+            val groupResult = withContext(ioDispatcher) {
+                runCatching { operations.reconcileGroups() }
+            }
+            val (appRemovalResult, applicationOperationResult, gmsResult) =
                 withContext(ioDispatcher) {
                     Triple(
-                        runCatching { operations.reconcileGroups() },
                         runCatching { operations.reconcileAppRemovals() },
                         runCatching { operations.reconcileApplicationOperations() },
+                        runCatching { operations.reconcileGms() },
                     )
-            }
+                }
             val notices = buildList {
                 groupResult.onSuccess { result ->
                     if (result.loadIssues.isNotEmpty()) {
@@ -705,11 +735,47 @@ class MainViewModel internal constructor(
                 applicationOperationResult.onFailure { error ->
                     add("部分分身空間作業需要處理：${error.userMessage()}")
                 }
+                gmsResult.onFailure { error ->
+                    add("Google 服務相容資料需要處理：${error.userMessage()}")
+                }
             }
             if (notices.isNotEmpty()) showMessage(notices.joinToString("\n"))
             refresh()
         }
     }
+
+    private fun runGmsAction(
+        groupId: String,
+        actionLabel: String,
+        action: suspend () -> GmsLifecycleResult,
+    ) {
+        if (uiState.gmsBusyGroupId != null || uiState.busyGroupId != null) return
+        uiState = uiState.copy(gmsBusyGroupId = groupId)
+        viewModelScope.launch {
+            val result = runCatching { withContext(ioDispatcher) { action() } }
+            uiState = uiState.copy(gmsBusyGroupId = null)
+            result.onSuccess { lifecycle ->
+                showMessage(gmsResultMessage(actionLabel, lifecycle))
+                refresh()
+            }.onFailure { error ->
+                showMessage("$actionLabel Google 服務相容功能失敗：${error.userMessage()}")
+                refresh()
+            }
+        }
+    }
+
+    private fun gmsResultMessage(actionLabel: String, result: GmsLifecycleResult): String =
+        when (result) {
+            is GmsLifecycleResult.Completed -> "已${actionLabel} Google 服務相容功能"
+            is GmsLifecycleResult.AlreadySatisfied -> "Google 服務相容功能已是要求的狀態"
+            GmsLifecycleResult.ConsentRequired -> "啟用前必須同意 Google 網路連線說明"
+            GmsLifecycleResult.TrustedReleaseUnavailable ->
+                "目前沒有可用且受信任的 microG 版本"
+            GmsLifecycleResult.DestructiveConfirmationRequired -> "重設前必須確認清除資料"
+            is GmsLifecycleResult.RetryScheduled ->
+                "作業暫未完成，稍後會重試（${result.failureCode}）"
+            is GmsLifecycleResult.Rejected -> "作業遭拒（${result.failureCode}）"
+        }
 
     private fun launchStatus(packageName: String, versionCode: Long?): String = when {
         versionCode == null -> "來源 App 已移除"

@@ -419,5 +419,13 @@ public class VUserManager {
         return -1;
     }
 
+    public long getPackagePendingIntentGeneration(String packageName, int userId) {
+        try {
+            return getService().getPackagePendingIntentGeneration(packageName, userId);
+        } catch (RemoteException failure) {
+            return 0L;
+        }
+    }
+
 
 }

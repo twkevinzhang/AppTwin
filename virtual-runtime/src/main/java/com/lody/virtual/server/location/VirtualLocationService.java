@@ -12,6 +12,7 @@ import com.lody.virtual.remote.vloc.VLocation;
 import com.lody.virtual.server.IVirtualLocationManager;
 
 import java.util.HashMap;
+import java.io.IOException;
 import java.util.List;
 import java.util.Map;
 
@@ -122,8 +123,22 @@ public class VirtualLocationService extends IVirtualLocationManager.Stub {
         mPersistenceLayer.read();
     }
 
+    /** Removes every per-package location and cell override for one virtual user. */
+    public void clearUserState(int userId) throws IOException {
+        synchronized (mLocConfigs) {
+            mLocConfigs.remove(userId);
+            mPersistenceLayer.saveAtomicallyOrThrow();
+        }
+    }
+
+    private void enforcePackage(int userId, String packageName) {
+        com.lody.virtual.server.VirtualUserAccessPolicy
+                .enforceCallerPackageOrHost(packageName, userId);
+    }
+
     @Override
     public int getMode(int userId, String pkg) throws RemoteException {
+        enforcePackage(userId, pkg);
         synchronized (mLocConfigs) {
             VLocConfig config = getOrCreateConfig(userId, pkg);
             mPersistenceLayer.save();
@@ -133,6 +148,7 @@ public class VirtualLocationService extends IVirtualLocationManager.Stub {
 
     @Override
     public void setMode(int userId, String pkg, int mode) throws RemoteException {
+        enforcePackage(userId, pkg);
         synchronized (mLocConfigs) {
             getOrCreateConfig(userId, pkg).mode = mode;
             mPersistenceLayer.save();
@@ -156,42 +172,49 @@ public class VirtualLocationService extends IVirtualLocationManager.Stub {
 
     @Override
     public void setCell(int userId, String pkg, VCell cell) throws RemoteException {
+        enforcePackage(userId, pkg);
         getOrCreateConfig(userId, pkg).cell = cell;
         mPersistenceLayer.save();
     }
 
     @Override
     public void setAllCell(int userId, String pkg, List<VCell> cell) throws RemoteException {
+        enforcePackage(userId, pkg);
         getOrCreateConfig(userId, pkg).allCell = cell;
         mPersistenceLayer.save();
     }
 
     @Override
     public void setNeighboringCell(int userId, String pkg, List<VCell> cell) throws RemoteException {
+        enforcePackage(userId, pkg);
         getOrCreateConfig(userId, pkg).neighboringCell = cell;
         mPersistenceLayer.save();
     }
 
     @Override
     public void setGlobalCell(VCell cell) throws RemoteException {
+        com.lody.virtual.server.VirtualUserAccessPolicy.enforceHost();
         mGlobalConfig.cell = cell;
         mPersistenceLayer.save();
     }
 
     @Override
     public void setGlobalAllCell(List<VCell> cell) throws RemoteException {
+        com.lody.virtual.server.VirtualUserAccessPolicy.enforceHost();
         mGlobalConfig.allCell = cell;
         mPersistenceLayer.save();
     }
 
     @Override
     public void setGlobalNeighboringCell(List<VCell> cell) throws RemoteException {
+        com.lody.virtual.server.VirtualUserAccessPolicy.enforceHost();
         mGlobalConfig.neighboringCell = cell;
         mPersistenceLayer.save();
     }
 
     @Override
     public VCell getCell(int userId, String pkg) throws RemoteException {
+        enforcePackage(userId, pkg);
         VLocConfig config = getOrCreateConfig(userId, pkg);
         mPersistenceLayer.save();
         switch (config.mode) {
@@ -207,6 +230,7 @@ public class VirtualLocationService extends IVirtualLocationManager.Stub {
 
     @Override
     public List<VCell> getAllCell(int userId, String pkg) throws RemoteException {
+        enforcePackage(userId, pkg);
         VLocConfig config = getOrCreateConfig(userId, pkg);
         mPersistenceLayer.save();
         switch (config.mode) {
@@ -222,6 +246,7 @@ public class VirtualLocationService extends IVirtualLocationManager.Stub {
 
     @Override
     public List<VCell> getNeighboringCell(int userId, String pkg) throws RemoteException {
+        enforcePackage(userId, pkg);
         VLocConfig config = getOrCreateConfig(userId, pkg);
         mPersistenceLayer.save();
         switch (config.mode) {
@@ -237,12 +262,14 @@ public class VirtualLocationService extends IVirtualLocationManager.Stub {
 
     @Override
     public void setLocation(int userId, String pkg, VLocation loc) throws RemoteException {
+        enforcePackage(userId, pkg);
         getOrCreateConfig(userId, pkg).location = loc;
         mPersistenceLayer.save();
     }
 
     @Override
     public VLocation getLocation(int userId, String pkg) throws RemoteException {
+        enforcePackage(userId, pkg);
         VLocConfig config = getOrCreateConfig(userId, pkg);
         mPersistenceLayer.save();
         switch (config.mode) {
@@ -258,11 +285,13 @@ public class VirtualLocationService extends IVirtualLocationManager.Stub {
 
     @Override
     public void setGlobalLocation(VLocation loc) throws RemoteException {
+        com.lody.virtual.server.VirtualUserAccessPolicy.enforceHost();
         mGlobalConfig.location = loc;
     }
 
     @Override
     public VLocation getGlobalLocation() throws RemoteException {
+        com.lody.virtual.server.VirtualUserAccessPolicy.enforceHost();
         return mGlobalConfig.location;
     }
 
