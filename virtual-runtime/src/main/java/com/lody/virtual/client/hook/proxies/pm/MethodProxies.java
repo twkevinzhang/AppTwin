@@ -881,6 +881,33 @@ class MethodProxies {
             if (selfPkgs != null && selfPkgs.length > 0) {
                 pkgList.addAll(Arrays.asList(selfPkgs));
             }
+            ApplicationInfo currentApplication = VClientImpl.get().getCurrentApplicationInfo();
+            String currentPackage = currentApplication == null
+                    ? null : currentApplication.packageName;
+            boolean trustedGmsInstalled = currentPackage != null
+                    && VPackageManager.get().getPackageInfo(
+                    currentPackage, 0, VUserHandle.myUserId()) != null;
+            if (CallingPackageUidResolver.mayExposeCurrentGroupCandidates(
+                    requestedUid,
+                    VirtualCore.get().myUid(),
+                    currentVUid,
+                    callerVUid,
+                    currentPackage,
+                    trustedGmsInstalled)) {
+                // Some GmsCore APIs validate a caller after posting work to another thread. At
+                // that point Binder retains only the physical host UID and the original guest PID
+                // is gone. A pinned GmsCore may inspect installed packages in its own virtual user
+                // so it can match the package name carried by the original request. Never expose
+                // packages from another virtual user or grant this candidate view to ordinary
+                // guests.
+                List<PackageInfo> installed = VPackageManager.get().getInstalledPackages(
+                        0, VUserHandle.myUserId());
+                for (PackageInfo info : installed) {
+                    if (info != null && info.packageName != null) {
+                        pkgList.add(info.packageName);
+                    }
+                }
+            }
             return pkgList.toArray(new String[pkgList.size()]);
         }
 
@@ -1029,8 +1056,35 @@ class MethodProxies {
 
         @Override
         public Object call(Object who, Method method, Object... args) throws Throwable {
-            int uid = (int) args[0];
-            return VPackageManager.get().getNameForUid(uid);
+            int requestedUid = (int) args[0];
+            int currentVUid = getVUid();
+            int callingPid = Binder.getCallingPid();
+            VActivityManager activityManager = VActivityManager.get();
+            boolean callerIsVirtualProcess = activityManager.isAppPid(callingPid);
+            int observedCallerVUid = callerIsVirtualProcess
+                    ? activityManager.getUidByPid(callingPid) : currentVUid;
+            int callerVUid = CallingPackageUidResolver.trustedCallerVUid(
+                    currentVUid, observedCallerVUid, callerIsVirtualProcess);
+            ApplicationInfo currentApplication = VClientImpl.get().getCurrentApplicationInfo();
+            String currentPackage = currentApplication == null
+                    ? null : currentApplication.packageName;
+            boolean trustedGmsInstalled = currentPackage != null
+                    && VPackageManager.get().getPackageInfo(
+                    currentPackage, 0, VUserHandle.myUserId()) != null;
+            if (CallingPackageUidResolver.mayExposeCurrentGroupCandidates(
+                    requestedUid,
+                    VirtualCore.get().myUid(),
+                    currentVUid,
+                    callerVUid,
+                    currentPackage,
+                    trustedGmsInstalled)) {
+                // The physical UID is ambiguous after GmsCore moves work off the Binder thread.
+                // Returning GmsCore itself would incorrectly reject the request's guest package.
+                return null;
+            }
+            int targetVUid = CallingPackageUidResolver.restoreRequestedUid(
+                    requestedUid, VirtualCore.get().myUid(), callerVUid);
+            return VPackageManager.get().getNameForUid(targetVUid);
         }
     }
 

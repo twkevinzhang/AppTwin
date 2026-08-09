@@ -5,6 +5,8 @@ import com.lody.virtual.os.VUserHandle;
 /** Restores the virtual user bits stripped from Binder calling UIDs. */
 final class CallingPackageUidResolver {
 
+    private static final String TRUSTED_GMS_PACKAGE = "com.google.android.gms";
+
     private CallingPackageUidResolver() {
     }
 
@@ -24,5 +26,18 @@ final class CallingPackageUidResolver {
             return callerVUid;
         }
         return requestedUid;
+    }
+
+    static boolean mayExposeCurrentGroupCandidates(
+            int requestedUid,
+            int hostUid,
+            int currentVUid,
+            int callerVUid,
+            String currentPackage,
+            boolean trustedGmsInstalled) {
+        return requestedUid == hostUid
+                && currentVUid == callerVUid
+                && trustedGmsInstalled
+                && TRUSTED_GMS_PACKAGE.equals(currentPackage);
     }
 }

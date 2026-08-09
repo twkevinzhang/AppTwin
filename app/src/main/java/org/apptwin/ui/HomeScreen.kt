@@ -72,10 +72,6 @@ import org.apptwin.GroupItem
 import org.apptwin.MainUiState
 import org.apptwin.spaces.CloneLifecycleState
 import org.apptwin.spaces.SpaceLifecycleState
-import org.apptwin.gms.capabilities.GmsCapability
-import org.apptwin.gms.capabilities.GmsCapabilityAssessment
-import org.apptwin.gms.capabilities.GmsCapabilityStatus
-import org.apptwin.gms.capabilities.GmsEvidenceTier
 import org.apptwin.gms.model.GmsDesiredState
 import org.apptwin.gms.model.GmsNetworkConsent
 import org.apptwin.gms.model.GmsObservedState
@@ -412,7 +408,7 @@ private fun GmsCompatibilityCard(
                         fontWeight = FontWeight.Bold,
                     )
                     Text(
-                        "由 microG 提供，實驗性；並非 Google 官方服務",
+                        "由 microG 提供，並非 Google 官方服務",
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
@@ -434,15 +430,11 @@ private fun GmsCompatibilityCard(
                     modifier = Modifier.testTag("gms-data-warning"),
                 )
             }
-            Column(verticalArrangement = Arrangement.spacedBy(7.dp)) {
-                state?.capabilities.orEmpty().forEach { assessment ->
-                    GmsCapabilityRow(assessment)
-                }
-            }
             if (profile?.failureCode != null) {
                 Text(
-                    "狀態代碼：${profile.failureCode}",
+                    "Google 服務相容功能目前無法使用，請稍後再試或重設資料。",
                     color = MaterialTheme.colorScheme.error,
+                    modifier = Modifier.testTag("gms-friendly-error"),
                 )
             }
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -477,71 +469,15 @@ private fun GmsCompatibilityCard(
     }
 }
 
-@Composable
-private fun GmsCapabilityRow(assessment: GmsCapabilityAssessment) {
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.SpaceBetween,
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Text(gmsCapabilityLabel(assessment.capability), modifier = Modifier.weight(1f))
-        Text(
-            gmsCapabilityStatusLabel(assessment),
-            modifier = Modifier.testTag("gms-capability-status-${assessment.capability.name}"),
-            color = if (assessment.status == GmsCapabilityStatus.UNSUPPORTED) {
-                MaterialTheme.colorScheme.error
-            } else {
-                MaterialTheme.colorScheme.onSurfaceVariant
-            },
-            style = MaterialTheme.typography.labelMedium,
-            textAlign = TextAlign.End,
-        )
-    }
-}
-
 private fun gmsProfileLabel(state: GmsObservedState?): String = when (state) {
     GmsObservedState.ABSENT, null -> "未啟用"
     GmsObservedState.ENABLING -> "啟用中"
-    GmsObservedState.READY_PARTIAL -> "部分可用"
+    GmsObservedState.READY_PARTIAL -> "已啟用"
     GmsObservedState.DEGRADED -> "需要處理"
     GmsObservedState.DISABLING -> "停用中"
     GmsObservedState.RESETTING -> "重設中"
     GmsObservedState.UPDATE_REQUIRED -> "需要更新"
     GmsObservedState.REVOKED -> "版本已撤銷"
-}
-
-private fun gmsCapabilityLabel(capability: GmsCapability): String = when (capability) {
-    GmsCapability.PLAY_SERVICES_AVAILABILITY -> "Play services availability"
-    GmsCapability.FCM_REGISTRATION -> "FCM token"
-    GmsCapability.FCM_MESSAGE -> "FCM 訊息接收"
-    GmsCapability.FCM_NOTIFICATION_ROUTING -> "通知與空間路由"
-    GmsCapability.FUSED_LOCATION -> "Fused Location"
-    GmsCapability.MAPS_SDK_V2 -> "Maps SDK v2"
-    GmsCapability.GOOGLE_SIGN_IN_LEGACY -> "Google Sign-In (legacy)"
-    GmsCapability.GOOGLE_SIGN_IN_GIS -> "Google Identity Services"
-    GmsCapability.CAST_SENDER -> "Cast sender"
-    GmsCapability.NEARBY -> "Nearby"
-    GmsCapability.PLAY_BILLING -> "Play Billing"
-    GmsCapability.PLAY_INTEGRITY -> "Play Integrity"
-}
-
-private fun gmsCapabilityStatusLabel(assessment: GmsCapabilityAssessment): String = when {
-    assessment.capability in setOf(GmsCapability.PLAY_BILLING, GmsCapability.PLAY_INTEGRITY) ->
-        "不支援"
-    assessment.status == GmsCapabilityStatus.KNOWN_FAILURE ->
-        "Fixture 失敗${assessment.failureCode?.let { " ($it)" }.orEmpty()}"
-    assessment.status == GmsCapabilityStatus.FIXTURE_PASSED_EXTERNAL_UNTESTED -> when (
-        assessment.evidenceTier
-    ) {
-        GmsEvidenceTier.ASUS_FIXTURE -> "ASUS fixture 通過／外部待驗"
-        else -> "Local fixture 通過／外部待驗"
-    }
-    // The agreed product boundary does not promote stored external evidence in this build.
-    assessment.status in setOf(
-        GmsCapabilityStatus.REAL_EXTERNAL_VERIFIED,
-        GmsCapabilityStatus.THIRD_PARTY_APP_VERIFIED,
-    ) -> "Fixture 通過／外部待驗"
-    else -> "尚未驗證"
 }
 
 @Composable

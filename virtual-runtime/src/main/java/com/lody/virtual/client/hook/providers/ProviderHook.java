@@ -1,6 +1,7 @@
 package com.lody.virtual.client.hook.providers;
 
 import android.content.ContentValues;
+import android.content.pm.ApplicationInfo;
 import android.content.res.AssetFileDescriptor;
 import android.database.Cursor;
 import android.net.Uri;
@@ -9,6 +10,7 @@ import android.os.Bundle;
 import android.os.IInterface;
 import android.os.ParcelFileDescriptor;
 
+import com.lody.virtual.client.VClientImpl;
 import com.lody.virtual.client.core.VirtualCore;
 import com.lody.virtual.client.fixer.ContextFixer;
 import com.lody.virtual.client.hook.base.MethodBox;
@@ -246,6 +248,10 @@ public class ProviderHook implements InvocationHandler {
 
     }
 
+    protected boolean isExternalProvider() {
+        return false;
+    }
+
     public interface HookFetcher {
         ProviderHook fetch(boolean external, IInterface provider);
     }
@@ -262,6 +268,11 @@ public class ProviderHook implements InvocationHandler {
             return;
         }
 
-        ContextFixer.fixAttributionSource(attribution, VirtualCore.get().getHostPkg(), VirtualCore.get().myUid());
+        ApplicationInfo currentApplication = VClientImpl.get().getCurrentApplicationInfo();
+        String currentPackage = currentApplication == null
+                ? null : currentApplication.packageName;
+        String packageName = ProviderAttributionIdentityPolicy.packageName(
+                isExternalProvider(), currentPackage, VirtualCore.get().getHostPkg());
+        ContextFixer.fixAttributionSource(attribution, packageName, VirtualCore.get().myUid());
     }
 }

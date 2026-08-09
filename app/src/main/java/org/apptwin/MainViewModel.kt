@@ -350,10 +350,7 @@ class MainViewModel internal constructor(
                                 appLabel = source?.label ?: app.packageName,
                                 versionName = source?.versionName.orEmpty(),
                                 sourceInstalled = source != null,
-                                launchStatus = launchStatus(
-                                    app.packageName,
-                                    source?.versionCode,
-                                ),
+                                launchStatus = launchStatus(source?.versionCode),
                                 lifecycle = cloneStates.getValue(app.packageName).lifecycle,
                                 cameraGranted = snapshot.permissions["${group.id}:${app.packageName}"]
                                     ?.cameraGranted == true,
@@ -777,15 +774,9 @@ class MainViewModel internal constructor(
             is GmsLifecycleResult.Rejected -> "作業遭拒（${result.failureCode}）"
         }
 
-    private fun launchStatus(packageName: String, versionCode: Long?): String = when {
+    private fun launchStatus(versionCode: Long?): String = when {
         versionCode == null -> "來源 App 已移除"
-        GroupAppRuntimeSupport.compatibility(
-            packageName,
-            versionCode,
-            android.os.Build.VERSION.SDK_INT,
-        ) == RuntimeCompatibility.VERIFIED ->
-            "已通過實機啟動驗證"
-        else -> "尚未完成實機相容驗證"
+        else -> "可使用"
     }
 
     private fun showMessage(message: String) {

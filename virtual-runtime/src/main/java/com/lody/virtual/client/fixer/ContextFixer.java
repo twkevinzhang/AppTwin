@@ -2,9 +2,11 @@ package com.lody.virtual.client.fixer;
 
 import android.content.Context;
 import android.content.ContextWrapper;
+import android.content.pm.ApplicationInfo;
 import android.os.Build;
 import android.os.DropBoxManager;
 
+import com.lody.virtual.client.VClientImpl;
 import com.lody.virtual.client.core.InvocationStubManager;
 import com.lody.virtual.client.core.VirtualCore;
 import com.lody.virtual.client.hook.base.BinderInvocationStub;
@@ -63,7 +65,15 @@ public class ContextFixer {
             }
         }
         String hostPkg = VirtualCore.get().getHostPkg();
-        ContextImpl.mBasePackageName.set(context, hostPkg);
+        ApplicationInfo currentApplication = VClientImpl.get().getCurrentApplicationInfo();
+        String currentPackage = currentApplication == null
+                ? null : currentApplication.packageName;
+        // Context.getPackageName() is guest-facing identity. Google client SDKs include it in
+        // requests to GmsCore, where microG validates it against the virtual Binder caller. Keep
+        // only the operation/attribution identities on the physical host package for framework
+        // AppOps and provider UID validation.
+        ContextImpl.mBasePackageName.set(
+                context, guestBasePackageName(currentPackage, hostPkg));
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.KITKAT) {
             ContextImplKitkat.mOpPackageName.set(context, hostPkg);
         }
@@ -78,6 +88,11 @@ public class ContextFixer {
             // provider queries fail with "Calling uid doesn't match source uid".
             fixAttributionSource(ContextImpl.getAttributionSource.call(context), hostPkg, VirtualCore.get().myUid());
         }
+    }
+
+    static String guestBasePackageName(String currentPackage, String hostPackage) {
+        return currentPackage == null || currentPackage.length() == 0
+                ? hostPackage : currentPackage;
     }
 
     public static void fixAttributionSource(Object attr, String pkg, int uid) {

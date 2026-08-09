@@ -1,6 +1,8 @@
 package com.lody.virtual.client.hook.proxies.pm;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertTrue;
 
 import org.junit.Test;
 
@@ -36,5 +38,21 @@ public class CallingPackageUidResolverTest {
                 CURRENT_GMS_VUID, 210005, true));
         assertEquals(CURRENT_GMS_VUID, CallingPackageUidResolver.trustedCallerVUid(
                 CURRENT_GMS_VUID, SHOPEE_VUID, false));
+    }
+
+    @Test
+    public void onlyPinnedGmsMayResolveAmbiguousHostUidFromItsOwnGroup() {
+        assertTrue(CallingPackageUidResolver.mayExposeCurrentGroupCandidates(
+                HOST_UID, HOST_UID, CURRENT_GMS_VUID, CURRENT_GMS_VUID,
+                "com.google.android.gms", true));
+        assertFalse(CallingPackageUidResolver.mayExposeCurrentGroupCandidates(
+                HOST_UID, HOST_UID, CURRENT_GMS_VUID, SHOPEE_VUID,
+                "com.google.android.gms", true));
+        assertFalse(CallingPackageUidResolver.mayExposeCurrentGroupCandidates(
+                HOST_UID, HOST_UID, CURRENT_GMS_VUID, CURRENT_GMS_VUID,
+                "com.google.android.youtube", true));
+        assertFalse(CallingPackageUidResolver.mayExposeCurrentGroupCandidates(
+                HOST_UID, HOST_UID, CURRENT_GMS_VUID, CURRENT_GMS_VUID,
+                "com.google.android.gms", false));
     }
 }

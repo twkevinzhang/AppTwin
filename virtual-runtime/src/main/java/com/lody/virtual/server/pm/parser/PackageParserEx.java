@@ -562,6 +562,7 @@ public class PackageParserEx {
         if (hasGetSigningInfoFlag) {
             pi.signingInfo = p.signingInfo;
         }
+        TrustedGmsCompatibilityVersionPolicy.apply(pi, p, state);
         return pi;
     }
 
