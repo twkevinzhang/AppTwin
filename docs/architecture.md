@@ -34,9 +34,9 @@ Installed source package
   and exactly one immutable isolation-environment binding allocated during Group creation.
 - Group creation and deletion run through a durable operation journal. A restart rolls forward or
   cleans up an interrupted transition; an already-healthy Group is never silently rebound.
-- GSF, GMS, and Play Store are prepared lazily inside that Group's isolation environment. Apps in
-  one Group share its account environment; another Group cannot see those package or account data.
-- App private data, Google account state, per-App install/enable state, runtime permissions, and
+- Apps in one Group share its account environment; another Group cannot see those app or account
+  data.
+- App private data, account state, per-App install/enable state, runtime permissions, and
   the supported subset of system-service state are scoped by the same Group environment.
 - If a healthy Group's bound environment disappears, the Group becomes `DAMAGED`. Recovery must
   be explicit; allocating a replacement would violate the Group's identity contract.
@@ -75,7 +75,7 @@ Installed source package
 
 - Full device acceptance for multiple newly-created Groups running the same package concurrently.
 - A complete per-Group permission policy across all Android framework services.
-- Notification routing, FCM/GMS integration, deep links, camera, microphone, voice/video, and
+- Notification routing, push-service integration, deep links, camera, microphone, voice/video, and
   background survival.
 - Guest update migration tests across two real Play versions.
 - Android 16 runtime acceptance on a physical locked device.

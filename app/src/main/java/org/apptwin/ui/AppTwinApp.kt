@@ -142,7 +142,6 @@ fun AppTwinApp(
                                 state.busyPackageName != null ||
                                 state.busyGroupId != null ||
                                 state.launchingAppKey != null ||
-                                state.launchingPlayStoreGroupId != null ||
                                 state.uninstallingAppKey != null
                             ) {
                                 LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
@@ -156,9 +155,7 @@ fun AppTwinApp(
                                 state.destination == MainDestination.HOME -> HomeScreen(
                                     state = state,
                                     onLaunch = viewModel::launchGroupApp,
-                                    onLaunchPlayStore = viewModel::launchPlayStore,
                                     onAddApp = viewModel::openAppPicker,
-                                    onPrepareGroup = viewModel::prepareGroup,
                                     onRenameGroup = viewModel::renameGroup,
                                     onDeleteGroup = viewModel::deleteGroup,
                                     onUninstallApp = viewModel::uninstallGroupApp,
@@ -232,7 +229,7 @@ private fun CreateGroupDialog(
         text = {
             Column {
                 Text(
-                    "每個群組會立即建立專屬隔離環境；Google 服務則在加入 App 後按需準備。",
+                    "每個群組會立即建立專屬隔離環境，並讓其中的 App 共用同一套帳戶環境。",
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
                 OutlinedTextField(

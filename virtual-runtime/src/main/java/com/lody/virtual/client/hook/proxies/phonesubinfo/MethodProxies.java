@@ -37,7 +37,7 @@ class MethodProxies {
     /**
      * Subscriber identifiers are privileged on modern Android. Returning the per-environment
      * stable identifier avoids leaking the physical SIM and prevents a SecurityException from
-     * terminating cloned GMS check-in.
+     * terminating cloned processes that probe subscription identity.
      */
     @FakeDeviceMark("fake subscriber id")
     static class GetSubscriberId extends GetDeviceId {

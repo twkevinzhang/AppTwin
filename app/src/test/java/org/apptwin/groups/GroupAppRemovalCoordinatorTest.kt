@@ -9,8 +9,8 @@ class GroupAppRemovalCoordinatorTest {
     @Test
     fun `removal targets only the selected Group environment`() {
         val store = InMemoryGroupStore().apply {
-            group(GROUP_A, EnvironmentBinding(4), GroupAppOrigin.SYSTEM_IMPORT)
-            group(GROUP_B, EnvironmentBinding(5), GroupAppOrigin.SYSTEM_IMPORT)
+            group(GROUP_A, EnvironmentBinding(4))
+            group(GROUP_B, EnvironmentBinding(5))
         }
         val runtime = FakeRuntime().apply {
             installed += EnvironmentBinding(4) to LINE
@@ -32,7 +32,7 @@ class GroupAppRemovalCoordinatorTest {
 
     @Test
     fun `runtime absence is success and then removes metadata`() {
-        val store = storeWithApp(GroupAppOrigin.PLAY_STORE)
+        val store = storeWithApp()
         val runtime = FakeRuntime()
 
         val result = coordinator(store, runtime).remove(GROUP_A, LINE)
@@ -45,22 +45,8 @@ class GroupAppRemovalCoordinatorTest {
     }
 
     @Test
-    fun `system import and Play Store memberships use the same removal path`() {
-        GroupAppOrigin.entries.forEach { origin ->
-            val store = storeWithApp(origin)
-            val runtime = FakeRuntime().apply {
-                installed += EnvironmentBinding(4) to LINE
-            }
-
-            assertTrue(coordinator(store, runtime).remove(GROUP_A, LINE) is GroupAppRemovalResult.Succeeded)
-            assertFalse(store.find(GROUP_A)!!.contains(LINE))
-            assertEquals(listOf(EnvironmentBinding(4) to LINE), runtime.calls)
-        }
-    }
-
-    @Test
     fun `repeated removal is idempotent`() {
-        val store = storeWithApp(GroupAppOrigin.SYSTEM_IMPORT)
+        val store = storeWithApp()
         val runtime = FakeRuntime().apply {
             installed += EnvironmentBinding(4) to LINE
         }
@@ -73,7 +59,7 @@ class GroupAppRemovalCoordinatorTest {
 
     @Test
     fun `runtime failure preserves metadata and pending journal`() {
-        val store = storeWithApp(GroupAppOrigin.SYSTEM_IMPORT)
+        val store = storeWithApp()
         val runtime = FakeRuntime().apply { failure = IllegalStateException("engine failed") }
         val journal = FakeJournal()
 
@@ -86,7 +72,7 @@ class GroupAppRemovalCoordinatorTest {
 
     @Test
     fun `started operation converges when runtime already removed the package before crash`() {
-        val store = storeWithApp(GroupAppOrigin.SYSTEM_IMPORT)
+        val store = storeWithApp()
         val runtime = FakeRuntime()
         val journal = FakeJournal().apply { write(startedOperation()) }
 
@@ -99,7 +85,7 @@ class GroupAppRemovalCoordinatorTest {
 
     @Test
     fun `runtime-removed operation completes metadata without touching runtime again`() {
-        val backing = storeWithApp(GroupAppOrigin.PLAY_STORE)
+        val backing = storeWithApp()
         val store = FailingRemoveStore(backing)
         val runtime = FakeRuntime().apply {
             installed += EnvironmentBinding(4) to LINE
@@ -123,8 +109,8 @@ class GroupAppRemovalCoordinatorTest {
     @Test
     fun `failed reconcile leaves metadata and continues with another operation`() {
         val store = InMemoryGroupStore().apply {
-            group(GROUP_A, EnvironmentBinding(4), GroupAppOrigin.SYSTEM_IMPORT)
-            group(GROUP_B, EnvironmentBinding(5), GroupAppOrigin.PLAY_STORE)
+            group(GROUP_A, EnvironmentBinding(4))
+            group(GROUP_B, EnvironmentBinding(5))
         }
         val runtime = FakeRuntime().apply {
             installed += EnvironmentBinding(4) to LINE
@@ -146,7 +132,7 @@ class GroupAppRemovalCoordinatorTest {
     fun `stale journal never removes a newly re-added membership`() {
         val store = InMemoryGroupStore().apply {
             create(GROUP_A, "工作", EnvironmentBinding(4), 1)
-            addApp(GROUP_A, LINE, 200, GroupAppOrigin.PLAY_STORE)
+            addApp(GROUP_A, LINE, 200)
         }
         val runtime = FakeRuntime().apply {
             installed += EnvironmentBinding(4) to LINE
@@ -169,17 +155,16 @@ class GroupAppRemovalCoordinatorTest {
         journal: FakeJournal = FakeJournal(),
     ) = GroupAppRemovalCoordinator(store, runtime, journal, clock = { 500 })
 
-    private fun storeWithApp(origin: GroupAppOrigin) = InMemoryGroupStore().apply {
-        group(GROUP_A, EnvironmentBinding(4), origin)
+    private fun storeWithApp() = InMemoryGroupStore().apply {
+        group(GROUP_A, EnvironmentBinding(4))
     }
 
     private fun InMemoryGroupStore.group(
         id: String,
         binding: EnvironmentBinding,
-        origin: GroupAppOrigin,
     ) {
         create(id, "Group $id", binding, 1)
-        addApp(id, LINE, 100, origin)
+        addApp(id, LINE, 100)
     }
 
     private fun startedOperation(

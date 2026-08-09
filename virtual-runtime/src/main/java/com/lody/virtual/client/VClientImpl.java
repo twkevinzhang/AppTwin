@@ -36,9 +36,7 @@ import com.lody.virtual.client.env.VirtualRuntime;
 import com.lody.virtual.client.fixer.ContextFixer;
 import com.lody.virtual.client.hook.delegate.AppInstrumentation;
 import com.lody.virtual.client.hook.providers.ProviderHook;
-import com.lody.virtual.client.hook.providers.SettingsProviderHook;
 import com.lody.virtual.client.hook.proxies.am.HCallbackStub;
-import com.lody.virtual.client.hook.secondary.ProxyServiceFactory;
 import com.lody.virtual.client.ipc.VActivityManager;
 import com.lody.virtual.client.ipc.VDeviceManager;
 import com.lody.virtual.client.ipc.VPackageManager;
@@ -475,28 +473,7 @@ public final class VClientImpl extends IVClient.Stub {
             }
         }
         VirtualCore.get().getComponentDelegate().afterApplicationCreate(mInitialApplication);
-        ensureGoogleServiceProcessKeepAlive(packageName, processName);
         VActivityManager.get().appDoneExecuting(token, true);
-    }
-
-    private void ensureGoogleServiceProcessKeepAlive(String packageName, String processName) {
-        if (!GoogleProcessKeepAlivePolicy.shouldKeepAlive(packageName, processName)) {
-            return;
-        }
-        String hostPackage = VirtualCore.get().getHostPkg();
-        String serviceClassName = GoogleProcessKeepAlivePolicy.serviceClassNameForProcess(
-                hostPackage, VirtualCore.get().getProcessName(), VASettings.STUB_COUNT);
-        if (serviceClassName == null) {
-            VLog.e(TAG, "Unable to resolve keep-alive service for host process "
-                    + VirtualCore.get().getProcessName());
-            return;
-        }
-        Intent keepAlive = new Intent()
-                .setClassName(hostPackage, serviceClassName);
-        ComponentName started = VirtualCore.get().getContext().startService(keepAlive);
-        VLog.i(TAG, "Google service-process keep-alive started guest=" + packageName
-                + "/" + processName + " host=" + VirtualCore.get().getProcessName()
-                + " component=" + started);
     }
 
     private void fixWeChatRecovery(Application app) {
@@ -811,18 +788,6 @@ public final class VClientImpl extends IVClient.Stub {
         }
         cache = Settings.Secure.sNameValueCache.get();
         if (cache != null) {
-            Object readableFields = Settings.NameValueCache.mReadableFields != null
-                    ? Settings.NameValueCache.mReadableFields.get(cache) : null;
-            boolean allowed = SettingsProviderHook.allowClientSideRead(
-                    readableFields, "enabled_input_methods");
-            Object maxTargetFields = Settings.NameValueCache.mReadableFieldsWithMaxTargetSdk != null
-                    ? Settings.NameValueCache.mReadableFieldsWithMaxTargetSdk.get(cache) : null;
-            boolean targetLimitRaised = SettingsProviderHook.removeClientSideTargetSdkLimit(
-                    maxTargetFields, "enabled_input_methods");
-            VLog.i(TAG, "Android17 secure-setting readable override fields="
-                    + (readableFields == null ? "null" : readableFields.getClass().getName())
-                    + " readableChanged=" + allowed
-                    + " maxTargetChanged=" + targetLimitRaised);
             clearContentProvider(cache);
         }
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.JELLY_BEAN_MR1 && Settings.Global.TYPE != null) {
@@ -896,7 +861,7 @@ public final class VClientImpl extends IVClient.Stub {
 
     @Override
     public IBinder createProxyService(ComponentName component, IBinder binder) {
-        return ProxyServiceFactory.getProxyService(getCurrentApplication(), component, binder);
+        return binder;
     }
 
     @Override

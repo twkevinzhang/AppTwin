@@ -42,8 +42,6 @@ import com.lody.virtual.client.hook.base.MethodProxy;
 import com.lody.virtual.client.hook.base.ReplaceLastPkgMethodProxy;
 import com.lody.virtual.client.hook.delegate.TaskDescriptionDelegate;
 import com.lody.virtual.client.hook.providers.ProviderHook;
-import com.lody.virtual.client.hook.proxies.location.LocationAccessPolicy;
-import com.lody.virtual.client.hook.proxies.pm.GoogleRuntimePermissions;
 import com.lody.virtual.client.hook.secondary.ServiceConnectionDelegate;
 import com.lody.virtual.client.hook.utils.MethodParameterUtils;
 import com.lody.virtual.client.ipc.ActivityClientRecord;
@@ -51,7 +49,6 @@ import com.lody.virtual.client.ipc.VActivityManager;
 import com.lody.virtual.client.ipc.VNotificationManager;
 import com.lody.virtual.client.ipc.VPackageManager;
 import com.lody.virtual.client.stub.ChooserActivity;
-import com.lody.virtual.client.stub.ChooseTypeAndAccountActivity;
 import com.lody.virtual.client.stub.StubPendingActivity;
 import com.lody.virtual.client.stub.StubPendingReceiver;
 import com.lody.virtual.client.stub.StubPendingService;
@@ -364,18 +361,10 @@ class MethodProxies {
             String[] resolvedTypes = (String[]) args[mResolvedTypesIndex];
             int type = (int) args[0];
             int flags = (int) args[mFlagsIndex];
-            if ("com.google.android.gms".equals(getAppPkg())) {
-                VLog.i("VA-IntentSender", "create method=%s type=%s creator=%s",
-                        method.getName(), type, creator);
-            }
             if (args[mIntentIndex] instanceof Intent[]) {
                 Intent[] intents = (Intent[]) args[mIntentIndex];
                 for (int i = 0; i < intents.length; i++) {
                     Intent intent = intents[i];
-                    if ("com.google.android.gms".equals(getAppPkg())) {
-                        VLog.i("VA-IntentSender", "target action=%s component=%s",
-                                intent.getAction(), intent.getComponent());
-                    }
                     if (resolvedTypes != null && i < resolvedTypes.length) {
                         intent.setDataAndType(intent.getData(), resolvedTypes[i]);
                     }
@@ -473,10 +462,6 @@ class MethodProxies {
             String resolvedType = (String) args[intentIndex + 1];
             Intent intent = (Intent) args[intentIndex];
             intent.setDataAndType(intent.getData(), resolvedType);
-            if ("com.google.android.gms".equals(getAppPkg())) {
-                VLog.i("VA-StartActivity", "method=%s action=%s component=%s",
-                        method.getName(), intent.getAction(), intent.getComponent());
-            }
             IBinder resultTo = resultToIndex >= 0 ? (IBinder) args[resultToIndex] : null;
             int userId = VUserHandle.myUserId();
 
@@ -501,19 +486,6 @@ class MethodProxies {
                     MediaStore.ACTION_VIDEO_CAPTURE.equals(intent.getAction()) ||
                     MediaStore.ACTION_IMAGE_CAPTURE_SECURE.equals(intent.getAction())) {
                 handleMediaCaptureRequest(intent);
-            } else if ("android.settings.ADD_ACCOUNT_SETTINGS".equals(intent.getAction())
-                    && "com.google.android.apps.maps".equals(getAppPkg())) {
-                // Android Settings would hand this request to the real system AccountManager and
-                // leak the host account list. Route Maps into VirtualApp's account chooser so the
-                // authenticator and resulting account stay inside the current virtual user.
-                intent.setAction(null);
-                intent.setData(null);
-                intent.setComponent(new ComponentName(
-                        getHostContext(), ChooseTypeAndAccountActivity.class));
-                intent.putExtra(ChooseTypeAndAccountActivity.KEY_USER_ID, userId);
-                intent.putExtra(
-                        ChooseTypeAndAccountActivity.EXTRA_ALLOWABLE_ACCOUNT_TYPES_STRING_ARRAY,
-                        new String[]{"com.google"});
             }
 
             String resultWho = null;
@@ -931,13 +903,6 @@ class MethodProxies {
             return "startActivityIntentSender";
         }
 
-        @Override
-        public Object call(Object who, Method method, Object... args) throws Throwable {
-            if ("com.google.android.gms".equals(getAppPkg())) {
-                VLog.i("VA-IntentSender", "send method=%s", method.getName());
-            }
-            return super.call(who, method, args);
-        }
     }
 
 
@@ -964,32 +929,7 @@ class MethodProxies {
                 return method.invoke(who, args);
             }
             ServiceInfo serviceInfo = VirtualCore.get().resolveServiceInfo(service, userId);
-            if (isGoogleService(service)) {
-                VLog.i("VA-GmsRoute", "bind method=%s user=%d intent=%s resolved=%s",
-                        method.getName(), userId, service,
-                        serviceInfo == null ? "host" : serviceInfo.packageName + "/" + serviceInfo.name);
-            }
             if (serviceInfo != null) {
-                if (GmsServiceBindingPolicy.shouldRejectUnavailableWearableBinding(
-                        getAppPkg(), service.getAction(), serviceInfo.packageName)) {
-                    // A guest cannot provide the physical Wear companion expected by GMS. The
-                    // virtual WearableService exits initialization without publishing a Binder,
-                    // leaving clients such as LINE suspended forever during startup/data sync.
-                    // bindService() failure is the supported no-Wear fallback and lets the client
-                    // continue without optional watch integration.
-                    VLog.i("VA-GmsRoute", "reject unavailable wearable binding caller=%s",
-                            getAppPkg());
-                    return 0;
-                }
-                if (PlayStoreServiceBindingPolicy.shouldRejectLocalOnlyBinding(
-                        getAppPkg(), serviceInfo.packageName, serviceInfo.name)) {
-                    // Firebase's WithinAppServiceConnection requires the concrete local
-                    // Binder implementation. A virtual service necessarily crosses the
-                    // runtime server and becomes BinderProxy, which Firebase rejects with
-                    // a process-fatal SecurityException. Binding failure is Firebase's
-                    // supported no-push fallback and does not affect Play installs.
-                    return 0;
-                }
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
                     service.setComponent(new ComponentName(serviceInfo.packageName, serviceInfo.name));
                 }
@@ -1003,13 +943,6 @@ class MethodProxies {
         @Override
         public boolean isEnable() {
             return isAppProcess() || isServerProcess();
-        }
-
-        private static boolean isGoogleService(Intent service) {
-            ComponentName component = service.getComponent();
-            return "com.google.android.gms".equals(service.getPackage())
-                    || component != null
-                    && "com.google.android.gms".equals(component.getPackageName());
         }
 
         static int serviceBindFlags(Object rawFlags) {
@@ -1073,12 +1006,6 @@ class MethodProxies {
             }
             service.setDataAndType(service.getData(), resolvedType);
             ServiceInfo serviceInfo = VirtualCore.get().resolveServiceInfo(service, VUserHandle.myUserId());
-            if ("com.google.android.gms".equals(getAppPkg())) {
-                VLog.i("VA-StartService", "action=%s component=%s resolved=%s user=%s",
-                        service.getAction(), service.getComponent(),
-                        serviceInfo == null ? null : new ComponentName(
-                                serviceInfo.packageName, serviceInfo.name), userId);
-            }
             if (serviceInfo != null) {
                 if (isFiltered(service, serviceInfo)) {
                     return service.getComponent();
@@ -1094,11 +1021,6 @@ class MethodProxies {
         }
 
         private boolean isFiltered(Intent service, ServiceInfo serviceInfo) {
-            if (GoogleLocationServicePolicy.shouldBlock(
-                    serviceInfo.packageName, serviceInfo.name, service.getAction(),
-                    LocationAccessPolicy.hasLocationPermission())) {
-                return true;
-            }
             // disable tinker.
             if (service != null && service.getComponent() != null
                     && EncodeUtils.decode("Y29tLnRlbmNlbnQudGlua2VyLmxpYi5zZXJ2aWMuVGlua2VyUGF0Y2hTZXJ2aWNl") // com.tencent.tinker.lib.service.TinkerPatchService
@@ -1307,10 +1229,6 @@ class MethodProxies {
         @Override
         public Object call(Object who, Method method, Object... args) throws Throwable {
             String permission = (String) args[0];
-            if (GoogleRuntimePermissions.shouldGrant(
-                    VClientImpl.get().getCurrentPackage(), permission)) {
-                return PackageManager.PERMISSION_GRANTED;
-            }
             if (DynamicReceiverPermissionCompat.isSyntheticPermission(permission)) {
                 // AndroidX generates this permission from Context.getPackageName(). The guest
                 // package is virtual, so Android cannot grant its signature permission to the
@@ -1319,9 +1237,6 @@ class MethodProxies {
                 return PackageManager.PERMISSION_GRANTED;
             }
             if (SpecialComponentList.isWhitePermission(permission)) {
-                return PackageManager.PERMISSION_GRANTED;
-            }
-            if (permission.startsWith("com.google")) {
                 return PackageManager.PERMISSION_GRANTED;
             }
             args[args.length - 1] = getRealUid();
@@ -1821,7 +1736,7 @@ class MethodProxies {
             }
             // The virtual user id is carried inside the redirected intent. The real framework
             // broadcast must stay in Android user 0; forwarding USER_ALL (-1) from a regular host
-            // UID requires INTERACT_ACROSS_USERS and crashes modern GMS background workers.
+            // UID requires INTERACT_ACROSS_USERS and crashes background workers.
             if (args[args.length - 1] instanceof Integer) {
                 args[args.length - 1] = 0;
             }

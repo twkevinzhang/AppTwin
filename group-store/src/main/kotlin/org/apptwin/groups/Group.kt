@@ -2,20 +2,13 @@ package org.apptwin.groups
 
 import java.util.UUID
 
-const val CURRENT_GROUP_SCHEMA_VERSION = 3
+const val CURRENT_GROUP_SCHEMA_VERSION = 4
 
 enum class GroupHealth {
     PROVISIONING,
     HEALTHY,
     DAMAGED,
     DELETING,
-}
-
-enum class GoogleServicesState {
-    NOT_PREPARED,
-    PREPARING,
-    READY,
-    FAILED,
 }
 
 enum class GroupAppState {
@@ -25,11 +18,6 @@ enum class GroupAppState {
     DISABLED,
     SOURCE_MISSING,
     FAILED,
-}
-
-enum class GroupAppOrigin {
-    SYSTEM_IMPORT,
-    PLAY_STORE,
 }
 
 @JvmInline
@@ -43,7 +31,6 @@ data class GroupApp(
     val packageName: String,
     val addedAtEpochMillis: Long,
     val state: GroupAppState = GroupAppState.ADDED,
-    val origin: GroupAppOrigin = GroupAppOrigin.SYSTEM_IMPORT,
 ) {
     init {
         require(PACKAGE_NAME.matches(packageName)) { "Invalid Android package name" }
@@ -61,7 +48,6 @@ data class Group(
     val createdAtEpochMillis: Long,
     val environmentBinding: EnvironmentBinding?,
     val health: GroupHealth,
-    val googleServicesState: GoogleServicesState = GoogleServicesState.NOT_PREPARED,
     val apps: List<GroupApp> = emptyList(),
     val schemaVersion: Int = CURRENT_GROUP_SCHEMA_VERSION,
 ) {
@@ -69,7 +55,7 @@ data class Group(
         require(ID.matches(id)) { "Invalid group id" }
         require(name.isNotBlank()) { "Group name must not be blank" }
         require(createdAtEpochMillis >= 0) { "Creation time must not be negative" }
-        require(schemaVersion in 1..CURRENT_GROUP_SCHEMA_VERSION) { "Unsupported group schema" }
+        require(schemaVersion == CURRENT_GROUP_SCHEMA_VERSION) { "Unsupported group schema" }
         require(apps.map(GroupApp::packageName).distinct().size == apps.size) {
             "A package can only be added once per group"
         }
@@ -99,13 +85,10 @@ interface GroupStore {
         groupId: String,
         packageName: String,
         addedAtEpochMillis: Long,
-        origin: GroupAppOrigin = GroupAppOrigin.SYSTEM_IMPORT,
     ): Group?
     fun removeApp(groupId: String, packageName: String): Group?
     fun updateAppState(groupId: String, packageName: String, state: GroupAppState): Group?
-    fun updateGoogleServicesState(groupId: String, state: GoogleServicesState): Group?
     fun updateHealth(groupId: String, health: GroupHealth): Group?
-    fun completeProvisioning(groupId: String, environmentBinding: EnvironmentBinding): Group?
     fun delete(groupId: String): Boolean
 }
 
@@ -134,7 +117,7 @@ class InMemoryGroupStore : GroupStore {
         return group
     }
 
-    /** Test and migration fixture entrypoint; production creates legacy records from disk only. */
+    /** Test fixture entrypoint. */
     fun import(record: Group): Group {
         check(record.id !in groups) { "Duplicate group id" }
         groups[record.id] = record
@@ -157,11 +140,10 @@ class InMemoryGroupStore : GroupStore {
         groupId: String,
         packageName: String,
         addedAtEpochMillis: Long,
-        origin: GroupAppOrigin,
     ): Group? = update(groupId) { group ->
         require(group.health == GroupHealth.HEALTHY) { "Group is not available" }
         require(!group.contains(packageName)) { "$packageName already exists in this group" }
-        group.copy(apps = group.apps + GroupApp(packageName, addedAtEpochMillis, origin = origin))
+        group.copy(apps = group.apps + GroupApp(packageName, addedAtEpochMillis))
     }
 
     @Synchronized
@@ -184,35 +166,8 @@ class InMemoryGroupStore : GroupStore {
     }
 
     @Synchronized
-    override fun updateGoogleServicesState(
-        groupId: String,
-        state: GoogleServicesState,
-    ): Group? = update(groupId) { group -> group.copy(googleServicesState = state) }
-
-    @Synchronized
     override fun updateHealth(groupId: String, health: GroupHealth): Group? = update(groupId) { group ->
         group.copy(health = health)
-    }
-
-    @Synchronized
-    override fun completeProvisioning(
-        groupId: String,
-        environmentBinding: EnvironmentBinding,
-    ): Group? {
-        val current = groups[groupId] ?: return null
-        require(current.health == GroupHealth.PROVISIONING) { "Group is not provisioning" }
-        check(
-            groups.values.none {
-                it.id != groupId &&
-                    it.health != GroupHealth.PROVISIONING &&
-                    it.environmentBinding == environmentBinding
-            },
-        ) { "Environment binding already belongs to another Group" }
-        return current.copy(
-            environmentBinding = environmentBinding,
-            health = GroupHealth.HEALTHY,
-            schemaVersion = CURRENT_GROUP_SCHEMA_VERSION,
-        ).also { groups[groupId] = it }
     }
 
     @Synchronized

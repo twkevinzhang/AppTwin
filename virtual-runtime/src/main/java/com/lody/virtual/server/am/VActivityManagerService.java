@@ -33,8 +33,6 @@ import com.lody.virtual.client.IVClient;
 import com.lody.virtual.client.core.VirtualCore;
 import com.lody.virtual.client.env.Constants;
 import com.lody.virtual.client.env.SpecialComponentList;
-import com.lody.virtual.client.hook.proxies.am.GoogleLocationServicePolicy;
-import com.lody.virtual.client.hook.proxies.location.LocationAccessPolicy;
 import com.lody.virtual.client.ipc.ProviderCall;
 import com.lody.virtual.client.ipc.VNotificationManager;
 import com.lody.virtual.client.stub.StubProcessContract;
@@ -331,13 +329,6 @@ public class VActivityManagerService extends IActivityManager.Stub
             VLog.w(TAG, "startService unresolved: " + service + " user=" + userId);
             return null;
         }
-        if (scheduleServiceArgs && GoogleLocationServicePolicy.shouldBlock(
-                serviceInfo.packageName, serviceInfo.name, service.getAction(),
-                LocationAccessPolicy.hasLocationPermission())) {
-            VLog.i(TAG, "location-denied service skipped "
-                    + ComponentUtils.toComponentName(serviceInfo) + " user=" + userId);
-            return ComponentUtils.toComponentName(serviceInfo);
-        }
         VLog.i(TAG, "startService " + service + " resolved="
                 + ComponentUtils.toComponentName(serviceInfo) + " user=" + userId);
         final boolean isolatedProcess = isIsolatedProcess(serviceInfo);
@@ -357,24 +348,10 @@ public class VActivityManagerService extends IActivityManager.Stub
             return null;
         }
         final ServiceRecord r;
-        ServiceRecord retiredRecord = null;
         PendingServiceOperation startArgsOperation = null;
         boolean scheduleCreate = false;
         synchronized (this) {
             ServiceRecord record = findRecordLocked(userId, serviceInfo);
-            if (record != null && TransientServicePolicy.shouldRecreate(serviceInfo, service)) {
-                // Chimera's IntentOperationService stops itself after draining an operation. The
-                // guest stop callback is not always observable by the virtual server because the
-                // service is hosted in a process that also contains a real host keep-alive service.
-                // Reusing that orphaned token makes ActivityThread silently drop later CHECKIN
-                // service args, so explicitly retire it before scheduling the next operation.
-                VLog.i(TAG, "recreating transient service "
-                        + ComponentUtils.toComponentName(serviceInfo) + " token=" + record);
-                record.retire();
-                removeRecord(record);
-                retiredRecord = record;
-                record = null;
-            }
             if (record != null && (record.process != targetApp
                     || !isProcessEndpointActive(record.process))) {
                 VLog.w(TAG, "Discarding stale service record "
@@ -434,21 +411,6 @@ public class VActivityManagerService extends IActivityManager.Stub
         }
 
         boolean queuedWork = false;
-        if (retiredRecord != null) {
-            if (retiredRecord.process.lifecycle.state() == ProcessLifecycle.State.READY) {
-                try {
-                    retiredRecord.process.client.scheduleStopService(retiredRecord);
-                } catch (RemoteException e) {
-                    failProcessGeneration(retiredRecord.process,
-                            ProcessLifecycle.TerminalReason.DISPATCH_FAILED,
-                            "transient-stop-failed");
-                    return null;
-                }
-            } else {
-                queuedWork |= enqueueStopOperationLocked(
-                        retiredRecord, "transient-recreate");
-            }
-        }
         if (scheduleCreate) {
             if (!dispatchCreateService(targetApp, r)) {
                 failProcessGeneration(targetApp,

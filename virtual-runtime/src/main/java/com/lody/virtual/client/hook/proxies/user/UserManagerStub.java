@@ -57,7 +57,7 @@ public class UserManagerStub extends BinderInvocationProxy {
     /**
      * Android 12 protects {@code IUserManager.isUserOfType} with MANAGE_USERS. Guest code runs
      * under the host application's real Android user, so delegating this query both leaks host
-     * profile state and crashes callers such as GMS Checkin. A virtual user is modelled as a
+     * profile state and crashes callers that inspect provisioning state. A virtual user is modelled as a
      * normal full secondary user; it is never an Android guest, managed profile, clone profile,
      * or other OS-level profile/container.
      */

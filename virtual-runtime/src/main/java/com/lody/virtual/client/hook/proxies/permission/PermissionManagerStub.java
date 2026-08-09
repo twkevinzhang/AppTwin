@@ -10,7 +10,7 @@ import mirror.android.permission.IPermissionManager;
  *
  * <p>The platform moved permission-change listeners from the package binder to the separate
  * {@code permissionmgr} service. A guest cannot register its host UID as a privileged observer,
- * and GMS treats that failure as a service-dispatcher initialization failure. Virtual package
+ * and callers can treat that failure as a service-dispatcher initialization failure. Virtual package
  * permissions are stable for the lifetime of a launched guest, so an inert listener is the
  * correct container-level behavior.</p>
  */

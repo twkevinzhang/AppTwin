@@ -64,7 +64,7 @@ public class TelephonyStub extends BinderInvocationProxy {
 		// Hardware identifiers belong to the physical phone, not to a virtual instance. Modern
 		// TelephonyManager routes these methods through ITelephony (instead of iphonesubinfo), and
 		// forwarding the guest package with the host UID both leaks identity and is rejected by
-		// Android 12. GMS check-in supports devices without an IMEI/MEID and uses its virtual
+		// Android 12. Modern callers support devices without an IMEI/MEID and use their virtual
 		// Android ID instead.
 		addMethodProxy(new ResultStaticMethodProxy("getImeiForSlot", null));
 		addMethodProxy(new ResultStaticMethodProxy("getMeidForSlot", null));

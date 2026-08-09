@@ -34,9 +34,6 @@ class FileGroupOperationJournal(context: Context) : GroupOperationJournal {
                 operation.environmentBinding?.let {
                     setProperty("environmentBindingId", it.internalId.toString())
                 }
-                operation.sourceBinding?.let {
-                    setProperty("sourceBindingId", it.internalId.toString())
-                }
             }
             FileOutputStream(replacement).use { output ->
                 properties.store(output, "AppTwin Group lifecycle operation")
@@ -68,9 +65,6 @@ class FileGroupOperationJournal(context: Context) : GroupOperationJournal {
             phase = GroupOperationPhase.valueOf(requireNotNull(properties.getProperty("phase"))),
             groupName = properties.getProperty("groupName"),
             environmentBinding = properties.getProperty("environmentBindingId")
-                ?.toIntOrNull()
-                ?.let(::EnvironmentBinding),
-            sourceBinding = properties.getProperty("sourceBindingId")
                 ?.toIntOrNull()
                 ?.let(::EnvironmentBinding),
             startedAtEpochMillis = requireNotNull(

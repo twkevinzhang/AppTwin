@@ -15,16 +15,13 @@ public class LegacySharedLibraryCompatTest {
         File testBase = temporaryFolder.newFile("android.test.base.jar");
         File apacheBoot = temporaryFolder.newFile("org.apache.http.legacy.boot.jar");
         File apacheFallback = temporaryFolder.newFile("org.apache.http.legacy.jar");
-        File locationProvider = temporaryFolder.newFile("com.android.location.provider.jar");
 
         assertEquals(
                 testBase.getAbsolutePath()
                         + File.pathSeparator
-                        + apacheBoot.getAbsolutePath()
-                        + File.pathSeparator
-                        + locationProvider.getAbsolutePath(),
+                        + apacheBoot.getAbsolutePath(),
                 LegacySharedLibraryCompat.buildDelegatePath(
-                        testBase, apacheBoot, apacheFallback, locationProvider));
+                        testBase, apacheBoot, apacheFallback));
     }
 
     @Test
@@ -32,15 +29,11 @@ public class LegacySharedLibraryCompatTest {
         File missingTestBase = new File(temporaryFolder.getRoot(), "missing-test-base.jar");
         File missingApacheBoot = new File(temporaryFolder.getRoot(), "missing-apache-boot.jar");
         File apacheFallback = temporaryFolder.newFile("org.apache.http.legacy.jar");
-        File missingLocationProvider =
-                new File(temporaryFolder.getRoot(), "missing-location-provider.jar");
-
         assertEquals(
                 apacheFallback.getAbsolutePath(),
                 LegacySharedLibraryCompat.buildDelegatePath(
                         missingTestBase,
                         missingApacheBoot,
-                        apacheFallback,
-                        missingLocationProvider));
+                        apacheFallback));
     }
 }

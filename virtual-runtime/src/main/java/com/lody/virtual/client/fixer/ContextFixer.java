@@ -75,7 +75,7 @@ public class ContextFixer {
             // Android 12 validates AttributionSource.uid against Binder.getCallingUid() before a
             // ContentProvider call reaches our provider hook. The Binder caller is the host app,
             // not the virtual guest UID, so retaining the guest UID here makes otherwise valid
-            // GMS/GSF queries fail with "Calling uid doesn't match source uid".
+            // provider queries fail with "Calling uid doesn't match source uid".
             fixAttributionSource(ContextImpl.getAttributionSource.call(context), hostPkg, VirtualCore.get().myUid());
         }
     }

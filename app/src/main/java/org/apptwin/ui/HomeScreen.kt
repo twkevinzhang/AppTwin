@@ -27,8 +27,6 @@ import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Error
 import androidx.compose.material.icons.filled.HourglassTop
 import androidx.compose.material.icons.filled.MoreVert
-import androidx.compose.material.icons.filled.Refresh
-import androidx.compose.material.icons.filled.Storefront
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Button
@@ -64,16 +62,13 @@ import androidx.compose.ui.unit.dp
 import org.apptwin.GroupAppItem
 import org.apptwin.GroupItem
 import org.apptwin.MainUiState
-import org.apptwin.groups.GoogleServicesState
 import org.apptwin.groups.GroupHealth
 
 @Composable
 fun HomeScreen(
     state: MainUiState,
     onLaunch: (GroupAppItem) -> Unit,
-    onLaunchPlayStore: (String) -> Unit,
     onAddApp: (String) -> Unit,
-    onPrepareGroup: (String) -> Unit,
     onRenameGroup: (String, String) -> Unit,
     onDeleteGroup: (String) -> Unit,
     onUninstallApp: (GroupAppItem) -> Unit,
@@ -97,16 +92,12 @@ fun HomeScreen(
                     item = item,
                     launchingAppKey = state.launchingAppKey,
                     uninstallingAppKey = state.uninstallingAppKey,
-                    isPlayStoreLaunching = state.launchingPlayStoreGroupId == item.groupId,
                     isAnyLaunchBusy = state.launchingAppKey != null ||
-                        state.launchingPlayStoreGroupId != null ||
                         state.uninstallingAppKey != null,
                     isBusy = state.busyGroupId == item.groupId ||
                         state.uninstallingAppKey?.startsWith("${item.groupId}:") == true,
                     onLaunch = onLaunch,
-                    onLaunchPlayStore = { onLaunchPlayStore(item.groupId) },
                     onAddApp = { onAddApp(item.groupId) },
-                    onPrepare = { onPrepareGroup(item.groupId) },
                     onRename = { renameTarget = item },
                     onDelete = { deleteTarget = item },
                     onUninstallApp = { uninstallTarget = it },
@@ -132,7 +123,7 @@ fun HomeScreen(
             icon = { Icon(Icons.Default.Delete, contentDescription = null) },
             title = { Text("刪除「${group.name}」？") },
             text = {
-                Text("這會永久刪除群組內所有 App 資料、Google 帳戶與獨立 GMS 環境。主系統 App 和其他群組不受影響。")
+                Text("這會永久刪除群組內所有 App 資料與隔離環境。主系統 App 和其他群組不受影響。")
             },
             confirmButton = {
                 Button(
@@ -205,7 +196,7 @@ private fun HomeSummary(groupCount: Int) {
                     fontWeight = FontWeight.Bold,
                 )
                 Text(
-                    "App 共用群組內的 Google 服務，但不會看到其他群組的資料。",
+                    "同一群組內的 App 共用帳戶環境，但不會看到其他群組的資料。",
                     modifier = Modifier.padding(top = 6.dp),
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.82f),
@@ -234,13 +225,10 @@ private fun GroupCard(
     item: GroupItem,
     launchingAppKey: String?,
     uninstallingAppKey: String?,
-    isPlayStoreLaunching: Boolean,
     isAnyLaunchBusy: Boolean,
     isBusy: Boolean,
     onLaunch: (GroupAppItem) -> Unit,
-    onLaunchPlayStore: () -> Unit,
     onAddApp: () -> Unit,
-    onPrepare: () -> Unit,
     onRename: () -> Unit,
     onDelete: () -> Unit,
     onUninstallApp: (GroupAppItem) -> Unit,
@@ -266,12 +254,7 @@ private fun GroupCard(
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
                     )
-                    GroupStatusChip(
-                        health = item.health,
-                        googleServicesState = item.googleServicesState,
-                        canPrepare = item.health == GroupHealth.HEALTHY,
-                        onPrepare = onPrepare,
-                    )
+                    GroupStatusChip(health = item.health)
                 }
                 Box {
                     if (isBusy) {
@@ -315,12 +298,6 @@ private fun GroupCard(
                     }
                 }
             }
-            PlayStoreButton(
-                modifier = Modifier.padding(start = 18.dp, top = 14.dp, end = 18.dp),
-                isLaunching = isPlayStoreLaunching,
-                enabled = item.health == GroupHealth.HEALTHY && !isBusy && !isAnyLaunchBusy,
-                onClick = onLaunchPlayStore,
-            )
             AppGrid(
                 modifier = Modifier.padding(start = 12.dp, top = 12.dp, end = 12.dp),
                 apps = item.apps,
@@ -339,40 +316,7 @@ private fun GroupCard(
 }
 
 @Composable
-private fun PlayStoreButton(
-    modifier: Modifier,
-    isLaunching: Boolean,
-    enabled: Boolean,
-    onClick: () -> Unit,
-) {
-    Button(
-        modifier = modifier.fillMaxWidth(),
-        enabled = enabled,
-        onClick = onClick,
-    ) {
-        if (isLaunching) {
-            CircularProgressIndicator(
-                modifier = Modifier.size(20.dp),
-                strokeWidth = 2.dp,
-                color = MaterialTheme.colorScheme.onPrimary,
-            )
-        } else {
-            Icon(Icons.Default.Storefront, contentDescription = null)
-        }
-        Text(
-            if (isLaunching) "正在開啟 Play 商店…" else "開啟 Play 商店",
-            modifier = Modifier.padding(start = 10.dp),
-        )
-    }
-}
-
-@Composable
-private fun GroupStatusChip(
-    health: GroupHealth,
-    googleServicesState: GoogleServicesState,
-    canPrepare: Boolean,
-    onPrepare: () -> Unit,
-) {
+private fun GroupStatusChip(health: GroupHealth) {
     val visual = when (health) {
         GroupHealth.PROVISIONING -> StatusVisual(
             "正在建立隔離環境",
@@ -386,46 +330,17 @@ private fun GroupStatusChip(
             "正在刪除群組",
             Icons.Default.HourglassTop,
         )
-        GroupHealth.HEALTHY -> when (googleServicesState) {
-            GoogleServicesState.NOT_PREPARED -> StatusVisual(
-            "Google 服務尚未準備",
-            Icons.Default.HourglassTop,
-        )
-            GoogleServicesState.PREPARING -> StatusVisual(
-            "正在準備 Google 服務",
-            Icons.Default.HourglassTop,
-        )
-            GoogleServicesState.READY -> StatusVisual(
-            "Google 服務就緒",
+        GroupHealth.HEALTHY -> StatusVisual(
+            "隔離環境就緒",
             Icons.Default.CheckCircle,
         )
-            GoogleServicesState.FAILED -> StatusVisual(
-            "準備失敗 · 點此重試",
-            Icons.Default.Refresh,
-        )
-        }
     }
     AssistChip(
         modifier = Modifier.padding(top = 8.dp),
-        onClick = {
-            if (
-                canPrepare &&
-                googleServicesState in setOf(
-                    GoogleServicesState.NOT_PREPARED,
-                    GoogleServicesState.FAILED,
-                )
-            ) {
-                onPrepare()
-            }
-        },
-        enabled = health == GroupHealth.HEALTHY &&
-            googleServicesState != GoogleServicesState.PREPARING,
+        onClick = {},
+        enabled = false,
         leadingIcon = {
-            if (
-                health == GroupHealth.PROVISIONING ||
-                health == GroupHealth.DELETING ||
-                googleServicesState == GoogleServicesState.PREPARING
-            ) {
+            if (health == GroupHealth.PROVISIONING || health == GroupHealth.DELETING) {
                 CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
             } else {
                 Icon(visual.icon, contentDescription = null, modifier = Modifier.size(18.dp))
@@ -641,7 +556,7 @@ private fun EmptyGroups(onCreateGroup: () -> Unit) {
             fontWeight = FontWeight.Bold,
         )
         Text(
-            "每個群組都有獨立的 Google 帳戶與 App 資料。建立本身很快，環境會在加入 App 後準備。",
+            "每個群組都有獨立的帳戶環境與 App 資料。建立後即可加入 App。",
             modifier = Modifier.padding(top = 10.dp),
             style = MaterialTheme.typography.bodyLarge,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
