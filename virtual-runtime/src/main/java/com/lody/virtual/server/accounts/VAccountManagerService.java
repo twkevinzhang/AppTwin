@@ -68,6 +68,8 @@ import static android.accounts.AccountManager.ERROR_CODE_BAD_ARGUMENTS;
  * @author Lody
  */
 public class VAccountManagerService extends IAccountManager.Stub {
+    private static final String ACTION_VISIBLE_ACCOUNTS_CHANGED =
+            "android.accounts.action.VISIBLE_ACCOUNTS_CHANGED";
 
     private static final AtomicReference<VAccountManagerService> sInstance = new AtomicReference<>();
     private static final long CHECK_IN_TIME = 30 * 24 * 60 * 1000L;
@@ -913,9 +915,27 @@ public class VAccountManagerService extends IAccountManager.Stub {
     }
 
     private void sendAccountsChangedBroadcast(int userId) {
-        Intent intent = new Intent(AccountManager.LOGIN_ACCOUNTS_CHANGED_ACTION);
-        VActivityManagerService.get().sendBroadcastAsUser(intent, new VUserHandle(userId));
+        VUserHandle user = accountChangeBroadcastUser(userId);
+        for (String action : accountChangeBroadcastActions()) {
+            VActivityManagerService.get().sendBroadcastAsUser(new Intent(action), user);
+        }
         broadcastCheckInNowIfNeed(userId);
+    }
+
+    /**
+     * Modern AccountManager listeners receive ACTION_VISIBLE_ACCOUNTS_CHANGED, while legacy
+     * receivers still observe LOGIN_ACCOUNTS_CHANGED_ACTION. Both stay inside the virtual user.
+     */
+    static String[] accountChangeBroadcastActions() {
+        return new String[]{
+                ACTION_VISIBLE_ACCOUNTS_CHANGED,
+                AccountManager.LOGIN_ACCOUNTS_CHANGED_ACTION
+        };
+    }
+
+    /** Keeps account-change delivery bound to the Group's virtual user, never USER_ALL/host. */
+    static VUserHandle accountChangeBroadcastUser(int userId) {
+        return new VUserHandle(userId);
     }
 
     private void broadcastCheckInNowIfNeed(int userId) {
@@ -923,7 +943,8 @@ public class VAccountManagerService extends IAccountManager.Stub {
         if (accountChangeRateState.recordIfElapsed(userId, time, CHECK_IN_TIME)) {
             saveAllAccounts();
             Intent intent = new Intent("android.server.checkin.CHECKIN_NOW");
-            VActivityManagerService.get().sendBroadcastAsUser(intent, new VUserHandle(userId));
+            VActivityManagerService.get().sendBroadcastAsUser(
+                    intent, accountChangeBroadcastUser(userId));
         }
     }
 

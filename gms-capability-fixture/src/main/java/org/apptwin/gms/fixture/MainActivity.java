@@ -1,5 +1,8 @@
 package org.apptwin.gms.fixture;
 
+import android.accounts.Account;
+import android.accounts.AccountManager;
+import android.accounts.OnAccountsUpdateListener;
 import android.app.Activity;
 import android.graphics.Color;
 import android.os.Bundle;
@@ -9,19 +12,33 @@ import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.TextView;
 
+import java.io.File;
+import java.io.FileOutputStream;
+import java.nio.charset.StandardCharsets;
 import java.util.Map;
 
 public final class MainActivity extends Activity {
     private LinearLayout resultsContainer;
     private ProbeStore store;
+    private AccountManager accountManager;
+    private OnAccountsUpdateListener accountListener;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         store = new ProbeStore(this);
         setContentView(buildContent());
+        registerAccountListenerProbe();
         new LocalProbeRunner(this).runAll();
         renderResults();
+    }
+
+    @Override
+    protected void onDestroy() {
+        if (accountManager != null && accountListener != null) {
+            accountManager.removeOnAccountsUpdatedListener(accountListener);
+        }
+        super.onDestroy();
     }
 
     @Override
@@ -85,6 +102,24 @@ public final class MainActivity extends Activity {
                     LinearLayout.LayoutParams.WRAP_CONTENT);
             params.topMargin = dp(8);
             resultsContainer.addView(row, params);
+        }
+    }
+
+    /** Records only callback count/effective account count; no account identity leaves the guest. */
+    private void registerAccountListenerProbe() {
+        accountManager = getSystemService(AccountManager.class);
+        accountListener = this::recordAccountListenerEvent;
+        accountManager.addOnAccountsUpdatedListener(accountListener, null, true);
+    }
+
+    private synchronized void recordAccountListenerEvent(Account[] accounts) {
+        File output = new File(getFilesDir(), "account-listener-events.txt");
+        String event = System.currentTimeMillis() + ":" + accounts.length + "\n";
+        try (FileOutputStream stream = new FileOutputStream(output, true)) {
+            stream.write(event.getBytes(StandardCharsets.UTF_8));
+            stream.getFD().sync();
+        } catch (Exception error) {
+            throw new IllegalStateException("Unable to persist account-listener evidence", error);
         }
     }
 

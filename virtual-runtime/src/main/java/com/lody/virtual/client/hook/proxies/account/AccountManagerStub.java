@@ -71,6 +71,8 @@ public class AccountManagerStub extends BinderInvocationProxy {
 		addMethodProxy(new GetAccountVisibility());
 		addMethodProxy(new GetAccountsAndVisibilityForPackage());
 		addMethodProxy(new GetPackagesAndVisibilityForAccount());
+		addMethodProxy(new RegisterAccountListener());
+		addMethodProxy(new UnregisterAccountListener());
 	}
 
 	private static class getPassword extends MethodProxy {
@@ -675,6 +677,41 @@ public class AccountManagerStub extends BinderInvocationProxy {
 		public Object call(Object who, Method method, Object... args) throws Throwable {
 			// Do not disclose host packages or synthesize cross-container visibility grants.
 			return new HashMap<String, Integer>();
+		}
+	}
+
+	/**
+	 * AccountManager registers its app-process broadcast receiver before invoking this binder
+	 * method. The physical service only uses this call to track which physical packages should
+	 * receive account visibility notifications. Forwarding a guest package would both fail the
+	 * platform package/UID check and expose the guest to host account-change state.
+	 *
+	 * Virtual account mutations emit modern and legacy account-change broadcasts through
+	 * VActivityManagerService for the current virtual user, so the process-local listener keeps
+	 * working without registering anything in the physical AccountManagerService.
+	 */
+	static class RegisterAccountListener extends MethodProxy {
+		@Override
+		public String getMethodName() {
+			return "registerAccountListener";
+		}
+
+		@Override
+		public Object call(Object who, Method method, Object... args) {
+			return null;
+		}
+	}
+
+	/** Mirrors {@link RegisterAccountListener}: no physical listener was registered to remove. */
+	static class UnregisterAccountListener extends MethodProxy {
+		@Override
+		public String getMethodName() {
+			return "unregisterAccountListener";
+		}
+
+		@Override
+		public Object call(Object who, Method method, Object... args) {
+			return null;
 		}
 	}
 }
