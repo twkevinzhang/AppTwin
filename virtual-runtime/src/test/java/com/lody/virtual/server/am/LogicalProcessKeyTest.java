@@ -19,7 +19,7 @@ public class LogicalProcessKeyTest {
         assertNotEquals(key, new LogicalProcessKey(
                 21062, "jp.naver.line.android", "jp.naver.line.android"));
         assertNotEquals(key, new LogicalProcessKey(
-                11062, "com.google.android.gms", "jp.naver.line.android"));
+                11062, "com.example.runtime", "jp.naver.line.android"));
         assertNotEquals(key, new LogicalProcessKey(
                 11062, "jp.naver.line.android", "jp.naver.line.android:push"));
     }

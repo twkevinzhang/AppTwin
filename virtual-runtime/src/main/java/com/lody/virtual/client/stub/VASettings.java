@@ -17,9 +17,7 @@ public class VASettings {
     public static String STUB_EXCLUDE_FROM_RECENT_ACTIVITY = StubExcludeFromRecentActivity.class.getName();
     public static String STUB_CP_AUTHORITY = "virtual_stub_";
     public static int STUB_COUNT = 50;
-    public static String[] PRIVILEGE_APPS = new String[]{
-            "com.google.android.gms"
-    };
+    public static String[] PRIVILEGE_APPS = new String[0];
 
     /**
      * If enable,

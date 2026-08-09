@@ -13,6 +13,6 @@ public class HCallbackStubTest {
                 "org.apptwin", "org.apptwin"));
         assertFalse(GuestServiceBindingPolicy.shouldBindGuestApplication("org.apptwin", null));
         assertTrue(GuestServiceBindingPolicy.shouldBindGuestApplication(
-                "org.apptwin", "com.google.android.gms"));
+                "org.apptwin", "com.example.guest"));
     }
 }

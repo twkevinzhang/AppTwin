@@ -5,21 +5,17 @@ import android.os.Bundle;
 
 import com.lody.virtual.client.VClientImpl;
 import com.lody.virtual.client.hook.base.MethodBox;
-import com.lody.virtual.helper.utils.VLog;
 
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.util.HashMap;
 import java.util.Map;
-import java.util.Set;
 
 /**
  * @author Lody
  */
 
 public class SettingsProviderHook extends ExternalProviderHook {
-
-    private static final String TAG = SettingsProviderHook.class.getSimpleName();
 
     private static final int METHOD_GET = 0;
     private static final int METHOD_PUT = 1;
@@ -29,14 +25,6 @@ public class SettingsProviderHook extends ExternalProviderHook {
     static {
         PRE_SET_VALUES.put("user_setup_complete", "1");
         PRE_SET_VALUES.put("install_non_market_apps", "0");
-        // Google Services Framework is a privileged system package on the host. When it runs as
-        // a guest it cannot read DeviceConfig, so keep its legacy local Gservices storage path.
-        // This avoids asking the host Settings provider for READ_DEVICE_CONFIG during Maps M1.
-        PRE_SET_VALUES.put("enable_gmscore_gservices_storage", "false");
-        // Android 17 rejects this secure setting for non-system callers targeting API > 33.
-        // An empty virtual value means no enabled input methods and keeps GMS' optional autofill
-        // initialization from terminating the shared Google service process.
-        PRE_SET_VALUES.put("enabled_input_methods", "");
     }
 
 
@@ -61,15 +49,12 @@ public class SettingsProviderHook extends ExternalProviderHook {
 
     @Override
     public Bundle call(MethodBox methodBox, String method, String arg, Bundle extras) throws InvocationTargetException {
-        if ("com.google.android.gsf".equals(VClientImpl.get().getCurrentPackage())) {
-            VLog.i(TAG, "maps-m1 gsf settings call method=%s key=%s", method, arg);
-        }
         if (!VClientImpl.get().isBound()) {
             return methodBox.call();
         }
         int methodType = getMethodType(method);
         if (METHOD_GET == methodType) {
-            String presetValue = presetValue(arg);
+            String presetValue = PRE_SET_VALUES.get(arg);
             if (presetValue != null) {
                 return wrapBundle(arg, presetValue);
             }
@@ -90,31 +75,6 @@ public class SettingsProviderHook extends ExternalProviderHook {
             }
             throw e;
         }
-    }
-
-    static String presetValue(String key) {
-        return PRE_SET_VALUES.get(key);
-    }
-
-    /**
-     * API 37 enforces hidden/readable Settings metadata before contacting IContentProvider.
-     * Add only keys that the virtual provider layer supplies without reading host secure state.
-     */
-    @SuppressWarnings("unchecked")
-    public static boolean allowClientSideRead(Object readableFields, String key) {
-        if (!(readableFields instanceof Set) || !PRE_SET_VALUES.containsKey(key)) {
-            return false;
-        }
-        return ((Set<String>) readableFields).add(key);
-    }
-
-    @SuppressWarnings("unchecked")
-    public static boolean removeClientSideTargetSdkLimit(Object restrictedFields, String key) {
-        if (!(restrictedFields instanceof Map) || !PRE_SET_VALUES.containsKey(key)) {
-            return false;
-        }
-        Object previous = ((Map<String, Object>) restrictedFields).put(key, Integer.MAX_VALUE);
-        return !Integer.valueOf(Integer.MAX_VALUE).equals(previous);
     }
 
     private Bundle wrapBundle(String name, String value) {

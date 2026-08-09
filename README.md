@@ -13,7 +13,7 @@ an unrooted, bootloader-locked `ASUS_I002D` running Android 12 / API 31. The tar
 ## M0 architecture
 
 ```text
-Google Play updates main-system app
+System updates main-system app
                  |
                  v
       PackageSourceSnapshot
@@ -33,14 +33,14 @@ Google Play updates main-system app
 
 One Android package version is shared by every GroupApp. Creating a Group immediately allocates
 one dedicated isolation environment and permanently binds that environment to the Group. App
-private data, Google accounts, per-App enabled state, permissions, and supported system-service
-state live inside that boundary. GSF/GMS/Play Store contents are prepared lazily, while package
-code remains shared. Activating a verified revision must never replace Group data.
+private data, accounts, per-App enabled state, permissions, and supported system-service state live
+inside that boundary, while package code remains shared. Activating a verified revision must never
+replace Group data.
 
 ## Modules
 
-- `app`: Material 3 launcher showing independent Groups, installed package import, lazy Google
-  runtime status, all-files access status, and persistent GroupApp data roots.
+- `app`: Material 3 launcher showing independent Groups, installed package import, all-files access
+  status, and persistent GroupApp data roots.
 - `package-source`: pure Kotlin immutable models and completeness validation for base/split APKs,
   signature lineage, and supported ABIs.
 - `revision-store`: pure Kotlin revision state machine for staging and atomic activation. The app
@@ -55,9 +55,7 @@ code remains shared. Activating a verified revision must never replace Group dat
 The historical candidate review and the reason for selecting the exact GPL release tree are
 recorded in [`docs/core-engine-audit.md`](docs/core-engine-audit.md). Device acceptance evidence is
 recorded for [LINE](docs/m0-line-acceptance.md) and
-[Shopee Taiwan](docs/m0-shopee-acceptance.md). The immutable Group environment migration and reboot
-acceptance is recorded in
-[`docs/group-environment-binding-acceptance.md`](docs/group-environment-binding-acceptance.md).
+[Shopee Taiwan](docs/m0-shopee-acceptance.md).
 Group-scoped long-press uninstall and cross-Group data-preservation evidence is recorded in
 [`docs/group-app-uninstall-acceptance.md`](docs/group-app-uninstall-acceptance.md).
 

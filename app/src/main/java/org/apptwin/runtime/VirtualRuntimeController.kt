@@ -24,7 +24,6 @@ import org.apptwin.groups.GroupEnvironmentRuntime
 import org.apptwin.groups.GroupHealth
 import org.apptwin.groups.RuntimeGroupAppRemovalResult
 import org.apptwin.revision.AndroidPackageRevisionImporter
-import org.apptwin.revision.RevisionImportResult
 
 sealed interface RuntimeLaunchResult {
     data class Started(
@@ -35,18 +34,6 @@ sealed interface RuntimeLaunchResult {
 
     data class Failed(val reason: String, val error: Throwable? = null) : RuntimeLaunchResult
 }
-
-sealed interface GroupPreparationResult {
-    data object Ready : GroupPreparationResult
-    data class Failed(val reason: String, val error: Throwable? = null) : GroupPreparationResult
-}
-
-data class VirtualPackageSummary(
-    val packageName: String,
-    val label: String,
-    val versionName: String,
-    val versionCode: Long,
-)
 
 /** The only adapter allowed to translate a Group environment into the engine's numeric user API. */
 class VirtualRuntimeController(context: Context) : GroupEnvironmentRuntime, GroupAppRemovalRuntime {
@@ -76,44 +63,6 @@ class VirtualRuntimeController(context: Context) : GroupEnvironmentRuntime, Grou
     override fun environmentExists(binding: EnvironmentBinding): Boolean {
         VirtualCore.get().waitForEngine()
         return VUserManager.get().getUserInfo(binding.internalId) != null
-    }
-
-    override fun copyPrivateAppData(
-        source: EnvironmentBinding,
-        destination: EnvironmentBinding,
-        apps: List<GroupApp>,
-    ) {
-        require(source != destination) { "來源與目標群組環境不可相同" }
-        apps.forEach { app ->
-            val sourceDirectory = VEnvironment.getDataUserPackageDirectory(
-                source.internalId,
-                app.packageName,
-            )
-            if (!sourceDirectory.isDirectory) return@forEach
-            VActivityManager.get().killAppByPkg(app.packageName, source.internalId)
-            val destinationDirectory = VEnvironment.getDataUserPackageDirectory(
-                destination.internalId,
-                app.packageName,
-            )
-            if (destinationDirectory.exists()) {
-                check(destinationDirectory.deleteRecursively()) {
-                    "無法清除新群組的空白 App 資料：${app.packageName}"
-                }
-            }
-            check(
-                destinationDirectory.parentFile?.isDirectory == true ||
-                    destinationDirectory.parentFile?.mkdirs() == true,
-            ) { "無法建立群組 App 資料目錄：${app.packageName}" }
-            check(sourceDirectory.copyRecursively(destinationDirectory, overwrite = true)) {
-                "無法複製群組 App 資料：${app.packageName}"
-            }
-            Log.i(
-                TAG,
-                "group-private-data-copied package=${app.packageName} " +
-                    "sourceEnvironment=${source.internalId} " +
-                    "destinationEnvironment=${destination.internalId}",
-            )
-        }
     }
 
     override fun deleteEnvironment(binding: EnvironmentBinding) {
@@ -156,17 +105,6 @@ class VirtualRuntimeController(context: Context) : GroupEnvironmentRuntime, Grou
         return RuntimeGroupAppRemovalResult.Removed
     }
 
-    fun prepareGroup(group: Group): GroupPreparationResult = runCatching {
-        val core = VirtualCore.get()
-        core.waitForEngine()
-        val binding = requireHealthyEnvironment(group)
-        ensurePackages(GROUP_GOOGLE_PACKAGES, core, binding.internalId)
-        GroupPreparationResult.Ready
-    }.getOrElse { error ->
-        Log.e(TAG, "Group environment preparation failed for ${group.id}", error)
-        GroupPreparationResult.Failed(error.message ?: error.javaClass.simpleName, error)
-    }
-
     fun installAndLaunch(
         group: Group,
         app: GroupApp,
@@ -178,14 +116,6 @@ class VirtualRuntimeController(context: Context) : GroupEnvironmentRuntime, Grou
         val packageName = app.packageName
         val core = VirtualCore.get()
         core.waitForEngine()
-        ensurePackages(GROUP_GOOGLE_PACKAGES, core, environmentId)
-        ensurePackages(GroupAppRuntimeSupport.requiredPackages(packageName), core, environmentId)
-        if (packageName == GroupAppRuntimeSupport.MAPS_PACKAGE) {
-            runCatching { GoogleRuntimeBootstrap.prewarmCheckin(environmentId) }
-                .onFailure { error ->
-                    Log.w(TAG, "google-checkin-prewarm-skipped environmentId=$environmentId", error)
-                }
-        }
         val revision = requireNotNull(importer.activeRevisionDirectory(packageName)) {
             "沒有可啟動的 active revision"
         }
@@ -244,115 +174,6 @@ class VirtualRuntimeController(context: Context) : GroupEnvironmentRuntime, Grou
         RuntimeLaunchResult.Failed(error.message ?: error.javaClass.simpleName, error)
     }
 
-    /** Opens the Play Store that belongs to this Group's virtual user. */
-    fun launchPlayStore(group: Group): RuntimeLaunchResult = runCatching {
-        val binding = requireHealthyEnvironment(group)
-        val environmentId = binding.internalId
-        val core = VirtualCore.get()
-        core.waitForEngine()
-        ensurePackages(GROUP_GOOGLE_PACKAGES, core, environmentId)
-        runCatching { GoogleRuntimeBootstrap.prewarmCheckin(environmentId) }
-            .onFailure { error ->
-                // A newly created GMS process can miss the runtime's first service-bind
-                // deadline while Chimera modules initialize. Play and its account flow
-                // retry Checkin themselves, so this best-effort prewarm must not make the
-                // Group's store unusable.
-                Log.w(TAG, "google-checkin-prewarm-skipped environmentId=$environmentId", error)
-            }
-        prepareVirtualExternalStorage(environmentId)
-
-        val contract = GroupPlayStoreLaunchContract.launcher
-        check(core.isAppInstalledAsUser(environmentId, contract.packageName)) {
-            "Play 商店尚未加入群組環境"
-        }
-        val launchIntent = requireNotNull(
-            core.getLaunchIntent(contract.packageName, environmentId),
-        ) { "找不到 Play 商店啟動入口" }
-            .addFlags(contract.flags)
-        val resultCode = VActivityManager.get().startActivity(launchIntent, environmentId)
-        check(resultCode >= 0) { "Play 商店啟動失敗：$resultCode" }
-
-        val dataDirectory = VEnvironment.getDataUserPackageDirectory(
-            environmentId,
-            contract.packageName,
-        )
-        Log.i(
-            TAG,
-            "group-play-store-start groupId=${group.id} environmentId=$environmentId " +
-                "package=${contract.packageName} data=${dataDirectory.absolutePath}",
-        )
-        RuntimeLaunchResult.Started(
-            packageName = contract.packageName,
-            processPrefix = "${appContext.packageName}:p",
-            dataDirectory = dataDirectory.absolutePath,
-        )
-    }.getOrElse { error ->
-        Log.e(TAG, "Group Play Store launch failed for ${group.id}", error)
-        RuntimeLaunchResult.Failed(error.message ?: error.javaClass.simpleName, error)
-    }
-
-    /** Returns the user-visible packages currently installed in this Group's virtual user. */
-    fun installedPackages(group: Group): Result<List<VirtualPackageSummary>> = runCatching {
-        val binding = requireHealthyEnvironment(group)
-        val core = VirtualCore.get()
-        core.waitForEngine()
-        VPackageManager.get().getInstalledPackages(0, binding.internalId)
-            .asSequence()
-            .filter { info ->
-                GroupVirtualPackageInventory.shouldExpose(
-                    packageName = info.packageName,
-                    hostPackageName = appContext.packageName,
-                )
-            }
-            .filter { info -> core.getLaunchIntent(info.packageName, binding.internalId) != null }
-            .map { info ->
-                VirtualPackageSummary(
-                    packageName = info.packageName,
-                    label = runCatching {
-                        info.applicationInfo?.loadLabel(appContext.packageManager)?.toString()
-                    }.getOrNull()
-                        ?.takeIf(String::isNotBlank)
-                        ?: info.packageName,
-                    versionName = info.versionName.orEmpty(),
-                    versionCode = info.versionCodeCompat(),
-                )
-            }
-            .sortedBy(VirtualPackageSummary::packageName)
-            .toList()
-    }
-
-    /** Launches code already installed by this Group's Play Store without importing host code. */
-    fun launchInstalledPackage(group: Group, packageName: String): RuntimeLaunchResult =
-        runCatching {
-            require(group.contains(packageName)) { "GroupApp does not belong to this Group" }
-            require(
-                GroupVirtualPackageInventory.shouldExpose(packageName, appContext.packageName),
-            ) { "群組服務套件不可從一般 App 入口啟動" }
-            val binding = requireHealthyEnvironment(group)
-            val environmentId = binding.internalId
-            val core = VirtualCore.get()
-            core.waitForEngine()
-            check(core.isAppInstalledAsUser(environmentId, packageName)) {
-                "$packageName 已不在這個群組中"
-            }
-            val launchIntent = requireNotNull(core.getLaunchIntent(packageName, environmentId)) {
-                "找不到群組 App 啟動入口"
-            }.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-            val resultCode = VActivityManager.get().startActivity(launchIntent, environmentId)
-            check(resultCode >= 0) { "群組 App 啟動失敗：$resultCode" }
-            val dataDirectory = VEnvironment.getDataUserPackageDirectory(environmentId, packageName)
-            val app = requireNotNull(group.apps.firstOrNull { it.packageName == packageName })
-            persistRuntimeDiagnostics(group, app, binding, dataDirectory)
-            RuntimeLaunchResult.Started(
-                packageName = packageName,
-                processPrefix = "${appContext.packageName}:p",
-                dataDirectory = dataDirectory.absolutePath,
-            )
-        }.getOrElse { error ->
-            Log.e(TAG, "Installed GroupApp launch failed for $packageName/${group.id}", error)
-            RuntimeLaunchResult.Failed(error.message ?: error.javaClass.simpleName, error)
-        }
-
     private fun requireHealthyEnvironment(group: Group): EnvironmentBinding {
         require(group.health == GroupHealth.HEALTHY) { "群組環境目前無法使用" }
         val binding = requireNotNull(group.environmentBinding) { "群組環境尚未建立" }
@@ -386,40 +207,6 @@ class VirtualRuntimeController(context: Context) : GroupEnvironmentRuntime, Grou
         }
     }
 
-    private fun ensurePackages(
-        packages: List<String>,
-        core: VirtualCore,
-        environmentId: Int,
-    ) {
-        packages.distinct().forEach { dependency ->
-            when (val sync = importer.sync(dependency)) {
-                is RevisionImportResult.Activated,
-                is RevisionImportResult.AlreadyCurrent,
-                -> Unit
-                is RevisionImportResult.Rejected -> error("無法同步 $dependency：${sync.reason}")
-                is RevisionImportResult.Failed -> error("無法同步 $dependency：${sync.reason}")
-            }
-            if (!core.isAppInstalled(dependency)) {
-                val revision = requireNotNull(importer.activeRevisionDirectory(dependency))
-                val result = core.installPackage(
-                    revision.absolutePath,
-                    InstallStrategy.TERMINATE_IF_EXIST or InstallStrategy.SKIP_DEX_OPT,
-                )
-                check(result.isSuccess) {
-                    "無法安裝 Google 相依套件 $dependency：${result.error ?: "unknown error"}"
-                }
-            }
-            check(
-                core.isAppInstalledAsUser(environmentId, dependency) ||
-                    core.installPackageAsUser(environmentId, dependency),
-            ) { "Google 相依套件未加入群組環境：$dependency" }
-            Log.i(
-                TAG,
-                "google-runtime-dependency-ready package=$dependency environmentId=$environmentId",
-            )
-        }
-    }
-
     private fun markGuestCodeReadOnly(core: VirtualCore, packageName: String) {
         val installed = requireNotNull(core.getInstalledAppInfo(packageName, 0)) {
             "virtual package metadata is missing"
@@ -449,7 +236,6 @@ class VirtualRuntimeController(context: Context) : GroupEnvironmentRuntime, Grou
     private companion object {
         const val TAG = "AppTwinRuntime"
         fun environmentName(groupId: String): String = "AppTwin:group:$groupId"
-        val GROUP_GOOGLE_PACKAGES = GroupAppRuntimeSupport.googlePackages
     }
 }
 

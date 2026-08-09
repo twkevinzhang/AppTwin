@@ -8,7 +8,6 @@ import android.content.pm.ComponentInfo;
 import android.os.IBinder;
 import android.os.Parcelable;
 
-import com.lody.virtual.GmsSupport;
 import com.lody.virtual.client.core.VirtualCore;
 import com.lody.virtual.client.env.SpecialComponentList;
 import com.lody.virtual.client.ipc.VActivityManager;
@@ -94,9 +93,8 @@ public class ComponentUtils {
     }
 
     public static boolean isSystemApp(ApplicationInfo applicationInfo) {
-        return !GmsSupport.isGmsFamilyPackage(applicationInfo.packageName)
-                && ((ApplicationInfo.FLAG_SYSTEM & applicationInfo.flags) != 0
-                || SpecialComponentList.SpecSystemComponent.isSpecSystemPackage(applicationInfo.packageName));
+        return (ApplicationInfo.FLAG_SYSTEM & applicationInfo.flags) != 0
+                || SpecialComponentList.SpecSystemComponent.isSpecSystemPackage(applicationInfo.packageName);
     }
 
     public static boolean isStubComponent(Intent intent) {

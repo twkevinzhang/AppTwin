@@ -12,20 +12,15 @@ final class LegacySharedLibraryCompat {
             new File("/system/framework/org.apache.http.legacy.boot.jar");
     private static final File APACHE_HTTP =
             new File("/system/framework/org.apache.http.legacy.jar");
-    private static final File LOCATION_PROVIDER =
-            new File("/system/framework/com.android.location.provider.jar");
-
     private LegacySharedLibraryCompat() {
     }
 
     static String android12DelegatePath() {
-        return buildDelegatePath(
-                ANDROID_TEST_BASE, APACHE_HTTP_BOOT, APACHE_HTTP, LOCATION_PROVIDER);
+        return buildDelegatePath(ANDROID_TEST_BASE, APACHE_HTTP_BOOT, APACHE_HTTP);
     }
 
-    static String buildDelegatePath(
-            File testBase, File apacheBoot, File apacheFallback, File locationProvider) {
-        List<String> paths = new ArrayList<>(3);
+    static String buildDelegatePath(File testBase, File apacheBoot, File apacheFallback) {
+        List<String> paths = new ArrayList<>(2);
         if (testBase.isFile()) {
             paths.add(testBase.getAbsolutePath());
         }
@@ -33,12 +28,11 @@ final class LegacySharedLibraryCompat {
         if (apache.isFile()) {
             paths.add(apache.getAbsolutePath());
         }
-        if (locationProvider.isFile()) {
-            paths.add(locationProvider.getAbsolutePath());
-        }
         if (paths.isEmpty()) {
             return "";
         }
-        return String.join(File.pathSeparator, paths);
+        return paths.size() == 1
+                ? paths.get(0)
+                : paths.get(0) + File.pathSeparator + paths.get(1);
     }
 }

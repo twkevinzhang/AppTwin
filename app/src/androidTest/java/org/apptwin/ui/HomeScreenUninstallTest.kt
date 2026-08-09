@@ -17,7 +17,6 @@ import org.junit.runner.RunWith
 import org.apptwin.GroupAppItem
 import org.apptwin.GroupItem
 import org.apptwin.MainUiState
-import org.apptwin.groups.GoogleServicesState
 import org.apptwin.groups.GroupApp
 import org.apptwin.groups.GroupAppState
 import org.apptwin.groups.GroupHealth
@@ -96,9 +95,7 @@ class HomeScreenUninstallTest {
                 HomeScreen(
                     state = state,
                     onLaunch = onLaunch,
-                    onLaunchPlayStore = {},
                     onAddApp = {},
-                    onPrepareGroup = {},
                     onRenameGroup = { _, _ -> },
                     onDeleteGroup = {},
                     onUninstallApp = onUninstallApp,
@@ -119,7 +116,6 @@ class HomeScreenUninstallTest {
             groupId = groupId,
             groupName = "工作",
             groupHealth = GroupHealth.HEALTHY,
-            googleServicesState = GoogleServicesState.READY,
             app = groupApp,
             appLabel = "測試記事",
             versionName = "1.0",
@@ -133,7 +129,6 @@ class HomeScreenUninstallTest {
                     groupId = groupId,
                     name = "工作",
                     health = GroupHealth.HEALTHY,
-                    googleServicesState = GoogleServicesState.READY,
                     apps = listOf(appItem),
                 ),
             ),

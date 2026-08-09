@@ -22,9 +22,6 @@ import mirror.android.webkit.WebViewFactory;
  */
 public final class SpecialComponentList {
 
-    static final String GOOGLE_PROTOSTORE_ACTION_PREFIX =
-            "com.google.android.libraries.storage.protostore.";
-
     public static class ConflictInstrumentation {
         private static final HashSet<String> INSTRUMENTATION_CONFLICTING = new HashSet<>(2);
 
@@ -95,8 +92,6 @@ public final class SpecialComponentList {
 
         ACTION_BLACK_LIST.add("android.appwidget.action.APPWIDGET_UPDATE");
 
-        WHITE_PERMISSION.add("com.google.android.gms.settings.SECURITY_SETTINGS");
-        WHITE_PERMISSION.add("com.google.android.apps.plus.PRIVACY_SETTINGS");
         WHITE_PERMISSION.add(Manifest.permission.ACCOUNT_MANAGER);
 
         PROTECTED_ACTION_MAP.put(Intent.ACTION_PACKAGE_ADDED, Constants.ACTION_PACKAGE_ADDED);
@@ -115,12 +110,7 @@ public final class SpecialComponentList {
      * @param action Action
      */
     public static boolean isActionInBlackList(String action) {
-        // ProtoStore actions are process-local cache signals. Registering them against the host
-        // ActivityManager leaves their async receiver unfinished and kills the guest after the
-        // broadcast timeout. File reads still observe the shared on-disk revision.
-        return action != null
-                && (ACTION_BLACK_LIST.contains(action)
-                || action.startsWith(GOOGLE_PROTOSTORE_ACTION_PREFIX));
+        return ACTION_BLACK_LIST.contains(action);
     }
 
     /**

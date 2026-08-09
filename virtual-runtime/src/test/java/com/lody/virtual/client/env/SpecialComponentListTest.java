@@ -1,7 +1,10 @@
 package com.lody.virtual.client.env;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertTrue;
 
+import android.Manifest;
 import android.content.Intent;
 
 import org.junit.Test;
@@ -60,15 +63,12 @@ public class SpecialComponentListTest {
     }
 
     @Test
-    public void protectActionsDropsGoogleProtoStoreProcessSignals() {
-        ArrayList<String> actions = new ArrayList<>(Arrays.asList(
-                SpecialComponentList.GOOGLE_PROTOSTORE_ACTION_PREFIX + "SIGNAL_ACTION",
-                SpecialComponentList.GOOGLE_PROTOSTORE_ACTION_PREFIX + "MULTI_APP",
-                "com.example.CUSTOM"
-        ));
-
-        SpecialComponentList.protectActions(actions);
-
-        assertEquals(Arrays.asList("_VA_protected_com.example.CUSTOM"), actions);
+    public void whitePermissionsDoNotGrantGoogleRuntimePermissions() {
+        assertFalse(SpecialComponentList.isWhitePermission(
+                "com.google.android.gms.settings.SECURITY_SETTINGS"));
+        assertFalse(SpecialComponentList.isWhitePermission(
+                "com.google.android.apps.plus.PRIVACY_SETTINGS"));
+        assertTrue(SpecialComponentList.isWhitePermission(Manifest.permission.ACCOUNT_MANAGER));
     }
+
 }

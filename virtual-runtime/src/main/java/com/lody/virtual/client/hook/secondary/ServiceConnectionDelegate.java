@@ -127,10 +127,6 @@ public class ServiceConnectionDelegate implements IServiceConnection {
         if (delegateService != null) {
             name = delegateService.getComponent();
             service = delegateService.getService();
-            IBinder proxy = ProxyServiceFactory.getProxyService(VClientImpl.get().getCurrentApplication(), name, service);
-            if (proxy != null) {
-                service = proxy;
-            }
         }
 
         ServiceConnectionCompat.connected(mConn, name, service, dead);
