@@ -58,6 +58,26 @@ public class VPackageManager {
         }
     }
 
+    /** Host-controlled decision for a dangerous permission in one virtual user. */
+    public boolean setRuntimePermissionGranted(String permName, String pkgName, int userId,
+                                               boolean granted) {
+        try {
+            return getInterface().setRuntimePermissionGranted(
+                    permName, pkgName, userId, granted);
+        } catch (RemoteException e) {
+            return false;
+        }
+    }
+
+    /** Removes all dangerous-permission decisions for one package/user binding. */
+    public boolean clearRuntimePermissions(String pkgName, int userId) {
+        try {
+            return getInterface().clearRuntimePermissions(pkgName, userId);
+        } catch (RemoteException e) {
+            return false;
+        }
+    }
+
     public ResolveInfo resolveService(Intent intent, String resolvedType, int flags, int userId) {
         try {
             return getInterface().resolveService(intent, resolvedType, flags, userId);

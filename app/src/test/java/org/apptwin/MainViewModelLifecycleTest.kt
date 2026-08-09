@@ -18,10 +18,12 @@ import org.apptwin.groups.EnvironmentBinding
 import org.apptwin.groups.Group
 import org.apptwin.groups.GroupAppRemovalResult
 import org.apptwin.groups.GroupHealth
+import org.apptwin.groups.GroupApp
 import org.apptwin.groups.GroupMetadataKind
 import org.apptwin.groups.GroupReconciliationResult
 import org.apptwin.groups.GroupStoreLoadIssue
 import org.apptwin.revision.InstalledAppEntry
+import org.apptwin.repair.RepairExecutionResult
 import org.apptwin.runtime.RuntimeLaunchResult
 import org.junit.After
 import org.junit.Assert.assertEquals
@@ -53,14 +55,125 @@ class MainViewModelLifecycleTest {
         advanceUntilIdle()
 
         assertEquals(MainDestination.HOME, first.uiState.destination)
+        assertEquals(GROUP_ID, first.uiState.selectedGroupId)
         assertEquals(GROUP_ID, first.uiState.appPickerGroupId)
+        assertEquals(GROUP_ID, savedState.get<String>("main.selectedGroupId"))
         assertEquals(GROUP_ID, savedState.get<String>("main.appPickerGroupId"))
 
         val recreated = viewModel(savedState, operations, ioDispatcher)
         advanceUntilIdle()
 
         assertEquals(MainDestination.HOME, recreated.uiState.destination)
+        assertEquals(GROUP_ID, recreated.uiState.selectedGroupId)
         assertEquals(GROUP_ID, recreated.uiState.appPickerGroupId)
+    }
+
+    @Test
+    fun `onboarding is shown once and completion is persisted`() = runTest {
+        val dispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(dispatcher)
+        val onboarding = FakeOnboardingStore()
+        val operations = FakeOperations()
+        val first = MainViewModel(
+            Application(),
+            SavedStateHandle(),
+            operations,
+            dispatcher,
+            onboarding,
+        )
+        advanceUntilIdle()
+
+        assertTrue(first.uiState.showOnboarding)
+        first.completeOnboarding()
+
+        assertFalse(first.uiState.showOnboarding)
+        assertTrue(onboarding.completed)
+
+        val recreated = MainViewModel(
+            Application(),
+            SavedStateHandle(),
+            operations,
+            dispatcher,
+            onboarding,
+        )
+        advanceUntilIdle()
+        assertFalse(recreated.uiState.showOnboarding)
+    }
+
+    @Test
+    fun `diagnostics report is exposed once and consumed by matching id`() = runTest {
+        val dispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(dispatcher)
+        val viewModel = viewModel(
+            SavedStateHandle(),
+            FakeOperations(diagnostics = "schema=1\nspaceCount=0\n"),
+            dispatcher,
+        )
+        advanceUntilIdle()
+
+        viewModel.exportDiagnostics()
+        advanceUntilIdle()
+
+        assertEquals("schema=1\nspaceCount=0\n", viewModel.uiState.diagnosticsReport)
+        val reportId = viewModel.uiState.diagnosticsReportId
+        viewModel.consumeDiagnostics(reportId + 1)
+        assertTrue(viewModel.uiState.diagnosticsReport != null)
+        viewModel.consumeDiagnostics(reportId)
+        assertEquals(null, viewModel.uiState.diagnosticsReport)
+    }
+
+    @Test
+    fun `deep link chooser keeps exact space and package candidates`() = runTest {
+        val dispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(dispatcher)
+        val packageName = "com.example.mail"
+        val operations = FakeOperations(
+            groups = listOf(
+                group().copy(
+                    apps = listOf(GroupApp(packageName, addedAtEpochMillis = 2)),
+                ),
+            ),
+            deepLinkCandidates = listOf(GROUP_ID to packageName),
+        )
+        val viewModel = viewModel(SavedStateHandle(), operations, dispatcher)
+        advanceUntilIdle()
+
+        viewModel.openDeepLink("https://example.com/inbox")
+        advanceUntilIdle()
+
+        assertEquals("https://example.com/inbox", viewModel.uiState.pendingDeepLink)
+        assertEquals(1, viewModel.uiState.deepLinkCandidates.size)
+        assertEquals(GROUP_ID, viewModel.uiState.deepLinkCandidates.single().groupId)
+        assertEquals(packageName, viewModel.uiState.deepLinkCandidates.single().app.packageName)
+    }
+
+    @Test
+    fun `cold start deep link waits for the first space refresh`() = runTest {
+        val dispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(dispatcher)
+        val packageName = "com.example.mail"
+        val reconcileGate = CompletableDeferred<Unit>()
+        val operations = FakeOperations(
+            groups = listOf(
+                group().copy(apps = listOf(GroupApp(packageName, addedAtEpochMillis = 2))),
+            ),
+            reconcileGate = reconcileGate,
+            deepLinkCandidates = listOf(GROUP_ID to packageName),
+        )
+        val viewModel = viewModel(SavedStateHandle(), operations, dispatcher)
+        runCurrent()
+
+        viewModel.openDeepLink("https://example.com/cold-start")
+        runCurrent()
+        assertTrue(viewModel.uiState.isResolvingDeepLink)
+        assertEquals(null, viewModel.uiState.pendingDeepLink)
+
+        reconcileGate.complete(Unit)
+        advanceUntilIdle()
+
+        assertEquals("https://example.com/cold-start", viewModel.uiState.pendingDeepLink)
+        assertEquals(GROUP_ID, viewModel.uiState.deepLinkCandidates.single().groupId)
+        assertFalse(viewModel.uiState.isResolvingDeepLink)
     }
 
     @Test
@@ -148,6 +261,8 @@ class MainViewModelLifecycleTest {
         private val expectedIoDispatcher: CoroutineDispatcher? = null,
         private val loadIssues: List<GroupStoreLoadIssue> = emptyList(),
         private val findGroupGate: CompletableDeferred<Unit>? = null,
+        private val diagnostics: String? = null,
+        private val deepLinkCandidates: List<Pair<String, String>>? = null,
     ) : MainOperations {
         var reconcileStarted = false
         var refreshCalls = 0
@@ -181,6 +296,21 @@ class MainViewModelLifecycleTest {
         override suspend fun launchGroupApp(item: GroupAppItem): RuntimeLaunchResult = error("unused")
         override suspend fun uninstallGroupApp(item: GroupAppItem): GroupAppRemovalResult =
             error("unused")
+        override suspend fun createShortcut(item: GroupAppItem): ShortcutCreationResult =
+            error("unused")
+        override suspend fun exportDiagnostics(): String = diagnostics ?: error("unused")
+        override suspend fun repairClone(item: GroupAppItem): RepairExecutionResult = error("unused")
+        override suspend fun setClonePermission(
+            item: GroupAppItem,
+            permission: String,
+            granted: Boolean,
+        ): Boolean = error("unused")
+        override suspend fun resolveDeepLink(uri: String): List<Pair<String, String>> =
+            deepLinkCandidates ?: error("unused")
+        override suspend fun launchDeepLink(
+            item: GroupAppItem,
+            uri: String,
+        ): RuntimeLaunchResult = error("unused")
 
         override suspend fun reconcileGroups(): GroupReconciliationResult {
             reconcileStarted = true
@@ -189,6 +319,17 @@ class MainViewModelLifecycleTest {
         }
 
         override suspend fun reconcileAppRemovals() = Unit
+        override suspend fun reconcileApplicationOperations() = Unit
+    }
+
+    private class FakeOnboardingStore : OnboardingStore {
+        var completed = false
+
+        override fun isCompleted(): Boolean = completed
+
+        override fun markCompleted() {
+            completed = true
+        }
     }
 
     private companion object {

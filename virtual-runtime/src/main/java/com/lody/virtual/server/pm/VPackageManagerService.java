@@ -1,5 +1,7 @@
 package com.lody.virtual.server.pm;
 
+import android.Manifest;
+
 import android.annotation.TargetApi;
 import android.content.ComponentName;
 import android.content.Intent;
@@ -23,6 +25,8 @@ import com.lody.virtual.client.fixer.ComponentFixer;
 import com.lody.virtual.client.stub.VASettings;
 import com.lody.virtual.helper.compat.ObjectsCompat;
 import com.lody.virtual.os.VUserHandle;
+import com.lody.virtual.os.VBinder;
+import com.lody.virtual.os.VEnvironment;
 import com.lody.virtual.remote.VParceledListSlice;
 import com.lody.virtual.server.IPackageInstaller;
 import com.lody.virtual.server.IPackageManager;
@@ -31,6 +35,7 @@ import com.lody.virtual.server.pm.parser.PackageParserEx;
 import com.lody.virtual.server.pm.parser.VPackage;
 
 import java.io.File;
+import java.io.IOException;
 import java.io.PrintWriter;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -94,9 +99,11 @@ public class VPackageManagerService extends IPackageManager.Stub {
     private final HashMap<String, VPackage.ProviderComponent> mProvidersByAuthority = new HashMap<>();
 
     private final Map<String, VPackage> mPackages = PackageCacheManager.PACKAGE_CACHE;
+    private final RuntimePermissionState mRuntimePermissions;
 
 
     public VPackageManagerService() {
+        mRuntimePermissions = new RuntimePermissionState(VEnvironment.getRuntimePermissionsFile());
         Intent intent = new Intent();
         intent.setClassName(VirtualCore.get().getHostPkg(), VASettings.RESOLVER_ACTIVITY);
         mResolveInfo = VirtualCore.get().getUnHookPackageManager().resolveActivity(intent, 0);
@@ -235,11 +242,108 @@ public class VPackageManagerService extends IPackageManager.Stub {
 
     @Override
     public int checkPermission(String permName, String pkgName, int userId) {
+        checkUserId(userId);
         if ("android.permission.INTERACT_ACROSS_USERS".equals(permName)
                 || "android.permission.INTERACT_ACROSS_USERS_FULL".equals(permName)) {
             return PackageManager.PERMISSION_DENIED;
         }
-        return VirtualCore.get().getPackageManager().checkPermission(permName, VirtualCore.get().getHostPkg());
+        int hostDecision = VirtualCore.get().getPackageManager().checkPermission(
+                permName, VirtualCore.get().getHostPkg());
+        if (!isPermissionRequestedByInstalledPackage(permName, pkgName, userId)) {
+            return PackageManager.PERMISSION_DENIED;
+        }
+        if (hostDecision != PackageManager.PERMISSION_GRANTED
+                || !isSpaceControlledDangerousPermission(permName)) {
+            return hostDecision;
+        }
+        return mRuntimePermissions.isGranted(userId, pkgName, permName)
+                ? PackageManager.PERMISSION_GRANTED
+                : PackageManager.PERMISSION_DENIED;
+    }
+
+    @Override
+    public boolean setRuntimePermissionGranted(String permName, String pkgName, int userId,
+                                               boolean granted) {
+        enforceHostPermissionController();
+        checkUserId(userId);
+        if (!isPermissionRequestedByInstalledPackage(permName, pkgName, userId)
+                || !isSpaceControlledDangerousPermission(permName)) {
+            return false;
+        }
+        if (granted && VirtualCore.get().getPackageManager().checkPermission(
+                permName, VirtualCore.get().getHostPkg()) != PackageManager.PERMISSION_GRANTED) {
+            return false;
+        }
+        try {
+            if (mRuntimePermissions.isGranted(userId, pkgName, permName) == granted) {
+                return true;
+            }
+            mRuntimePermissions.setGranted(userId, pkgName, permName, granted);
+            return true;
+        } catch (IOException failure) {
+            Log.e(TAG, "Unable to persist virtual runtime permission", failure);
+            return false;
+        }
+    }
+
+    @Override
+    public boolean clearRuntimePermissions(String pkgName, int userId) {
+        enforceHostPermissionController();
+        checkUserId(userId);
+        return clearRuntimePermissionsInternal(pkgName, userId);
+    }
+
+    boolean clearRuntimePermissionsInternal(String pkgName, int userId) {
+        try {
+            mRuntimePermissions.clearPackageUser(userId, pkgName);
+            return true;
+        } catch (IOException | IllegalArgumentException failure) {
+            Log.e(TAG, "Unable to clear virtual runtime permissions", failure);
+            return false;
+        }
+    }
+
+    private void enforceHostPermissionController() {
+        if (VBinder.getCallingUid() != VirtualCore.get().myUid()) {
+            throw new SecurityException("Only the AppTwin host may change virtual permissions");
+        }
+    }
+
+    private boolean isPermissionRequestedByInstalledPackage(
+            String permission, String packageName, int userId) {
+        if (permission == null || packageName == null) {
+            return false;
+        }
+        synchronized (mPackages) {
+            VPackage pkg = mPackages.get(packageName);
+            if (pkg == null || pkg.requestedPermissions == null
+                    || !pkg.requestedPermissions.contains(permission)) {
+                return false;
+            }
+            PackageSetting setting = (PackageSetting) pkg.mExtras;
+            if (setting == null || !setting.isInstalled(userId)) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    private boolean isDangerousPermission(String permission) {
+        try {
+            PermissionInfo info = VirtualCore.get().getPackageManager()
+                    .getPermissionInfo(permission, 0);
+            return (info.protectionLevel & PermissionInfo.PROTECTION_MASK_BASE)
+                    == PermissionInfo.PROTECTION_DANGEROUS;
+        } catch (PackageManager.NameNotFoundException missing) {
+            return false;
+        }
+    }
+
+    /** M3 exposes explicit per-space controls for camera and microphone only. */
+    private boolean isSpaceControlledDangerousPermission(String permission) {
+        return (Manifest.permission.CAMERA.equals(permission)
+                || Manifest.permission.RECORD_AUDIO.equals(permission))
+                && isDangerousPermission(permission);
     }
 
     @Override
@@ -389,8 +493,14 @@ public class VPackageManagerService extends IPackageManager.Stub {
     public ResolveInfo resolveIntent(Intent intent, String resolvedType, int flags, int userId) {
         checkUserId(userId);
         flags = updateFlagsNought(flags);
-        List<ResolveInfo> query = queryIntentActivities(intent, resolvedType, flags, 0);
+        List<ResolveInfo> query = queryIntentActivities(
+                intent, resolvedType, flags, resolveIntentQueryUserId(userId));
         return chooseBestActivity(intent, resolvedType, flags, query);
+    }
+
+    /** Keeps implicit/deep-link resolution scoped to the caller's virtual user. */
+    static int resolveIntentQueryUserId(int requestedUserId) {
+        return requestedUserId;
     }
 
     private ResolveInfo chooseBestActivity(Intent intent, String resolvedType, int flags, List<ResolveInfo> query) {
@@ -816,6 +926,11 @@ public class VPackageManagerService extends IPackageManager.Stub {
         for (VPackage p : mPackages.values()) {
             PackageSetting ps = (PackageSetting) p.mExtras;
             ps.removeUser(userId);
+        }
+        try {
+            mRuntimePermissions.clearUser(userId);
+        } catch (IOException failure) {
+            Log.e(TAG, "Unable to clear virtual-user runtime permissions", failure);
         }
     }
 

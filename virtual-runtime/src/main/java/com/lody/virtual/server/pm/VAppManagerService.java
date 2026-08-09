@@ -523,6 +523,12 @@ public class VAppManagerService extends IAppManager.Stub {
             PackageSetting ps = PackageCacheManager.getSetting(packageName);
             if (ps != null) {
                 if (!ps.isInstalled(userId)) {
+                    if (!VPackageManagerService.get()
+                            .clearRuntimePermissionsInternal(packageName, userId)) {
+                        // A newly added binding must not inherit a stale decision from an earlier
+                        // binding whose cleanup was interrupted.
+                        return false;
+                    }
                     if (!ensureNativeLibraries(ps)) {
                         VLog.e(TAG, "Unable to repair native libraries before adding %s to user %d",
                                 packageName, userId);
@@ -617,6 +623,10 @@ public class VAppManagerService extends IAppManager.Stub {
             if (!ArrayUtils.contains(userIds, userId)) {
                 return false;
             }
+            if (!VPackageManagerService.get()
+                    .clearRuntimePermissionsInternal(packageName, userId)) {
+                return false;
+            }
             if (userIds.length == 1) {
                 clearPackage(packageName);
             } else {
@@ -640,6 +650,10 @@ public class VAppManagerService extends IAppManager.Stub {
             VActivityManagerService.get().killAppByPkg(packageName, VUserHandle.USER_ALL);
 
             for (int id : VUserManagerService.get().getUserIds()) {
+                if (!VPackageManagerService.get()
+                        .clearRuntimePermissionsInternal(packageName, id)) {
+                    return false;
+                }
                 FileUtils.deleteDir(VEnvironment.getDataUserPackageDirectory(id, packageName));
                 FileUtils.deleteDir(VEnvironment.getDeDataUserPackageDirectory(id, packageName));
                 FileUtils.deleteDir(VEnvironment.getVirtualPrivateStorageDir(id, packageName));
@@ -659,6 +673,11 @@ public class VAppManagerService extends IAppManager.Stub {
         if (ps != null) {
             int[] userIds = getPackageInstalledUsers(packageName);
             if (!ArrayUtils.contains(userIds, userId)) {
+                return false;
+            }
+            if (!VPackageManagerService.get()
+                    .clearRuntimePermissionsInternal(packageName, userId)) {
+                // Never leave a durable grant that could be inherited if this binding is re-added.
                 return false;
             }
             // User-scoped uninstall only removes the binding and private data. Shared code remains
@@ -751,6 +770,7 @@ public class VAppManagerService extends IAppManager.Stub {
             FileUtils.deleteDir(VEnvironment.getDataAppPackageDirectory(packageName));
             VEnvironment.getOdexFile(packageName).delete();
             for (int id : VUserManagerService.get().getUserIds()) {
+                VPackageManagerService.get().clearRuntimePermissionsInternal(packageName, id);
                 FileUtils.deleteDir(VEnvironment.getDataUserPackageDirectory(id, packageName));
                 FileUtils.deleteDir(VEnvironment.getDeDataUserPackageDirectory(id, packageName));
                 FileUtils.deleteDir(VEnvironment.getVirtualPrivateStorageDir(id, packageName));

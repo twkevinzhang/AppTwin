@@ -1,5 +1,11 @@
 package org.apptwin.ui
 
+import android.Manifest
+import android.content.pm.PackageManager
+import android.net.Uri
+import android.os.Build
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
@@ -7,17 +13,21 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.Link
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CenterAlignedTopAppBar
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExtendedFloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
@@ -39,6 +49,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.unit.dp
 import org.apptwin.MainDestination
@@ -61,16 +73,63 @@ private val destinations = listOf(
 fun AppTwinApp(
     viewModel: MainViewModel,
     onOpenStorageSettings: () -> Unit,
+    onShareDiagnostics: (String) -> Unit,
 ) {
     val state = viewModel.uiState
     val snackbarHostState = remember { SnackbarHostState() }
     var showCreateGroup by rememberSaveable { mutableStateOf(false) }
+    var pendingPermissionAppKey by rememberSaveable { mutableStateOf<String?>(null) }
+    var pendingPermissionName by rememberSaveable { mutableStateOf<String?>(null) }
+    val context = LocalContext.current
+    var notificationsGranted by remember {
+        mutableStateOf(
+            Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU ||
+                context.checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) ==
+                PackageManager.PERMISSION_GRANTED,
+        )
+    }
+    val notificationPermissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission(),
+    ) { granted -> notificationsGranted = granted }
+    val permissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission(),
+    ) { granted ->
+        val appKey = pendingPermissionAppKey
+        val permission = pendingPermissionName
+        val app = state.groups.asSequence()
+            .flatMap { it.apps.asSequence() }
+            .firstOrNull { it.launchKey == appKey }
+        if (app != null && permission != null) {
+            viewModel.setClonePermission(app, permission, granted)
+        }
+        pendingPermissionAppKey = null
+        pendingPermissionName = null
+    }
+    val onSetClonePermission: (org.apptwin.GroupAppItem, String, Boolean) -> Unit =
+        { app, permission, granted ->
+            if (!granted || context.checkSelfPermission(permission) == PackageManager.PERMISSION_GRANTED) {
+                viewModel.setClonePermission(app, permission, granted)
+            } else {
+                pendingPermissionAppKey = app.launchKey
+                pendingPermissionName = permission
+                permissionLauncher.launch(permission)
+            }
+        }
     val pickerGroup = state.appPickerGroupId?.let { selectedId ->
         state.groups.firstOrNull { it.groupId == selectedId }
     }
+    val selectedSpace = state.selectedGroupId?.let { selectedId ->
+        state.groups.firstOrNull { it.groupId == selectedId }
+    }
 
-    BackHandler(enabled = pickerGroup != null) {
-        viewModel.closeAppPicker()
+    BackHandler(
+        enabled = state.pendingDeepLink != null || pickerGroup != null || selectedSpace != null,
+    ) {
+        when {
+            state.pendingDeepLink != null -> viewModel.closeDeepLink()
+            pickerGroup != null -> viewModel.closeAppPicker()
+            else -> viewModel.closeGroup()
+        }
     }
 
     LaunchedEffect(state.messageId) {
@@ -79,12 +138,24 @@ fun AppTwinApp(
         viewModel.consumeMessage(state.messageId)
     }
 
+    LaunchedEffect(state.destination, state.isRefreshing) {
+        notificationsGranted = Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU ||
+            context.checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) ==
+            PackageManager.PERMISSION_GRANTED
+    }
+
+    LaunchedEffect(state.diagnosticsReportId) {
+        val report = state.diagnosticsReport ?: return@LaunchedEffect
+        onShareDiagnostics(report)
+        viewModel.consumeDiagnostics(state.diagnosticsReportId)
+    }
+
     AppTwinTheme {
         Surface(modifier = Modifier.fillMaxSize()) {
             BoxWithConstraints {
                 val useNavigationRail = maxWidth >= 720.dp
                 Row(modifier = Modifier.fillMaxSize()) {
-                    if (useNavigationRail && pickerGroup == null) {
+                    if (useNavigationRail && pickerGroup == null && selectedSpace == null) {
                         AppNavigationRail(
                             selected = state.destination,
                             onSelect = viewModel::navigate,
@@ -95,11 +166,19 @@ fun AppTwinApp(
                         topBar = {
                             CenterAlignedTopAppBar(
                                 navigationIcon = {
-                                    if (pickerGroup != null) {
-                                        IconButton(onClick = viewModel::closeAppPicker) {
+                                    if (pickerGroup != null || selectedSpace != null) {
+                                        IconButton(
+                                            onClick = {
+                                                if (pickerGroup != null) {
+                                                    viewModel.closeAppPicker()
+                                                } else {
+                                                    viewModel.closeGroup()
+                                                }
+                                            },
+                                        ) {
                                             Icon(
                                                 Icons.AutoMirrored.Filled.ArrowBack,
-                                                contentDescription = "返回首頁",
+                                                contentDescription = "返回分身空間",
                                             )
                                         }
                                     }
@@ -108,6 +187,7 @@ fun AppTwinApp(
                                     Text(
                                         when {
                                             pickerGroup != null -> "加入 App"
+                                            selectedSpace != null -> selectedSpace.name
                                             state.destination == MainDestination.HOME -> "AppTwin"
                                             else -> "設定"
                                         },
@@ -116,7 +196,7 @@ fun AppTwinApp(
                             )
                         },
                         bottomBar = {
-                            if (!useNavigationRail && pickerGroup == null) {
+                            if (!useNavigationRail && pickerGroup == null && selectedSpace == null) {
                                 AppNavigationBar(
                                     selected = state.destination,
                                     onSelect = viewModel::navigate,
@@ -124,11 +204,15 @@ fun AppTwinApp(
                             }
                         },
                         floatingActionButton = {
-                            if (state.destination == MainDestination.HOME && pickerGroup == null) {
+                            if (
+                                state.destination == MainDestination.HOME &&
+                                pickerGroup == null &&
+                                selectedSpace == null
+                            ) {
                                 ExtendedFloatingActionButton(
                                     onClick = { showCreateGroup = true },
                                     icon = { Icon(Icons.Default.Add, contentDescription = null) },
-                                    text = { Text("新增群組") },
+                                    text = { Text("建立空間") },
                                 )
                             }
                         },
@@ -153,18 +237,35 @@ fun AppTwinApp(
                                     group = pickerGroup,
                                     onSelect = viewModel::selectApp,
                                 )
+                                selectedSpace != null -> SpaceDetailScreen(
+                                    state = state,
+                                    space = selectedSpace,
+                                    onLaunch = { viewModel.launchGroupApp(it) },
+                                    onAddApp = viewModel::openAppPicker,
+                                    onRenameSpace = viewModel::renameGroup,
+                                    onDeleteSpace = viewModel::deleteGroup,
+                                    onUninstallApp = viewModel::uninstallGroupApp,
+                                    onCreateShortcut = viewModel::createShortcut,
+                                    onRepairApp = viewModel::repairClone,
+                                    onSetPermission = onSetClonePermission,
+                                )
                                 state.destination == MainDestination.HOME -> HomeScreen(
                                     state = state,
-                                    onLaunch = viewModel::launchGroupApp,
-                                    onAddApp = viewModel::openAppPicker,
-                                    onRenameGroup = viewModel::renameGroup,
-                                    onDeleteGroup = viewModel::deleteGroup,
-                                    onUninstallApp = viewModel::uninstallGroupApp,
+                                    onOpenSpace = viewModel::openGroup,
                                     onCreateGroup = { showCreateGroup = true },
                                 )
                                 else -> SettingsScreen(
                                     state = state,
                                     onOpenStorageSettings = onOpenStorageSettings,
+                                    onExportDiagnostics = viewModel::exportDiagnostics,
+                                    notificationsGranted = notificationsGranted,
+                                    onRequestNotifications = {
+                                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                                            notificationPermissionLauncher.launch(
+                                                Manifest.permission.POST_NOTIFICATIONS,
+                                            )
+                                        }
+                                    },
                                 )
                             }
                         }
@@ -180,8 +281,59 @@ fun AppTwinApp(
                     },
                 )
             }
+            if (state.showOnboarding) {
+                OnboardingDialog(onContinue = viewModel::completeOnboarding)
+            }
+            state.pendingDeepLink?.takeUnless { state.showOnboarding }?.let { uri ->
+                DeepLinkChooserDialog(
+                    uri = uri,
+                    candidates = state.deepLinkCandidates,
+                    onDismiss = viewModel::closeDeepLink,
+                    onSelect = viewModel::launchDeepLink,
+                )
+            }
         }
     }
+}
+
+@Composable
+private fun DeepLinkChooserDialog(
+    uri: String,
+    candidates: List<org.apptwin.GroupAppItem>,
+    onDismiss: () -> Unit,
+    onSelect: (org.apptwin.GroupAppItem) -> Unit,
+) {
+    val origin = runCatching { Uri.parse(uri).host }.getOrNull().orEmpty()
+    AlertDialog(
+        modifier = Modifier.testTag("deep-link-chooser"),
+        onDismissRequest = onDismiss,
+        icon = { Icon(Icons.Default.Link, contentDescription = null) },
+        title = { Text("選擇開啟連結的分身") },
+        text = {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .verticalScroll(rememberScrollState()),
+            ) {
+                Text(
+                    if (origin.isBlank()) "外部連結" else origin,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                candidates.forEach { item ->
+                    FilledTonalButton(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(top = 12.dp),
+                        onClick = { onSelect(item) },
+                    ) {
+                        Text("${item.groupName} · ${item.appLabel}")
+                    }
+                }
+            }
+        },
+        confirmButton = {},
+        dismissButton = { TextButton(onClick = onDismiss) { Text("取消") } },
+    )
 }
 
 @Composable
@@ -224,13 +376,19 @@ internal fun CreateGroupDialog(
     onConfirm: (String) -> Unit,
 ) {
     var name by rememberSaveable { mutableStateOf("") }
+    val trimmedName = name.trim()
+    val nameError = when {
+        name.isNotEmpty() && trimmedName.isEmpty() -> "名稱不能只有空白"
+        trimmedName.length > 40 -> "名稱最多 40 個字元"
+        else -> null
+    }
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("新增群組") },
+        title = { Text("建立分身空間") },
         text = {
             Column {
                 Text(
-                    "每個群組會立即建立專屬隔離環境，並讓其中的 App 共用同一套帳戶環境。",
+                    "每個空間都有獨立的登入狀態與 App 資料，原始 App 和其他空間不受影響。",
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
                 OutlinedTextField(
@@ -240,13 +398,18 @@ internal fun CreateGroupDialog(
                     value = name,
                     onValueChange = { name = it },
                     singleLine = true,
-                    label = { Text("群組名稱") },
+                    label = { Text("空間名稱") },
                     placeholder = { Text("例如：工作、私人") },
+                    isError = nameError != null,
+                    supportingText = nameError?.let { message -> { Text(message) } },
                 )
             }
         },
         confirmButton = {
-            TextButton(enabled = name.isNotBlank(), onClick = { onConfirm(name) }) {
+            TextButton(
+                enabled = trimmedName.isNotEmpty() && trimmedName.length <= 40,
+                onClick = { onConfirm(trimmedName) },
+            ) {
                 Text("建立")
             }
         },

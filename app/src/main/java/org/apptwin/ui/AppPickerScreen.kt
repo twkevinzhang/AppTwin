@@ -38,6 +38,7 @@ import androidx.compose.ui.unit.dp
 import org.apptwin.AppItem
 import org.apptwin.GroupItem
 import org.apptwin.MainUiState
+import org.apptwin.compatibility.CompatibilityLevel
 
 private val guaranteedAppPickerIconPackages = setOf(
     "jp.naver.line.android",
@@ -80,12 +81,12 @@ fun AppPickerScreen(
             ) {
                 Column(modifier = Modifier.padding(20.dp)) {
                     Text(
-                        "加入「${group.name}」",
+                        "加入「${group.name}」空間",
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.Bold,
                     )
                     Text(
-                        "從主系統匯入，不重複下載。這裡只顯示尚未加入此群組的 App。",
+                        "從手機上的原始 App 建立分身，不會改動原始資料。這裡只顯示尚未加入此空間的 App。",
                         modifier = Modifier.padding(top = 7.dp),
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.82f),
@@ -106,7 +107,7 @@ fun AppPickerScreen(
         if (filteredApps.isEmpty() && !state.isRefreshing) {
             item {
                 Text(
-                    if (query.isBlank()) "所有可用 App 都已加入" else "沒有符合「$query」的 App",
+                    if (query.isBlank()) "所有可用 App 都已加入此空間" else "沒有符合「$query」的 App",
                     modifier = Modifier.padding(vertical = 32.dp),
                     style = MaterialTheme.typography.bodyLarge,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -178,7 +179,9 @@ private fun AppPickerItem(
                                         else -> "首次使用時同步"
                                     },
                                 )
-                                if (app.groupCount > 0) append(" · 已加入 ${app.groupCount} 個群組")
+                                append(" · ")
+                                append(compatibilityLabel(app.compatibility))
+                                if (app.groupCount > 0) append(" · 已加入 ${app.groupCount} 個空間")
                             },
                             style = MaterialTheme.typography.labelMedium,
                             color = if (app.isSynced) {
@@ -196,7 +199,7 @@ private fun AppPickerItem(
                 } else {
                     Icon(
                         Icons.Default.AddCircle,
-                        contentDescription = "加入群組",
+                        contentDescription = "加入分身空間",
                         tint = MaterialTheme.colorScheme.primary,
                     )
                 }
@@ -207,4 +210,12 @@ private fun AppPickerItem(
             color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.45f),
         )
     }
+}
+
+private fun compatibilityLabel(level: CompatibilityLevel): String = when (level) {
+    CompatibilityLevel.VERIFIED -> "已驗證"
+    CompatibilityLevel.BASIC -> "基本相容"
+    CompatibilityLevel.PARTIAL -> "已驗證啟動，部分功能受限"
+    CompatibilityLevel.UNSUPPORTED -> "暫不支援"
+    CompatibilityLevel.UNTESTED -> "尚未驗證"
 }

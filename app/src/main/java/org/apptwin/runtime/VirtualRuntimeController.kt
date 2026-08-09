@@ -60,7 +60,7 @@ class VirtualRuntimeController internal constructor(
         core.waitForEngine()
         val user = requireNotNull(
             VUserManager.get().createUser(
-                environmentName(groupId),
+                environmentName(groupId, groupName),
                 0,
             ),
         ) { "無法建立群組環境" }
@@ -70,7 +70,10 @@ class VirtualRuntimeController internal constructor(
 
     override fun findEnvironment(groupId: String): EnvironmentBinding? {
         VirtualCore.get().waitForEngine()
-        val matches = VUserManager.get().users.filter { it.name == environmentName(groupId) }
+        val prefix = environmentPrefix(groupId)
+        val matches = VUserManager.get().users.filter { user ->
+            user.name == prefix || user.name.startsWith("$prefix|")
+        }
         check(matches.size <= 1) { "群組存在多個隔離環境" }
         return matches.singleOrNull()?.id?.let(::EnvironmentBinding)
     }
@@ -78,6 +81,14 @@ class VirtualRuntimeController internal constructor(
     override fun environmentExists(binding: EnvironmentBinding): Boolean {
         VirtualCore.get().waitForEngine()
         return VUserManager.get().getUserInfo(binding.internalId) != null
+    }
+
+    fun syncEnvironmentLabel(group: Group) {
+        val binding = group.environmentBinding ?: return
+        val manager = VUserManager.get()
+        val user = manager.getUserInfo(binding.internalId) ?: return
+        val expected = environmentName(group.id, group.name)
+        if (user.name != expected) manager.setUserName(binding.internalId, expected)
     }
 
     override fun deleteEnvironment(binding: EnvironmentBinding) {
@@ -204,6 +215,36 @@ class VirtualRuntimeController internal constructor(
         RuntimeLaunchResult.Failed(error.message ?: error.javaClass.simpleName, error)
     }
 
+    fun installAndLaunchIntent(
+        group: Group,
+        app: GroupApp,
+        intent: Intent,
+    ): RuntimeLaunchResult = runCatching {
+        require(group.contains(app.packageName)) { "GroupApp does not belong to this Group" }
+        require(intent.action == Intent.ACTION_VIEW) { "Only view intents may be routed" }
+        require(intent.data?.scheme in setOf("http", "https")) { "Unsupported deep-link scheme" }
+        val environmentId = requireHealthyEnvironment(group).internalId
+        val packageName = app.packageName
+        val core = VirtualCore.get()
+        core.waitForEngine()
+        val revision = requireNotNull(revisionProvider.activeRuntimeRevision(packageName)) {
+            "沒有可啟動的 active revision"
+        }
+        prepareVirtualExternalStorage(environmentId)
+        RuntimePackageSynchronizer(VirtualCorePackageGateway(core))
+            .synchronize(revision, environmentId)
+        markGuestCodeReadOnly(core, packageName)
+        val routedIntent = Intent(intent)
+            .setPackage(packageName)
+            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        val resultCode = VActivityManager.get().startActivity(routedIntent, environmentId)
+        check(resultCode >= 0) { "分身 App 無法開啟此連結：$resultCode" }
+        val dataDirectory = VEnvironment.getDataUserPackageDirectory(environmentId, packageName)
+        RuntimeLaunchResult.Started(packageName, "p$environmentId", dataDirectory.absolutePath)
+    }.getOrElse { error ->
+        RuntimeLaunchResult.Failed(error.message ?: error.javaClass.simpleName, error)
+    }
+
     private fun requireHealthyEnvironment(group: Group): EnvironmentBinding {
         require(group.health == GroupHealth.HEALTHY) { "群組環境目前無法使用" }
         val binding = requireNotNull(group.environmentBinding) { "群組環境尚未建立" }
@@ -239,7 +280,9 @@ class VirtualRuntimeController internal constructor(
 
     private companion object {
         const val TAG = "AppTwinRuntime"
-        fun environmentName(groupId: String): String = "AppTwin:group:$groupId"
+        fun environmentPrefix(groupId: String): String = "AppTwin:group:$groupId"
+        fun environmentName(groupId: String, groupName: String): String =
+            "${environmentPrefix(groupId)}|$groupName"
     }
 
     private class VirtualCorePackageGateway(

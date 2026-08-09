@@ -28,6 +28,11 @@ interface IPackageManager {
 
         int checkPermission(String permName, String pkgName, int userId);
 
+        boolean setRuntimePermissionGranted(String permName, String pkgName, int userId,
+                                            boolean granted);
+
+        boolean clearRuntimePermissions(String pkgName, int userId);
+
         PackageInfo getPackageInfo(String packageName, int flags, int userId);
 
         ActivityInfo getActivityInfo(in ComponentName componentName, int flags, int userId);

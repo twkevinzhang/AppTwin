@@ -36,6 +36,7 @@ class MainActivity : ComponentActivity() {
             AppTwinApp(
                 viewModel = mainViewModel,
                 onOpenStorageSettings = ::openAllFilesAccessSettings,
+                onShareDiagnostics = ::shareDiagnostics,
             )
         }
         if (BuildConfig.DEBUG) {
@@ -58,6 +59,13 @@ class MainActivity : ComponentActivity() {
                 debugPackage?.let(mainViewModel::launchFirst)
             }
         }
+        routeProductIntent(intent)
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        routeProductIntent(intent)
     }
 
     override fun onStart() {
@@ -97,6 +105,29 @@ class MainActivity : ComponentActivity() {
         val intent = Intent(Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION, packageUri)
         runCatching { startActivity(intent) }
             .onFailure { startActivity(Intent(Settings.ACTION_MANAGE_ALL_FILES_ACCESS_PERMISSION)) }
+    }
+
+    private fun shareDiagnostics(report: String) {
+        val send = Intent(Intent.ACTION_SEND)
+            .setType("text/plain")
+            .putExtra(Intent.EXTRA_SUBJECT, "AppTwin 診斷報告")
+            .putExtra(Intent.EXTRA_TEXT, report)
+        startActivity(Intent.createChooser(send, "分享去識別化診斷報告"))
+    }
+
+    private fun routeProductIntent(intent: Intent) {
+        when (intent.action) {
+            GroupAppLaunchContract.ACTION_LAUNCH_GROUP_APP -> {
+                val groupId = intent.getStringExtra(GroupAppLaunchContract.EXTRA_GROUP_ID)
+                val packageName = intent.getStringExtra(GroupAppLaunchContract.EXTRA_PACKAGE_NAME)
+                if (!groupId.isNullOrBlank() && !packageName.isNullOrBlank()) {
+                    window.decorView.post { mainViewModel.launchGroupApp(groupId, packageName) }
+                }
+            }
+            Intent.ACTION_VIEW -> intent.dataString
+                ?.takeIf { intent.data?.scheme in setOf("http", "https") }
+                ?.let { uri -> window.decorView.post { mainViewModel.openDeepLink(uri) } }
+        }
     }
 
     private companion object {

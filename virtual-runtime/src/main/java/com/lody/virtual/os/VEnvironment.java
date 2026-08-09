@@ -107,6 +107,10 @@ public class VEnvironment {
         return new File(getSystemSecureDirectory(), "packages.ini");
     }
 
+    public static File getRuntimePermissionsFile() {
+        return new File(getSystemSecureDirectory(), "runtime-permissions.bin");
+    }
+
     /**
      * @return Virtual storage config file
      */
