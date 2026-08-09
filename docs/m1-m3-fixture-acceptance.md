@@ -17,6 +17,7 @@ data were not modified.
 | Permission-query decisions | Passed | New guest processes observed camera-only in 工作 and microphone-only in 私人; the other permission remained denied. |
 | Notification identity and origin | Passed | Same guest notification id remained present for both spaces and exposed `AppTwin · 工作` / `AppTwin · 私人`. |
 | Deep-link virtual-user routing | Passed | Both exact candidates resolved and selecting 私人 incremented only its guest counter. |
+| Exported cold-start deep link | Passed | A real `ACTION_VIEW` cold-launched `MainActivity`; after onboarding the chooser exposed 工作/私人, and selecting 私人 advanced only virtual user 2 from launch 3→4. |
 | Source uninstall/reinstall | Passed | Missing source retained membership, immutable revision, environment, and data; same-signer reinstall resumed it. |
 | Fixture v1→v2 update | Passed | Virtual PM advanced to v2 while the original environment and v1 sentinel survived. |
 
@@ -32,6 +33,7 @@ them unless the matching phase argument is supplied.
 - Real Play-delivered split APK v1→v2 migration.
 - Android 16 on a locked physical device, including its notification permission dialog.
 - Real LINE/Shopee account login, MFA, camera, microphone, notifications, and deep links.
+- Physical launcher confirmation/click of a newly pinned desktop shortcut.
 
 These boundaries must remain visible in product copy and diagnostics; fixture success must not be
 reported as arbitrary-app or security-boundary compatibility.

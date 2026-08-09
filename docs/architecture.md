@@ -109,8 +109,9 @@ Installed source package
   `checkSelfPermission` decisions are fixture-validated, but actual Camera/AudioRecord service
   enforcement, active-session revocation, voice, and video are not.
 - Real push-service delivery and notification click routing with third-party services.
-- Exported cold-start deep-link chooser interaction and pinned-launcher shortcut confirmation on a
-  physical launcher remain manual acceptance items; virtual-user resolution/launch is automated.
+- Pinned-launcher shortcut confirmation on a physical launcher remains a manual acceptance item.
+  Exported cold-start deep-link entry, exact chooser candidates, virtual-user resolution, and the
+  selected guest launch are accepted on the ASUS fixture device.
 - Guest update migration tests across two real Play versions.
 - Android 16 runtime acceptance on a physical locked device.
 
