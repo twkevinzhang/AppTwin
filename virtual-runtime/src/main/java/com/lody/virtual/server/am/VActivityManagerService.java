@@ -144,6 +144,7 @@ public class VActivityManagerService extends IActivityManager.Stub
 
     @Override
     public int startActivity(Intent intent, ActivityInfo info, IBinder resultTo, Bundle options, String resultWho, int requestCode, int userId) {
+        enforceCallerUserOrHost(userId);
         synchronized (this) {
             return mMainStack.startActivityLocked(userId, intent, info, resultTo, options, resultWho, requestCode);
         }
@@ -151,6 +152,7 @@ public class VActivityManagerService extends IActivityManager.Stub
 
     @Override
     public int startActivities(Intent[] intents, String[] resolvedTypes, IBinder token, Bundle options, int userId) {
+        enforceCallerUserOrHost(userId);
         synchronized (this) {
             ActivityInfo[] infos = new ActivityInfo[intents.length];
             for (int i = 0; i < intents.length; i++) {
@@ -182,12 +184,63 @@ public class VActivityManagerService extends IActivityManager.Stub
 
     @Override
     public void addPendingIntent(IBinder binder, String creator) {
-        mPendingIntents.addPendingIntent(binder, creator);
+        mPendingIntents.addPendingIntent(
+                binder, creator, VUserHandle.getUserId(VBinder.getCallingUid()));
     }
 
     @Override
     public void removePendingIntent(IBinder binder) {
         mPendingIntents.removePendingIntent(binder);
+    }
+
+    public void clearPendingIntentState(String packageName, int userId) {
+        mPendingIntents.clearPackageUser(packageName, userId);
+    }
+
+    public void clearPendingIntentState(int userId) {
+        mPendingIntents.clearUser(userId);
+    }
+
+    /** Synchronously retires all runtime ownership before a virtual user id can be reused. */
+    public boolean clearUserRuntimeState(int userId) {
+        retireUserProcesses(userId, "user-cleanup");
+        mPendingIntents.clearUser(userId);
+        return !hasUserRuntimeState(userId);
+    }
+
+    private void retireUserProcesses(int userId, String reason) {
+        List<ProcessRecord> processes = new ArrayList<>();
+        synchronized (mPidsSelfLocked) {
+            for (int i = mPidsSelfLocked.size() - 1; i >= 0; i--) {
+                ProcessRecord process = mPidsSelfLocked.valueAt(i);
+                if (process.userId == userId) processes.add(process);
+            }
+        }
+        for (ProcessRecord process : processes) {
+            cleanupProcessGeneration(process, reason, true);
+        }
+    }
+
+    private boolean hasUserRuntimeState(int userId) {
+        synchronized (mPidsSelfLocked) {
+            for (int i = 0; i < mPidsSelfLocked.size(); i++) {
+                if (mPidsSelfLocked.valueAt(i).userId == userId) return true;
+            }
+        }
+        synchronized (mHistory) {
+            for (ServiceRecord service : mHistory) {
+                if (service.process != null && service.process.userId == userId) return true;
+            }
+        }
+        return mPendingIntents.hasUser(userId);
+    }
+
+    private void enforceCallerUserOrHost(int userId) {
+        com.lody.virtual.server.VirtualUserAccessPolicy.enforceCallerUserOrHost(userId);
+    }
+
+    public boolean hasPendingIntentState(String packageName, int userId) {
+        return mPendingIntents.hasPackageUser(packageName, userId);
     }
 
     @Override
@@ -206,33 +259,40 @@ public class VActivityManagerService extends IActivityManager.Stub
 
     @Override
     public void onActivityResumed(int userId, IBinder token) {
+        enforceCallerUserOrHost(userId);
         mMainStack.onActivityResumed(userId, token);
     }
 
     @Override
     public boolean onActivityDestroyed(int userId, IBinder token) {
+        enforceCallerUserOrHost(userId);
         ActivityRecord r = mMainStack.onActivityDestroyed(userId, token);
         return r != null;
     }
 
     @Override
     public AppTaskInfo getTaskInfo(int taskId) {
+        int taskUserId = mMainStack.getTaskUserId(taskId);
+        if (!canCallerObserveUser(taskUserId)) return null;
         return mMainStack.getTaskInfo(taskId);
     }
 
     @Override
     public String getPackageForToken(int userId, IBinder token) {
+        enforceCallerUserOrHost(userId);
         return mMainStack.getPackageForToken(userId, token);
     }
 
     @Override
     public ComponentName getActivityClassForToken(int userId, IBinder token) {
+        enforceCallerUserOrHost(userId);
         return mMainStack.getActivityClassForToken(userId, token);
     }
 
 
     @Override
     public IBinder acquireProviderClient(int userId, ProviderInfo info) {
+        enforceCallerUserOrHost(userId);
         ProcessRecord callerApp;
         synchronized (mPidsSelfLocked) {
             callerApp = findProcessLocked(VBinder.getCallingPid());
@@ -240,11 +300,18 @@ public class VActivityManagerService extends IActivityManager.Stub
         if (callerApp == null) {
             throw new SecurityException("Who are you?");
         }
-        String processName = info.processName;
-        ProcessRecord r = startProcessIfNeedLocked(processName, userId, info.packageName);
+        if (info == null || info.packageName == null || info.name == null) {
+            throw new SecurityException("Invalid provider identity");
+        }
+        ProviderInfo resolved = com.lody.virtual.server.pm.VPackageManagerService.get()
+                .getProviderInfo(new ComponentName(info.packageName, info.name),
+                        PackageManager.GET_META_DATA, userId);
+        if (resolved == null) throw new SecurityException("Provider is not installed for user");
+        String processName = resolved.processName;
+        ProcessRecord r = startProcessIfNeedLocked(processName, userId, resolved.packageName);
         if (r != null && r.client.asBinder().pingBinder()) {
             try {
-                return r.client.acquireProviderClient(info);
+                return r.client.acquireProviderClient(resolved);
             } catch (RemoteException e) {
                 e.printStackTrace();
             }
@@ -254,11 +321,13 @@ public class VActivityManagerService extends IActivityManager.Stub
 
     @Override
     public ComponentName getCallingActivity(int userId, IBinder token) {
+        enforceCallerUserOrHost(userId);
         return mMainStack.getCallingActivity(userId, token);
     }
 
     @Override
     public String getCallingPackage(int userId, IBinder token) {
+        enforceCallerUserOrHost(userId);
         return mMainStack.getCallingPackage(userId, token);
     }
 
@@ -319,6 +388,7 @@ public class VActivityManagerService extends IActivityManager.Stub
 
     @Override
     public ComponentName startService(IBinder caller, Intent service, String resolvedType, int userId) {
+        enforceCallerUserOrHost(userId);
         return startServiceCommon(service, true, userId);
     }
 
@@ -431,6 +501,7 @@ public class VActivityManagerService extends IActivityManager.Stub
 
     @Override
     public int stopService(IBinder caller, Intent service, String resolvedType, int userId) {
+        enforceCallerUserOrHost(userId);
         ServiceInfo serviceInfo = resolveServiceInfo(service, userId);
         if (serviceInfo == null) {
             return 0;
@@ -448,6 +519,7 @@ public class VActivityManagerService extends IActivityManager.Stub
 
     @Override
     public boolean stopServiceToken(ComponentName className, IBinder token, int startId, int userId) {
+        enforceCallerUserOrHost(userId);
         final ServiceRecord r;
         synchronized (this) {
             r = token instanceof ServiceRecord ? (ServiceRecord) token : null;
@@ -494,6 +566,7 @@ public class VActivityManagerService extends IActivityManager.Stub
     @Override
     public int bindService(IBinder caller, IBinder token, Intent service, String resolvedType,
                            IServiceConnection connection, int flags, int userId) {
+        enforceCallerUserOrHost(userId);
         ServiceInfo serviceInfo = resolveServiceInfo(service, userId);
         if (serviceInfo == null) {
             return 0;
@@ -578,6 +651,7 @@ public class VActivityManagerService extends IActivityManager.Stub
 
     @Override
     public boolean unbindService(IServiceConnection connection, int userId) {
+        enforceCallerUserOrHost(userId);
         final ServiceRecord r;
         boolean queuedWork = false;
         synchronized (this) {
@@ -617,6 +691,7 @@ public class VActivityManagerService extends IActivityManager.Stub
     @Override
     public void unbindFinished(IBinder token, IBinder bindToken, Intent service,
                                boolean doRebind, int userId) {
+        enforceCallerUserOrHost(userId);
         final ServiceRecord r;
         final ServiceRecord.IntentBindRecord boundRecord;
         boolean queuedWork = false;
@@ -700,6 +775,7 @@ public class VActivityManagerService extends IActivityManager.Stub
 
     @Override
     public void serviceDoneExecuting(IBinder token, int type, int startId, int res, int userId) {
+        enforceCallerUserOrHost(userId);
         ServiceRecord r;
         boolean queuedWork = false;
         synchronized (this) {
@@ -725,6 +801,7 @@ public class VActivityManagerService extends IActivityManager.Stub
 
     @Override
     public IBinder peekService(Intent service, String resolvedType, int userId) {
+        enforceCallerUserOrHost(userId);
         synchronized (this) {
             ServiceInfo serviceInfo = resolveServiceInfo(service, userId);
             if (serviceInfo == null) {
@@ -744,6 +821,7 @@ public class VActivityManagerService extends IActivityManager.Stub
     @Override
     public void publishService(IBinder token, IBinder bindToken, Intent intent,
                                IBinder service, int userId) {
+        enforceCallerUserOrHost(userId);
         final ServiceRecord r;
         final ServiceRecord.IntentBindRecord boundRecord;
         final List<IServiceConnection> connections;
@@ -983,6 +1061,7 @@ public class VActivityManagerService extends IActivityManager.Stub
 
     @Override
     public VParceledListSlice<ActivityManager.RunningServiceInfo> getServices(int maxNum, int flags, int userId) {
+        enforceCallerUserOrHost(userId);
         synchronized (mHistory) {
             List<ActivityManager.RunningServiceInfo> services = new ArrayList<>(mHistory.size());
             for (ServiceRecord r : mHistory) {
@@ -1011,6 +1090,7 @@ public class VActivityManagerService extends IActivityManager.Stub
     @Override
     public void setServiceForeground(ComponentName className, IBinder token, int id, Notification notification,
                                      boolean removeNotification, int userId) {
+        enforceCallerUserOrHost(userId);
         final ServiceRecord r;
         final String packageName;
         int cancelId = 0;
@@ -1071,55 +1151,32 @@ public class VActivityManagerService extends IActivityManager.Stub
     @Override
     public void processRestarted(String packageName, String processName, int userId) {
         int callingPid = getCallingPid();
-        int appId = VAppManagerService.get().getAppId(packageName);
-        if (appId < 0) {
-            return;
+        ProcessRecord existing;
+        synchronized (mPidsSelfLocked) {
+            existing = findProcessLocked(callingPid);
         }
-        int uid = VUserHandle.getUid(userId, appId);
-        mProcessStartGate.enter();
-        try {
-            reconcileRunningStubProcessesLocked();
-            int vpid = parseVPid(getProcessName(callingPid));
-            if (vpid < 0 || vpid >= VASettings.STUB_COUNT
-                    || !isExpectedRunningStub(callingPid, vpid)) {
-                VLog.e(TAG, "Rejecting process restart from unexpected pid=" + callingPid
-                        + " process=" + processName);
-                return;
-            }
-            LogicalProcessKey key = new LogicalProcessKey(uid, packageName, processName);
-            LogicalProcessOwnerRegistry.OwnerSnapshot<ProcessRecord> existing =
-                    mLogicalProcessOwners.find(key);
-            if (existing != null && isLogicalOwnerAlive(existing.owner())) {
-                if (existing.owner().pid != callingPid) {
-                    VLog.e(TAG, "Killing duplicate process restart key=" + key
-                            + " ownerPid=" + existing.owner().pid
-                            + " newcomerPid=" + callingPid);
-                    killProcess(callingPid);
-                }
-                return;
-            }
-            ApplicationInfo appInfo = VPackageManagerService.get().getApplicationInfo(
-                    packageName, 0, userId);
-            if (appInfo == null) {
-                return;
-            }
-            appInfo.flags |= ApplicationInfo.FLAG_HAS_CODE;
-            LogicalProcessOwnerRegistry.ReservationResult<ProcessRecord> reserved =
-                    mLogicalProcessOwners.reserve(key, vpid);
-            if (reserved.status()
-                    != LogicalProcessOwnerRegistry.ReservationStatus.RESERVED) {
-                VLog.w(TAG, "Rejecting process restart reservation key=" + key
-                        + " slot=" + vpid + " status=" + reserved.status());
-                return;
-            }
-            ProcessRecord app = performStartProcessLocked(uid, vpid, appInfo, processName,
-                    reserved.reservation());
-            if (app != null) {
-                app.pkgList.add(packageName);
-            }
-        } finally {
-            mProcessStartGate.exit();
+        if (!matchesRestartClaim(existing, packageName, processName, userId)) {
+            // An untracked OS-recreated stub has no server-issued reservation generation. It must
+            // not self-assign a package/user identity from caller-controlled AIDL arguments.
+            VLog.e(TAG, "Rejecting unreserved process restart pid=" + callingPid);
+            killProcess(callingPid);
         }
+    }
+
+    static boolean matchesRestartClaim(
+            ProcessRecord record, String packageName, String processName, int userId) {
+        return record != null && record.info != null && matchesRestartClaim(
+                record.userId, record.info.packageName, record.processName,
+                record.pkgList.contains(record.info.packageName),
+                packageName, processName, userId);
+    }
+
+    static boolean matchesRestartClaim(
+            int recordUserId, String recordPackage, String recordProcess, boolean ownsPackage,
+            String requestedPackage, String requestedProcess, int requestedUserId) {
+        return recordUserId == requestedUserId && ownsPackage
+                && requestedPackage != null && requestedPackage.equals(recordPackage)
+                && requestedProcess != null && requestedProcess.equals(recordProcess);
     }
 
     private int parseVPid(String stubProcessName) {
@@ -1275,6 +1332,7 @@ public class VActivityManagerService extends IActivityManager.Stub
 
     @Override
     public int initProcess(String packageName, String processName, int userId) {
+        enforceCallerUserOrHost(userId);
         ProcessRecord r = startProcessIfNeedLocked(processName, userId, packageName);
         return r != null ? r.vpid : -1;
     }
@@ -1438,7 +1496,19 @@ public class VActivityManagerService extends IActivityManager.Stub
                 return r.vuid;
             }
         }
-        return Process.myUid();
+        return resolveUntrackedProcessUid(pid, Process.myPid(), Process.myUid(),
+                RawSystemProcessAuthority.isExactHostMainProcess(
+                        pid, Process.myUid(), VirtualCore.get().getHostPkg()));
+    }
+
+    static int resolveUntrackedProcessUid(
+            int pid, int enginePid, int hostUid, boolean exactSystemHostProcess) {
+        // Only the engine itself and a host main process authenticated by Android's system process
+        // record are host principals. Stub/guest, stale, forked and unknown callers fail closed.
+        if (pid == enginePid || exactSystemHostProcess) {
+            return hostUid;
+        }
+        return -1;
     }
 
     private ProcessRecord performStartProcessLocked(int vuid, int vpid, ApplicationInfo info,
@@ -1794,6 +1864,7 @@ public class VActivityManagerService extends IActivityManager.Stub
 
     @Override
     public void onServiceStopped(IBinder token, int userId) {
+        enforceCallerUserOrHost(userId);
         ProcessRecord process = null;
         if (token instanceof ServiceRecord) {
             process = ((ServiceRecord) token).process;
@@ -1815,7 +1886,8 @@ public class VActivityManagerService extends IActivityManager.Stub
     @Override
     public boolean isAppPid(int pid) {
         synchronized (mPidsSelfLocked) {
-            return findProcessLocked(pid) != null;
+            ProcessRecord record = findProcessLocked(pid);
+            return record != null && canCallerObserveUser(record.userId);
         }
     }
 
@@ -1823,7 +1895,7 @@ public class VActivityManagerService extends IActivityManager.Stub
     public String getAppProcessName(int pid) {
         synchronized (mPidsSelfLocked) {
             ProcessRecord r = mPidsSelfLocked.get(pid);
-            if (r != null) {
+            if (r != null && canCallerObserveUser(r.userId)) {
                 return r.processName;
             }
         }
@@ -1834,7 +1906,7 @@ public class VActivityManagerService extends IActivityManager.Stub
     public List<String> getProcessPkgList(int pid) {
         synchronized (mPidsSelfLocked) {
             ProcessRecord r = mPidsSelfLocked.get(pid);
-            if (r != null) {
+            if (r != null && canCallerObserveUser(r.userId)) {
                 return new ArrayList<>(r.pkgList);
             }
         }
@@ -1843,6 +1915,7 @@ public class VActivityManagerService extends IActivityManager.Stub
 
     @Override
     public void killAllApps() {
+        com.lody.virtual.server.VirtualUserAccessPolicy.enforceHost();
         synchronized (mPidsSelfLocked) {
             for (int i = 0; i < mPidsSelfLocked.size(); i++) {
                 ProcessRecord r = mPidsSelfLocked.valueAt(i);
@@ -1853,6 +1926,11 @@ public class VActivityManagerService extends IActivityManager.Stub
 
     @Override
     public void killAppByPkg(final String pkg, int userId) {
+        if (userId == VUserHandle.USER_ALL) {
+            com.lody.virtual.server.VirtualUserAccessPolicy.enforceHost();
+        } else {
+            enforceCallerUserOrHost(userId);
+        }
         synchronized (mProcessNames) {
             ArrayMap<String, SparseArray<ProcessRecord>> map = mProcessNames.getMap();
             int N = map.size();
@@ -1875,6 +1953,7 @@ public class VActivityManagerService extends IActivityManager.Stub
 
     @Override
     public boolean isAppRunning(String packageName, int userId) {
+        enforceCallerUserOrHost(userId);
         boolean running = false;
         synchronized (mPidsSelfLocked) {
             int N = mPidsSelfLocked.size();
@@ -1891,6 +1970,7 @@ public class VActivityManagerService extends IActivityManager.Stub
 
     @Override
     public void killApplicationProcess(final String processName, int uid) {
+        enforceCallerUserOrHost(VUserHandle.getUserId(uid));
         synchronized (mProcessNames) {
             ProcessRecord r = mProcessNames.get(processName, uid);
             if (r != null) {
@@ -1918,7 +1998,7 @@ public class VActivityManagerService extends IActivityManager.Stub
     public String getInitialPackage(int pid) {
         synchronized (mPidsSelfLocked) {
             ProcessRecord r = mPidsSelfLocked.get(pid);
-            if (r != null) {
+            if (r != null && canCallerObserveUser(r.userId)) {
                 return r.info.packageName;
             }
             return null;
@@ -1928,6 +2008,24 @@ public class VActivityManagerService extends IActivityManager.Stub
     @Override
     public void handleApplicationCrash() {
         // Nothing
+    }
+
+    private boolean canCallerObserveUser(int targetUserId) {
+        int callingPid = Binder.getCallingPid();
+        if (callingPid == Process.myPid()) return true;
+        synchronized (mPidsSelfLocked) {
+            ProcessRecord caller = findProcessLocked(callingPid);
+            if (caller != null) return caller.userId == targetUserId;
+        }
+        // Query the raw system ActivityManager captured before hooks. The OS process record is not
+        // affected by a guest changing argv[0], and lookup failure is deliberately fail-closed.
+        return RawSystemProcessAuthority.isExactHostMainProcess(
+                callingPid, Process.myUid(), VirtualCore.get().getHostPkg());
+    }
+
+    static boolean canObserveUser(int callingVuid, int hostUid, int targetUserId) {
+        return callingVuid == hostUid || (callingVuid >= 0 && targetUserId >= 0
+                && VUserHandle.getUserId(callingVuid) == targetUserId);
     }
 
     @Override
@@ -1974,15 +2072,9 @@ public class VActivityManagerService extends IActivityManager.Stub
     }
 
     public int stopUser(int userHandle, IStopUserCallback.Stub stub) {
-        synchronized (mPidsSelfLocked) {
-            int N = mPidsSelfLocked.size();
-            while (N-- > 0) {
-                ProcessRecord r = mPidsSelfLocked.valueAt(N);
-                if (r.userId == userHandle) {
-                    killProcess(r.pid);
-                }
-            }
-        }
+        retireUserProcesses(userHandle, "user-stop");
+        mPendingIntents.clearUser(userHandle);
+        if (hasUserRuntimeState(userHandle)) return -1;
         try {
             stub.userStopped(userHandle);
         } catch (RemoteException e) {
@@ -2100,6 +2192,9 @@ public class VActivityManagerService extends IActivityManager.Stub
 
     @Override
     public void notifyBadgerChange(BadgerInfo info) throws RemoteException {
+        if (info == null) throw new SecurityException("Badger identity is required");
+        com.lody.virtual.server.VirtualUserAccessPolicy
+                .enforceCallerPackageOrHost(info.packageName, info.userId);
         Intent intent = new Intent(VASettings.ACTION_BADGER_CHANGE);
         intent.putExtra("userId", info.userId);
         intent.putExtra("packageName", info.packageName);

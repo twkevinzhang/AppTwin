@@ -41,6 +41,7 @@ import com.lody.virtual.client.ipc.ServiceManagerNative;
 import com.lody.virtual.client.ipc.VActivityManager;
 import com.lody.virtual.client.ipc.VPackageManager;
 import com.lody.virtual.client.stub.VASettings;
+import com.lody.virtual.server.am.RawSystemProcessAuthority;
 import com.lody.virtual.helper.compat.BundleCompat;
 import com.lody.virtual.helper.utils.BitmapUtils;
 import com.lody.virtual.os.VUserHandle;
@@ -191,6 +192,10 @@ public final class VirtualCore {
             unHookPackageManager = context.getPackageManager();
             hostPkgInfo = unHookPackageManager.getPackageInfo(context.getPackageName(), PackageManager.GET_PROVIDERS);
             detectProcessType();
+            // Capture the raw system ActivityManager before ActivityManagerStub replaces the
+            // process-local singleton. Server authority checks must never recurse through hooks
+            // or trust guest-mutable argv[0].
+            RawSystemProcessAuthority.captureBeforeHooks();
             InvocationStubManager invocationStubManager = InvocationStubManager.getInstance();
             invocationStubManager.init();
             invocationStubManager.injectAll();
@@ -352,6 +357,44 @@ public final class VirtualCore {
             return getService().installPackage(apkPath, flags);
         } catch (RemoteException e) {
             return VirtualRuntime.crash(e);
+        }
+    }
+
+    /** Dedicated host-only path for an authenticated compatibility-layer artifact. */
+    public InstallResult installTrustedPackageForUser(
+            String apkPath,
+            int flags,
+            int userId,
+            com.lody.virtual.remote.TrustedPackageProvenance provenance) {
+        try {
+            return getService().installTrustedPackageForUser(apkPath, flags, userId, provenance);
+        } catch (RemoteException e) {
+            return VirtualRuntime.crash(e);
+        }
+    }
+
+    public boolean suspendTrustedGmsPackageForUser(int userId) {
+        try {
+            return getService().suspendTrustedGmsPackageForUser(userId);
+        } catch (RemoteException e) {
+            return false;
+        }
+    }
+
+    public boolean clearTrustedPackageStateForUser(String packageName, int userId) {
+        try {
+            return getService().clearTrustedPackageStateForUser(packageName, userId);
+        } catch (RemoteException e) {
+            return false;
+        }
+    }
+
+    public boolean hasTrustedGmsBackgroundStateForUser(int userId) {
+        try {
+            return getService().hasTrustedGmsBackgroundStateForUser(userId);
+        } catch (RemoteException e) {
+            // Conservatively report background ownership when the host cannot prove absence.
+            return true;
         }
     }
 

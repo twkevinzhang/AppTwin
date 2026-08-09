@@ -59,6 +59,42 @@ android {
     packaging {
         jniLibs.useLegacyPackaging = true
     }
+
+    androidResources {
+        // The reviewed microG package is copied out of assets on first enable. Keeping it
+        // uncompressed avoids a second large in-memory expansion inside the APK reader.
+        noCompress += "apk"
+    }
+}
+
+val pinnedMicrogFileNames = listOf(
+    "com.google.android.gms-250932030.apk",
+    "com.android.vending-84022630.apk",
+)
+val generatedRuntimeProbeMicrogAssets = layout.buildDirectory.dir(
+    "generated/runtimeProbeMicrogAssets",
+)
+val prepareRuntimeProbeMicrogAsset by tasks.registering(Sync::class) {
+    dependsOn(":microg-artifact-source:preparePinnedMicrogArtifact")
+    pinnedMicrogFileNames.forEach { fileName ->
+        from(project(":microg-artifact-source").layout.buildDirectory.file(
+            "local-cache/$fileName",
+        ))
+    }
+    into(generatedRuntimeProbeMicrogAssets.map { it.dir("microg") })
+}
+
+android.sourceSets.getByName("runtimeProbe").assets.srcDir(generatedRuntimeProbeMicrogAssets)
+
+tasks.configureEach {
+    if (name.startsWith("mergeRuntimeProbe") && name.endsWith("Assets")) {
+        dependsOn(prepareRuntimeProbeMicrogAsset)
+    }
+    // Lint model generation reads every variant source directory directly instead of going
+    // through mergeAssets, so it needs the generated-asset producer in its own task graph.
+    if (name.contains("RuntimeProbe") && name.contains("lint", ignoreCase = true)) {
+        dependsOn(prepareRuntimeProbeMicrogAsset)
+    }
 }
 
 dependencies {
@@ -69,6 +105,9 @@ dependencies {
     implementation(project(":revision-store"))
     implementation(project(":group-store"))
     implementation(project(":application-core"))
+    implementation(project(":gms-compat-core"))
+    implementation(project(":microg-artifact-source"))
+    implementation(project(":gms-runtime-adapter"))
     implementation(composeBom)
     implementation("androidx.activity:activity-compose:1.10.1")
     implementation("androidx.compose.material3:material3")

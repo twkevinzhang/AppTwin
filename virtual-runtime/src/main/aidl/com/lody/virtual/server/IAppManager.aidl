@@ -5,6 +5,7 @@ import com.lody.virtual.server.interfaces.IPackageObserver;
 import com.lody.virtual.server.interfaces.IAppRequestListener;
 import com.lody.virtual.remote.InstalledAppInfo;
 import com.lody.virtual.remote.InstallResult;
+import com.lody.virtual.remote.TrustedPackageProvenance;
 
 interface IAppManager {
     int[] getPackageInstalledUsers(String packageName);
@@ -14,6 +15,11 @@ interface IAppManager {
     boolean isOutsidePackageVisible(String pkg);
     InstalledAppInfo getInstalledAppInfo(String pkg, int flags);
     InstallResult installPackage(String path, int flags);
+    InstallResult installTrustedPackageForUser(String path, int flags, int userId,
+                                               in TrustedPackageProvenance provenance);
+    boolean suspendTrustedGmsPackageForUser(int userId);
+    boolean clearTrustedPackageStateForUser(String packageName, int userId);
+    boolean hasTrustedGmsBackgroundStateForUser(int userId);
     boolean isPackageLaunched(int userId, String packageName);
     void setPackageHidden(int userId, String packageName, boolean hidden);
     boolean installPackageAsUser(int userId, String packageName);

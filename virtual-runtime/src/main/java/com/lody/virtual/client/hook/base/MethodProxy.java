@@ -77,9 +77,11 @@ public abstract class MethodProxy {
     }
 
     public static boolean isVisiblePackage(ApplicationInfo info) {
-        return getHostPkg().equals(info.packageName)
+        return com.lody.virtual.client.hook.proxies.pm.TrustedPackageVisibilityPolicy
+                .allowPhysicalFallback(info.packageName)
+                && (getHostPkg().equals(info.packageName)
                 || ComponentUtils.isSystemApp(info)
-                || VirtualCore.get().isOutsidePackageVisible(info.packageName);
+                || VirtualCore.get().isOutsidePackageVisible(info.packageName));
     }
 
     public abstract String getMethodName();

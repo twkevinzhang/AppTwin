@@ -224,6 +224,7 @@ public class VPackageManagerService extends IPackageManager.Stub {
 
     @Override
     public List<String> getSharedLibraries(String packageName) {
+        if (!isPackageVisibleToCaller(packageName)) return null;
         synchronized (mPackages) {
             VPackage p = mPackages.get(packageName);
             if (p != null) {
@@ -391,6 +392,7 @@ public class VPackageManagerService extends IPackageManager.Stub {
     }
 
     private void checkUserId(int userId) {
+        com.lody.virtual.server.VirtualUserAccessPolicy.enforceCallerUserOrHost(userId);
         if (!VUserManagerService.get().exists(userId)) {
             throw new SecurityException("Invalid userId " + userId);
         }
@@ -417,6 +419,13 @@ public class VPackageManagerService extends IPackageManager.Stub {
 
     @Override
     public boolean activitySupportsIntent(ComponentName component, Intent intent, String resolvedType) {
+        if (!com.lody.virtual.server.VirtualUserAccessPolicy.isHostCaller()) {
+            int callingVuid = com.lody.virtual.os.VBinder.getCallingUid();
+            if (callingVuid < 0) return false;
+            PackageSetting setting = PackageCacheManager.getSetting(component.getPackageName());
+            if (setting == null
+                    || !setting.isInstalled(VUserHandle.getUserId(callingVuid))) return false;
+        }
         synchronized (mPackages) {
             VPackage.ActivityComponent a = mActivities.mActivities.get(component);
             if (a == null) {
@@ -827,6 +836,10 @@ public class VPackageManagerService extends IPackageManager.Stub {
     @Override
     public ApplicationInfo getApplicationInfo(String packageName, int flags, int userId) {
         checkUserId(userId);
+        return getApplicationInfoInternal(packageName, flags, userId);
+    }
+
+    private ApplicationInfo getApplicationInfoInternal(String packageName, int flags, int userId) {
         flags = updateFlagsNought(flags);
         synchronized (mPackages) {
             VPackage p = mPackages.get(packageName);
@@ -846,7 +859,8 @@ public class VPackageManagerService extends IPackageManager.Stub {
             List<String> pkgList = new ArrayList<>(2);
             for (VPackage p : mPackages.values()) {
                 PackageSetting settings = (PackageSetting) p.mExtras;
-                if (VUserHandle.getUid(userId, settings.appId) == uid) {
+                if (settings.isInstalled(userId)
+                        && VUserHandle.getUid(userId, settings.appId) == uid) {
                     pkgList.add(p.packageName);
                 }
             }
@@ -861,7 +875,7 @@ public class VPackageManagerService extends IPackageManager.Stub {
             VPackage p = mPackages.get(packageName);
             if (p != null) {
                 PackageSetting ps = (PackageSetting) p.mExtras;
-                return VUserHandle.getUid(userId, ps.appId);
+                return ps.isInstalled(userId) ? VUserHandle.getUid(userId, ps.appId) : -1;
             }
             return -1;
         }
@@ -869,11 +883,13 @@ public class VPackageManagerService extends IPackageManager.Stub {
 
     @Override
     public String getNameForUid(int uid) {
+        int userId = VUserHandle.getUserId(uid);
+        checkUserId(userId);
         int appId = VUserHandle.getAppId(uid);
         synchronized (mPackages) {
             for (VPackage p : mPackages.values()) {
                 PackageSetting ps = (PackageSetting) p.mExtras;
-                if (ps.appId == appId) {
+                if (ps.isInstalled(userId) && ps.appId == appId) {
                     return ps.packageName;
                 }
             }
@@ -884,6 +900,7 @@ public class VPackageManagerService extends IPackageManager.Stub {
 
     @Override
     public List<String> querySharedPackages(String packageName) {
+        if (!isPackageVisibleToCaller(packageName)) return Collections.emptyList();
         synchronized (mPackages) {
             VPackage p = mPackages.get(packageName);
             if (p == null || p.mSharedUserId == null) {
@@ -898,6 +915,14 @@ public class VPackageManagerService extends IPackageManager.Stub {
             }
             return list;
         }
+    }
+
+    private boolean isPackageVisibleToCaller(String packageName) {
+        if (com.lody.virtual.server.VirtualUserAccessPolicy.isHostCaller()) return true;
+        int callingVuid = com.lody.virtual.os.VBinder.getCallingUid();
+        if (callingVuid < 0) return false;
+        PackageSetting setting = PackageCacheManager.getSetting(packageName);
+        return setting != null && setting.isInstalled(VUserHandle.getUserId(callingVuid));
     }
 
     @Override
@@ -922,16 +947,15 @@ public class VPackageManagerService extends IPackageManager.Stub {
         }
     }
 
-    void cleanUpUser(int userId) {
-        for (VPackage p : mPackages.values()) {
-            PackageSetting ps = (PackageSetting) p.mExtras;
-            ps.removeUser(userId);
+    void cleanUpUser(int userId) throws IOException {
+        // Runtime grants and installed flags are independently durable. Failure of either leaves
+        // the user partial, so its numeric id cannot be reused with inherited authority.
+        mRuntimePermissions.clearUser(userId);
+        VAppManagerService appManager = VAppManagerService.get();
+        if (appManager == null) {
+            throw new IOException("Package settings are not loaded");
         }
-        try {
-            mRuntimePermissions.clearUser(userId);
-        } catch (IOException failure) {
-            Log.e(TAG, "Unable to clear virtual-user runtime permissions", failure);
-        }
+        appManager.removeUserFromPackageSettingsOrThrow(userId);
     }
 
     private final class ActivityIntentResolver extends IntentResolver<VPackage.ActivityIntentInfo, ResolveInfo> {

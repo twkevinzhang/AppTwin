@@ -16,6 +16,7 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.Random;
+import java.io.IOException;
 
 /**
  * @author Lody
@@ -58,6 +59,7 @@ public class VDeviceManagerService extends IDeviceInfoManager.Stub {
 
     @Override
     public VDeviceInfo getDeviceInfo(int userId) throws RemoteException {
+        com.lody.virtual.server.VirtualUserAccessPolicy.enforceCallerUserOrHost(userId);
         VDeviceInfo info;
         synchronized (mDeviceInfos) {
             info = mDeviceInfos.get(userId);
@@ -72,12 +74,33 @@ public class VDeviceManagerService extends IDeviceInfoManager.Stub {
 
     @Override
     public void updateDeviceInfo(int userId, VDeviceInfo info) throws RemoteException {
+        com.lody.virtual.server.VirtualUserAccessPolicy.enforceHost();
         synchronized (mDeviceInfos) {
             if (info != null) {
                 mDeviceInfos.put(userId, info);
                 mPersistenceLayer.save();
             }
         }
+    }
+
+    /** Removes the stable device identity assigned to one virtual user. */
+    public void clearUserState(int userId) throws IOException {
+        synchronized (mDeviceInfos) {
+            VDeviceInfo removed = mDeviceInfos.get(userId);
+            if (removed != null) {
+                mDeviceInfos.remove(userId);
+                removeDeviceInfoFromPool(removed);
+            }
+            mPersistenceLayer.saveAtomicallyOrThrow();
+        }
+    }
+
+    private void removeDeviceInfoFromPool(VDeviceInfo info) {
+        mPool.deviceIds.remove(info.deviceId);
+        mPool.androidIds.remove(info.androidId);
+        mPool.wifiMacs.remove(info.wifiMac);
+        mPool.bluetoothMacs.remove(info.bluetoothMac);
+        mPool.iccIds.remove(info.iccId);
     }
 
     private VDeviceInfo generateRandomDeviceInfo() {
@@ -107,7 +130,6 @@ public class VDeviceManagerService extends IDeviceInfoManager.Stub {
 
         info.serial = generateSerial();
 
-        addDeviceInfoToPool(info);
         return info;
     }
 
@@ -116,6 +138,7 @@ public class VDeviceManagerService extends IDeviceInfoManager.Stub {
         VDeviceInfo info = generateRandomDeviceInfo();
         Context context = VirtualCore.get().getContext();
         if (context == null) {
+            addDeviceInfoToPool(info);
             return info;
         }
 
@@ -138,6 +161,7 @@ public class VDeviceManagerService extends IDeviceInfoManager.Stub {
         } catch (Throwable e) {
             e.printStackTrace();
         }
+        addDeviceInfoToPool(info);
         return info;
     }
 

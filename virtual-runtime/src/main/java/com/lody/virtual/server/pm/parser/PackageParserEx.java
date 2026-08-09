@@ -19,23 +19,27 @@ import android.os.Parcel;
 import android.text.TextUtils;
 
 import com.lody.virtual.client.core.VirtualCore;
-import com.lody.virtual.client.env.Constants;
 import com.lody.virtual.client.fixer.ComponentFixer;
 import com.lody.virtual.helper.collection.ArrayMap;
 import com.lody.virtual.helper.compat.BuildCompat;
 import com.lody.virtual.helper.compat.PackageParserCompat;
 import com.lody.virtual.helper.utils.FileUtils;
+import com.lody.virtual.helper.utils.AtomicFile;
 import com.lody.virtual.helper.utils.VLog;
 import com.lody.virtual.os.VEnvironment;
 import com.lody.virtual.server.pm.PackageSetting;
 import com.lody.virtual.server.pm.PackageUserState;
+import com.lody.virtual.remote.TrustedPackageProvenance;
 
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 
 import mirror.android.content.pm.ApplicationInfoL;
 import mirror.android.content.pm.ApplicationInfoN;
@@ -50,31 +54,72 @@ public class PackageParserEx {
 
     private static final ArrayMap<String, String[]> sSharedLibCache = new ArrayMap<>();
 
-    private static final String FAKE_SIG = "308203553082023da0030201020204378edaaa300d06092a864886f70d01010b0500305a310d300b0603550406130466616b65310d300b0603550408130466616b65310d300b0603550407130466616b65310d300b060355040a130466616b65310d300b060355040b130466616b65310d300b0603550403130466616b653020170d3138303533303034343434385a180f32313237313230353034343434385a305a310d300b0603550406130466616b65310d300b0603550408130466616b65310d300b0603550407130466616b65310d300b060355040a130466616b65310d300b060355040b130466616b65310d300b0603550403130466616b6530820122300d06092a864886f70d01010105000382010f003082010a0282010100b766ff6afd8a53edd4cee4985bc90e0c515157b5e9f731818961f7250d0d1ac7c7fb80eb5aeb8c28478732e8ff38cff574bfa0eba8039f73af1532f939c4ef9684719efbaba2dd3c583a20907c1c55248a63098c6da23dcfc877763d5fe6061dddd399cf2f49e3250e23f9e687a4d182bcd0662179ba4c9983448e34b4c83e5abbf4f87e87add9157c75fd40de3416744507a3517915f35b6fcad78766e8e1879df8ab823a6ffa335e4790f6e29c87393732025b63ce3a38e42cb0d48cdceb902f191d7d45823db9a0678895e8bfc59b2af7526ca4c2dc3dbe7e70c7c840e666b9629d36e5ddf1d9a80c37f1ab1bc1fb30432914008fbde95d5d3db7853565510203010001a321301f301d0603551d0e04160414d8513e1ae21c64e9ebeee3507e24ea375eef958e300d06092a864886f70d01010b0500038201010088bf20b36428558359536dddcfff16fe233656a92364cb544d8acc43b0859f880a8da339dd430616085edf035e4e6e6dd2281ceb14adde2f05e9ac58d547a09083eece0c6d405289cb7918f85754ee545eefe35e30c103cad617905e94eb4fb68e6920a60d30577855f9feb6e3a664856f74aa9f824aa7d4a3adf85e162c67b9a4261e3185f038ead96112ae3e574d280425e90567352fb82bc9173302122025eaecfabd94d0f9be69a85c415f7cf7759c9651734300952027b316c37aaa1b2418865a3fc7b6bd1072c92ccaacdaa1cf9586d9b8310ceee066ce68859107dfc45ccce729ad9e75b53b584fa37dcd64da8673b1279c6c5861ed3792deac156c8a";
+    private static final String SIGNATURE_FILE_MAGIC = "ATSG";
+    private static final int SIGNATURE_FILE_VERSION = 1;
 
     public static VPackage parsePackage(File packageFile) throws Throwable {
+        return parsePackage(packageFile, null);
+    }
+
+    /** Parses a package, optionally applying the one trusted compatibility-signature policy. */
+    public static VPackage parsePackage(File packageFile, TrustedPackageProvenance provenance)
+            throws Throwable {
         PackageParser parser = PackageParserCompat.createParser(packageFile);
         PackageParser.Package p = PackageParserCompat.parsePackage(parser, packageFile, 0);
-        if (p.requestedPermissions.contains("android.permission.FAKE_PACKAGE_SIGNATURE")
-                && p.mAppMetaData != null
-                && p.mAppMetaData.containsKey("fake-signature")) {
-            String sig = p.mAppMetaData.getString("fake-signature");
-            buildSignature(p, new Signature[]{new Signature(sig)});
-            VLog.d(TAG, "Using fake-signature feature on : " + p.packageName);
-        } else {
-            try {
-                PackageParserCompat.collectCertificates(parser, p, PackageParser.PARSE_IS_SYSTEM);
-            } catch (Throwable e) {
-                VLog.e(TAG, "collectCertificates failed", e);
-                if (VirtualCore.get().getContext().getFileStreamPath(Constants.FAKE_SIGNATURE_FLAG).exists()) {
-                    VLog.w(TAG, "Using fake signature: " + p.packageName);
-                    buildSignature(p, new Signature[]{new Signature(FAKE_SIG)});
-                } else {
-                    throw e;
-                }
+        if (TrustedSignatureOverridePolicy.isTrustedPackage(p.packageName)
+                && provenance == null) {
+            throw new SecurityException(
+                    "Google services package requires authenticated trusted provenance");
+        }
+        // AndroidManifest metadata never authorizes an override. Certificate parsing is mandatory
+        // for both generic and trusted installs; any failure aborts the install.
+        PackageParserCompat.collectCertificates(parser, p, PackageParser.PARSE_IS_SYSTEM);
+        VPackage realPackage = buildPackageCache(p);
+        Signature[] realSignatures = cloneSignatures(realPackage.mSignatures);
+        if (provenance != null) {
+            TrustedSignatureOverridePolicy policy = new TrustedSignatureOverridePolicy();
+            policy.authorize(
+                    artifactFacts(packageFile, p, realSignatures), provenance);
+            buildSignature(p, new Signature[]{new Signature(provenance.effectiveSignature)});
+        }
+        VPackage result = provenance == null ? realPackage : buildPackageCache(p);
+        UnsupportedCompanionComponents.removeFrom(result);
+        result.mRealSignatures = realSignatures;
+        result.trustedPackageProvenance = provenance;
+        return result;
+    }
+
+    private static TrustedSignatureOverridePolicy.ArtifactFacts artifactFacts(
+            File packageFile, PackageParser.Package parsed, Signature[] realSignatures)
+            throws IOException {
+        File baseFile = packageFile.isFile() ? packageFile : new File(parsed.baseCodePath);
+        ArrayList<String> signerDigests = new ArrayList<>();
+        if (realSignatures != null) {
+            for (Signature signature : realSignatures) {
+                signerDigests.add(TrustedSignatureOverridePolicy.sha256(signature.toByteArray()));
             }
         }
-        return buildPackageCache(p);
+        Map<String, String> splitDigests = new LinkedHashMap<>();
+        if (parsed.splitNames != null || parsed.splitCodePaths != null) {
+            if (parsed.splitNames == null || parsed.splitCodePaths == null
+                    || parsed.splitNames.length != parsed.splitCodePaths.length) {
+                throw new SecurityException("inconsistent split package metadata");
+            }
+            for (int i = 0; i < parsed.splitNames.length; i++) {
+                splitDigests.put(parsed.splitNames[i],
+                        TrustedSignatureOverridePolicy.sha256(new File(parsed.splitCodePaths[i])));
+            }
+        }
+        return new TrustedSignatureOverridePolicy.ArtifactFacts(
+                parsed.packageName,
+                parsed.mVersionCode,
+                signerDigests,
+                TrustedSignatureOverridePolicy.sha256(baseFile),
+                splitDigests);
+    }
+
+    private static Signature[] cloneSignatures(Signature[] signatures) {
+        return signatures == null ? null : Arrays.copyOf(signatures, signatures.length);
     }
 
     private static void buildSignature(PackageParser.Package p, Signature[] signatures) {
@@ -137,6 +182,9 @@ public class PackageParserEx {
                 throw new IllegalStateException("Invalid version.");
             }
             VPackage pkg = new VPackage(p);
+            // Cache schema predates the product-level Billing/Integrity deny. Reapply on every
+            // load so upgrades cannot retain now-forbidden FakeStore components.
+            UnsupportedCompanionComponents.removeFrom(pkg);
             addOwner(pkg);
             return pkg;
         } catch (Exception e) {
@@ -148,25 +196,33 @@ public class PackageParserEx {
     }
 
     public static void readSignature(VPackage pkg) {
+        File installedApk = pkg.applicationInfo == null || pkg.applicationInfo.sourceDir == null
+                ? null : new File(pkg.applicationInfo.sourceDir);
+        readSignature(pkg, installedApk, pkg.trustedPackageProvenance);
+    }
+
+    /** Never trusts persisted signature.ini; rebuilds it from the activated private APK bytes. */
+    public static void readSignature(
+            VPackage pkg, File installedPackage, TrustedPackageProvenance provenance) {
         File signatureFile = VEnvironment.getSignatureFile(pkg.packageName);
-        if (!signatureFile.exists()) {
-            return;
-        }
-        Parcel p = Parcel.obtain();
         try {
-            FileInputStream fis = new FileInputStream(signatureFile);
-            byte[] bytes = FileUtils.toByteArray(fis);
-            fis.close();
-            p.unmarshall(bytes, 0, bytes.length);
-            p.setDataPosition(0);
-            pkg.mSignatures = p.createTypedArray(Signature.CREATOR);
-            if (BuildCompat.isPie()) {
-                pkg.signingInfo = p.readParcelable(Bundle.class.getClassLoader());
+            if (installedPackage == null || !installedPackage.exists()) {
+                throw new IOException("activated package is missing");
             }
-        } catch (IOException e) {
-            e.printStackTrace();
-        } finally {
-            p.recycle();
+            VPackage rebuilt = parsePackage(installedPackage, provenance);
+            if (!TextUtils.equals(pkg.packageName, rebuilt.packageName)
+                    || pkg.mVersionCode != rebuilt.mVersionCode) {
+                throw new SecurityException("activated package identity changed");
+            }
+            pkg.mSignatures = cloneSignatures(rebuilt.mSignatures);
+            pkg.mRealSignatures = cloneSignatures(rebuilt.mRealSignatures);
+            pkg.signingInfo = rebuilt.signingInfo;
+            writeSignatureCacheAtomic(pkg, signatureFile);
+        } catch (Throwable failure) {
+            pkg.mSignatures = null;
+            pkg.mRealSignatures = null;
+            pkg.signingInfo = null;
+            new AtomicFile(signatureFile).delete();
         }
     }
 
@@ -184,24 +240,35 @@ public class PackageParserEx {
         } finally {
             p.recycle();
         }
-        Signature[] signatures = pkg.mSignatures;
-        if (signatures != null) {
-            File signatureFile = VEnvironment.getSignatureFile(packageName);
-            if (signatureFile.exists() && !signatureFile.delete()) {
-                VLog.w(TAG, "Unable to delete the signatures of " + packageName);
-            }
-            p = Parcel.obtain();
+        if (pkg.mSignatures != null) {
             try {
-                p.writeTypedArray(signatures, 0);
-                if (BuildCompat.isPie()) {
-                    p.writeParcelable(pkg.signingInfo, 0);
-                }
-                FileUtils.writeParcelToFile(p, signatureFile);
-            } catch (IOException e) {
-                e.printStackTrace();
-            } finally {
-                p.recycle();
+                writeSignatureCacheAtomic(pkg, VEnvironment.getSignatureFile(packageName));
+            } catch (IOException failure) {
+                new AtomicFile(VEnvironment.getSignatureFile(packageName)).delete();
             }
+        }
+    }
+
+    private static void writeSignatureCacheAtomic(VPackage pkg, File signatureFile)
+            throws IOException {
+        Parcel parcel = Parcel.obtain();
+        AtomicFile atomicFile = new AtomicFile(signatureFile);
+        FileOutputStream output = null;
+        try {
+            parcel.writeString(SIGNATURE_FILE_MAGIC);
+            parcel.writeInt(SIGNATURE_FILE_VERSION);
+            parcel.writeTypedArray(pkg.mSignatures, 0);
+            parcel.writeTypedArray(pkg.mRealSignatures, 0);
+            if (BuildCompat.isPie()) parcel.writeParcelable(pkg.signingInfo, 0);
+            output = atomicFile.startWrite();
+            output.write(parcel.marshall());
+            atomicFile.finishWrite(output);
+            output = null;
+        } catch (IOException failure) {
+            atomicFile.failWrite(output);
+            throw failure;
+        } finally {
+            parcel.recycle();
         }
     }
 

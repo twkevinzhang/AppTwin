@@ -1,6 +1,7 @@
 package com.lody.virtual.os;
 
 import android.os.Binder;
+import android.os.Process;
 
 import com.lody.virtual.client.ipc.VActivityManager;
 
@@ -11,7 +12,11 @@ import com.lody.virtual.client.ipc.VActivityManager;
 public class VBinder {
 
     public static int getCallingUid() {
-        return VActivityManager.get().getUidByPid(Binder.getCallingPid());
+        int callingPid = Binder.getCallingPid();
+        // Bootstrap and direct in-process service calls must not recurse through an ActivityManager
+        // binder that has not been published yet.
+        if (callingPid == Process.myPid()) return Process.myUid();
+        return VActivityManager.get().getUidByPid(callingPid);
     }
 
     public static int getBaseCallingUid() {
