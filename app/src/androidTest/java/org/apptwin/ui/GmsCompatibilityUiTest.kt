@@ -1,7 +1,6 @@
 package org.apptwin.ui
 
 import androidx.compose.ui.test.assertIsDisplayed
-import androidx.compose.ui.test.assertTextEquals
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
@@ -46,14 +45,34 @@ class GmsCompatibilityUiTest {
     }
 
     @Test
-    fun evidenceClaimsStayWithinFixtureBoundaryAndUnsupportedIsExplicit() {
-        setContent()
+    fun cardShowsOverallStateAndActionsWithoutTechnicalCapabilityList() {
+        setContent(spaceOverride = enabledSpace)
 
-        composeRule.onNodeWithText("ASUS fixture 通過／外部待驗").assertIsDisplayed()
-        composeRule.onNodeWithTag("gms-capability-status-PLAY_BILLING")
-            .assertTextEquals("不支援")
-        composeRule.onNodeWithTag("gms-capability-status-PLAY_INTEGRITY")
-            .assertTextEquals("不支援")
+        composeRule.onNodeWithText("由 microG 提供，並非 Google 官方服務")
+            .assertIsDisplayed()
+        composeRule.onNodeWithText("已啟用").assertIsDisplayed()
+        composeRule.onNodeWithText("停用").assertIsDisplayed()
+        composeRule.onNodeWithText("重設資料").assertIsDisplayed()
+
+        listOf(
+            "Play services availability",
+            "FCM token",
+            "FCM 訊息接收",
+            "通知與空間路由",
+            "Fused Location",
+            "Maps SDK v2",
+            "Google Sign-In (legacy)",
+            "Google Identity Services",
+            "Cast sender",
+            "Nearby",
+            "Play Billing",
+            "Play Integrity",
+            "尚未驗證",
+            "不支援",
+            "外部待驗",
+        ).forEach { hiddenText ->
+            composeRule.onNodeWithText(hiddenText, substring = true).assertDoesNotExist()
+        }
     }
 
     @Test
@@ -71,13 +90,14 @@ class GmsCompatibilityUiTest {
     private fun setContent(
         onEnable: (String, Boolean) -> Unit = { _, _ -> },
         onReset: (String, Boolean) -> Unit = { _, _ -> },
+        spaceOverride: GroupItem = space,
     ) {
-        val state = MainUiState(isRefreshing = false, groups = listOf(space))
+        val state = MainUiState(isRefreshing = false, groups = listOf(spaceOverride))
         composeRule.setContent {
             AppTwinTheme {
                 SpaceDetailScreen(
                     state = state,
-                    space = space,
+                    space = spaceOverride,
                     onLaunch = {},
                     onAddApp = {},
                     onRenameSpace = { _, _ -> },
@@ -127,6 +147,16 @@ class GmsCompatibilityUiTest {
             health = GroupHealth.HEALTHY,
             apps = emptyList(),
             gmsCompatibility = product,
+        )
+        val enabledSpace = space.copy(
+            gmsCompatibility = product.copy(
+                profile = product.profile.copy(
+                    desiredState = GmsDesiredState.ENABLED,
+                    observedState = GmsObservedState.READY_PARTIAL,
+                    networkConsent = GmsNetworkConsent.GRANTED,
+                    observedReleaseId = "microg-v0.3.15.250932",
+                ),
+            ),
         )
     }
 }

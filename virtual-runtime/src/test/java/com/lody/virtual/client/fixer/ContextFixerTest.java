@@ -7,6 +7,17 @@ import org.junit.Test;
 public class ContextFixerTest {
 
     @Test
+    public void guestBasePackageKeepsLogicalGuestAndFallsBackBeforeBinding() {
+        assertEquals("com.google.android.youtube",
+                ContextFixer.guestBasePackageName(
+                        "com.google.android.youtube", "org.apptwin"));
+        assertEquals("org.apptwin",
+                ContextFixer.guestBasePackageName(null, "org.apptwin"));
+        assertEquals("org.apptwin",
+                ContextFixer.guestBasePackageName("", "org.apptwin"));
+    }
+
+    @Test
     public void fixAttributionSource_rewritesEntireChainToBinderIdentity() {
         FakeAttributionSource next = new FakeAttributionSource(10004, "guest.next", null);
         FakeAttributionSource source = new FakeAttributionSource(10004, "guest.root", next);

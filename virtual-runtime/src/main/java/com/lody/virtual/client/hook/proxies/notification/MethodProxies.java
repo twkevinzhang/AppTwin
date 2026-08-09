@@ -168,7 +168,19 @@ class MethodProxies {
 
             args[index_tag] = tag;
             args[index_id] = id;
+            rewriteCancelPackagesForSystem(args, getHostPkg(), Build.VERSION.SDK_INT >= 30);
             return method.invoke(who, args);
+        }
+    }
+
+    static void rewriteCancelPackagesForSystem(
+            Object[] args, String hostPackage, boolean hasOperationPackage) {
+        if (args == null || args.length == 0) {
+            return;
+        }
+        args[0] = hostPackage;
+        if (hasOperationPackage && args.length > 1 && args[1] instanceof String) {
+            args[1] = hostPackage;
         }
     }
 
