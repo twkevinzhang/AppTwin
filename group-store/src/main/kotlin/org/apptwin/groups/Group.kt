@@ -71,6 +71,51 @@ data class Group(
     }
 }
 
+enum class GroupMetadataKind {
+    GROUP,
+    APP,
+}
+
+/** A metadata entry that exists on disk but cannot be represented by the current domain model. */
+sealed interface GroupStoreLoadIssue {
+    val groupId: String
+    val metadataKind: GroupMetadataKind
+    val metadataName: String
+
+    data class CorruptMetadata(
+        override val groupId: String,
+        override val metadataKind: GroupMetadataKind,
+        override val metadataName: String,
+        val reason: String,
+    ) : GroupStoreLoadIssue
+
+    data class UnsupportedSchema(
+        override val groupId: String,
+        override val metadataKind: GroupMetadataKind,
+        override val metadataName: String,
+        val actualVersion: Int,
+        val supportedVersion: Int,
+    ) : GroupStoreLoadIssue
+}
+
+data class GroupStoreSnapshot(
+    val groups: List<Group>,
+    val issues: List<GroupStoreLoadIssue>,
+)
+
+sealed interface GroupLookupResult {
+    data class Found(val group: Group) : GroupLookupResult
+    data object NotFound : GroupLookupResult
+    data class Failed(val issue: GroupStoreLoadIssue) : GroupLookupResult
+}
+
+class GroupStoreLoadException(
+    val issue: GroupStoreLoadIssue,
+) : IllegalStateException(
+    "Unable to load ${issue.metadataKind.name.lowercase()} metadata " +
+        "${issue.metadataName} for Group ${issue.groupId}",
+)
+
 interface GroupStore {
     fun create(
         id: String,
@@ -80,6 +125,10 @@ interface GroupStore {
     ): Group
     fun listAll(): List<Group>
     fun find(groupId: String): Group?
+    fun loadSnapshot(): GroupStoreSnapshot = GroupStoreSnapshot(listAll(), emptyList())
+    fun lookup(groupId: String): GroupLookupResult = find(groupId)
+        ?.let(GroupLookupResult::Found)
+        ?: GroupLookupResult.NotFound
     fun rename(groupId: String, name: String): Group?
     fun addApp(
         groupId: String,

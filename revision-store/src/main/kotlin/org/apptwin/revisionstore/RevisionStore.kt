@@ -21,14 +21,12 @@ class InMemoryRevisionStore : RevisionStore {
     @Synchronized
     override fun stage(source: PackageSourceSnapshot, createdAtEpochMillis: Long): StageResult {
         val current = active(source.packageName)
-        if (current != null && source.versionCode < current.source.versionCode) {
-            return StageResult.Rejected(RejectionReason.VERSION_ROLLBACK)
-        }
-        if (current != null &&
-            current.source.currentSignerSha256 !in source.signingCertificateLineageSha256
-        ) {
-            return StageResult.Rejected(RejectionReason.INCOMPATIBLE_SIGNING_LINEAGE)
-        }
+        RevisionTransitionPolicy.rejectionReason(
+            currentVersionCode = current?.source?.versionCode,
+            currentSignerSha256 = current?.source?.currentSignerSha256,
+            candidateVersionCode = source.versionCode,
+            candidateSigningLineageSha256 = source.signingCertificateLineageSha256,
+        )?.let { return StageResult.Rejected(it) }
 
         val packageRecords = records.getOrPut(source.packageName) { mutableListOf() }
         val ordinal = packageRecords.size + 1

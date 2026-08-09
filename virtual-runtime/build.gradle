@@ -42,7 +42,10 @@ android {
     }
 
     lint {
-        abortOnError false
+        // Keep reviewed VirtualApp legacy debt in a checked-in baseline, while ensuring that
+        // newly introduced fatal/error findings fail local and CI builds.
+        baseline file('lint-baseline.xml')
+        abortOnError true
         checkReleaseBuilds false
         // AGP 8.13's receiver detectors crash while visiting VirtualApp's legacy receiver loop.
         disable 'UnspecifiedRegisterReceiverFlag', 'UnsafeIntentLaunch'

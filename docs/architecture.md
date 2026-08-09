@@ -22,6 +22,9 @@ Installed source package
 
 ## Implemented boundaries
 
+- `package-source`, `revision-store`, and `group-store` own the domain models and transition
+  policies. Pure Group lifecycle/removal and runtime revision orchestration live in the JVM-only
+  `application-core`; Android package, filesystem, UI, and VirtualCore adapters remain in `app`.
 - The installed-app browser only exposes enabled apps with a launcher activity.
 - `QUERY_ALL_PACKAGES` makes arbitrary installed package discovery possible in the sideload M0.
 - A revision copies the base APK and every `splitSourceDirs` entry as one immutable unit.
@@ -29,11 +32,14 @@ Installed source package
   operation fail rather than activating a mixed revision.
 - Every copied APK receives SHA-256 metadata and is made read-only before activation.
 - The active pointer is replaced using an atomic filesystem move.
-- Version rollback and signing-lineage replacement are rejected by the transition model.
+- Version rollback and signing-lineage replacement are rejected by one shared transition policy
+  used by both the reference store and the production Android importer.
 - Each Group has persistent identity metadata, a unique GroupApp set, a host-private `data/` root,
   and exactly one immutable isolation-environment binding allocated during Group creation.
 - Group creation and deletion run through a durable operation journal. A restart rolls forward or
   cleans up an interrupted transition; an already-healthy Group is never silently rebound.
+- Corrupt or unsupported Group/GroupApp metadata is reported explicitly and preserved instead of
+  being interpreted as a missing Group or membership.
 - Apps in one Group share its account environment; another Group cannot see those app or account
   data.
 - App private data, account state, per-App install/enable state, runtime permissions, and
@@ -42,6 +48,12 @@ Installed source package
   be explicit; allocating a replacement would violate the Group's identity contract.
 - The runtime installs the active immutable revision into its own virtual package registry and
   launches the guest through a host `StubActivity` without adding another Android package.
+- Every launch first synchronizes the installed source into an active revision, compares the
+  active base/split digests with VirtualCore's copied artifacts, and transactionally updates shared
+  guest code while retaining every Group user's installed flag and private data.
+- Virtual package code/settings changes use a fsynced PREPARED/COMMITTED journal. Startup recovery
+  runs before package settings are loaded or the package service is published, so a process death
+  restores the previous app directory, odex, settings, and installed-user set before serving calls.
 - Guest code runs in an AppTwin-owned process/UID. Native path redirection maps guest private
   paths into the host-private virtual data tree.
 - On Android 12 and lower, AndroidX's synthetic non-exported dynamic-receiver permission is granted
@@ -55,6 +67,8 @@ Installed source package
   calls.
 - Package broadcasts refresh the foreground UI; foreground/startup reconciliation remains the
   source of truth because Android does not guarantee background delivery to a killed host.
+- ViewModel work uses lifecycle-owned coroutines on a serialized I/O dispatcher. SavedStateHandle
+  and saveable Compose state retain navigation, picker, dialog, and draft state across recreation.
 - `MANAGE_EXTERNAL_STORAGE` is explicitly user-granted. The launcher probes direct visibility of
   `Download`, `DCIM`, and `Pictures` without recording file names.
 
@@ -68,6 +82,11 @@ Installed source package
   opens Shopee's declared native login activity. The login screen remained in the foreground for
   more than 75 seconds, survived a background/foreground cycle, and also passed a force-stop cold
   launch.
+- A same-signature local fixture was installed as host version 1, launched in a Group, replaced by
+  version 2, and launched through the production application path on the ASUS Android 12 device.
+  Virtual PM advanced to version 2 while the Group/environment binding, launch counter, and
+  version-1 private-data sentinel were preserved; GroupApp removal then deleted all guest private
+  directories without deleting the shared revision cache.
 - This milestone validates ordinary private-data separation for one GroupApp; it is not a security
   boundary against a hostile guest app.
 

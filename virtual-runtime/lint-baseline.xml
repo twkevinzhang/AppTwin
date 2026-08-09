@@ -1,0 +1,4116 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<issues format="6" by="lint 8.13.2" type="baseline" client="gradle" dependencies="false" name="AGP (8.13.2)" variant="all" version="8.13.2">
+
+    <issue
+        id="MissingPermission"
+        message="Missing permissions required by WallpaperManager.getDrawable: android.permission.MANAGE_EXTERNAL_STORAGE or android.permission.READ_WALLPAPER_INTERNAL"
+        errorLine1="     activity.getWindow().setBackgroundDrawable(WallpaperManager.getInstance(activity).getDrawable());"
+        errorLine2="                                                ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/lody/virtual/client/fixer/ActivityFixer.java"
+            line="35"
+            column="49"/>
+    </issue>
+
+    <issue
+        id="MissingPermission"
+        message="Missing permissions required by TelephonyManager.getDeviceId: android.permission.READ_PRIVILEGED_PHONE_STATE"
+        errorLine1="                deviceId = tm.getDeviceId();"
+        errorLine2="                           ~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/lody/virtual/server/device/VDeviceManagerService.java"
+            line="126"
+            column="28"/>
+    </issue>
+
+    <issue
+        id="AnnotateVersionCheck"
+        message="This method should be annotated with `@ChecksSdkIntAtLeast(api=android.os.Build.VERSION_CODES.O)`"
+        errorLine1="    public static boolean isAndroidO() {"
+        errorLine2="                          ~~~~~~~~~~">
+        <location
+            file="src/main/java/com/lody/virtual/os/VEnvironment.java"
+            line="226"
+            column="27"/>
+    </issue>
+
+    <issue
+        id="DefaultLocale"
+        message="Implicitly using the default locale is a common source of bugs: Use `toLowerCase(Locale)` instead. For strings meant to be internal use `Locale.ROOT`, otherwise `Locale.getDefault()`."
+        errorLine1="        return display.toLowerCase().contains(&quot;flyme&quot;);"
+        errorLine2="                       ~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/lody/virtual/helper/utils/DeviceUtil.java"
+            line="19"
+            column="24"/>
+    </issue>
+
+    <issue
+        id="DefaultLocale"
+        message="Implicitly using the default locale is a common source of bugs: Use `toLowerCase(Locale)` instead. For strings meant to be internal use `Locale.ROOT`, otherwise `Locale.getDefault()`."
+        errorLine1="        return nema + &quot;*&quot; + String.format(&quot;%02X&quot;, sum).toLowerCase();"
+        errorLine2="                                                       ~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/lody/virtual/client/hook/proxies/location/MockLocationHelper.java"
+            line="205"
+            column="56"/>
+    </issue>
+
+    <issue
+        id="DefaultLocale"
+        message="Implicitly using the default locale is a common source of bugs: Use `toLowerCase(Locale)` instead. For strings meant to be internal use `Locale.ROOT`, otherwise `Locale.getDefault()`."
+        errorLine1="        if (!colorOsVersion.toLowerCase().startsWith(&quot;v3&quot;)) {"
+        errorLine2="                            ~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/lody/virtual/server/notification/NotificationCompatCompatV21.java"
+            line="133"
+            column="29"/>
+    </issue>
+
+    <issue
+        id="DefaultLocale"
+        message="Implicitly using the default locale is a common source of bugs: Use `toLowerCase(Locale)` instead. For strings meant to be internal use `Locale.ROOT`, otherwise `Locale.getDefault()`."
+        errorLine1="            return string.toLowerCase();"
+        errorLine2="                          ~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/lody/virtual/helper/utils/Reflect.java"
+            line="133"
+            column="27"/>
+    </issue>
+
+    <issue
+        id="DefaultLocale"
+        message="Implicitly using the default locale is a common source of bugs: Use `toLowerCase(Locale)` instead. For strings meant to be internal use `Locale.ROOT`, otherwise `Locale.getDefault()`."
+        errorLine1="            return string.substring(0, 1).toLowerCase() + string.substring(1);"
+        errorLine2="                                          ~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/lody/virtual/helper/utils/Reflect.java"
+            line="135"
+            column="43"/>
+    </issue>
+
+    <issue
+        id="DefaultLocale"
+        message="Implicitly using the default locale is a common source of bugs: Use `toUpperCase(Locale)` instead. For strings meant to be internal use `Locale.ROOT`, otherwise `Locale.getDefault()`."
+        errorLine1="                        String sAddr = addr.getHostAddress().toUpperCase();"
+        errorLine2="                                                             ~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/lody/virtual/client/hook/proxies/wifi/WifiManagerStub.java"
+            line="194"
+            column="62"/>
+    </issue>
+
+    <issue
+        id="InlinedApi"
+        message="Field requires API level 26 (current min is 21): `android.accounts.AccountManager#VISIBILITY_VISIBLE`"
+        errorLine1="   return AccountManager.VISIBILITY_VISIBLE;"
+        errorLine2="          ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/lody/virtual/client/hook/proxies/account/AccountManagerStub.java"
+            line="646"
+            column="11"/>
+    </issue>
+
+    <issue
+        id="InlinedApi"
+        message="Field requires API level 26 (current min is 21): `android.accounts.AccountManager#VISIBILITY_VISIBLE`"
+        errorLine1="    result.put(account, AccountManager.VISIBILITY_VISIBLE);"
+        errorLine2="                        ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/lody/virtual/client/hook/proxies/account/AccountManagerStub.java"
+            line="662"
+            column="25"/>
+    </issue>
+
+    <issue
+        id="InlinedApi"
+        message="Field requires API level 24 (current min is 21): `android.content.Context#SYSTEM_HEALTH_SERVICE`"
+        errorLine1="        Object manager = VirtualCore.get().getContext().getSystemService(Context.SYSTEM_HEALTH_SERVICE);"
+        errorLine2="                                                                         ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/lody/virtual/client/hook/proxies/battery/BatteryStatsStub.java"
+            line="23"
+            column="74"/>
+    </issue>
+
+    <issue
+        id="InlinedApi"
+        message="Field requires API level 28 (current min is 21): `android.content.Context#CROSS_PROFILE_APPS_SERVICE`"
+        errorLine1="        super(getInterface(), Context.CROSS_PROFILE_APPS_SERVICE);"
+        errorLine2="                              ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/lody/virtual/client/hook/proxies/crossprofile/CrossProfileAppsStub.java"
+            line="17"
+            column="31"/>
+    </issue>
+
+    <issue
+        id="InlinedApi"
+        message="Field requires API level 28 (current min is 21): `android.content.Context#CROSS_PROFILE_APPS_SERVICE`"
+        errorLine1="                .getSystemService(Context.CROSS_PROFILE_APPS_SERVICE);"
+        errorLine2="                                  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/lody/virtual/client/hook/proxies/crossprofile/CrossProfileAppsStub.java"
+            line="22"
+            column="35"/>
+    </issue>
+
+    <issue
+        id="InlinedApi"
+        message="Field requires API level 28 (current min is 21): `android.content.Context#CROSS_PROFILE_APPS_SERVICE`"
+        errorLine1="                .getSystemService(Context.CROSS_PROFILE_APPS_SERVICE);"
+        errorLine2="                                  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/lody/virtual/client/hook/proxies/crossprofile/CrossProfileAppsStub.java"
+            line="30"
+            column="35"/>
+    </issue>
+
+    <issue
+        id="NewApi"
+        message="Class requires API level 28 (current min is 21): `android.content.pm.CrossProfileApps`"
+        errorLine1="        CrossProfileApps service = (CrossProfileApps) VirtualCore.get().getContext()"
+        errorLine2="                                    ~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/lody/virtual/client/hook/proxies/crossprofile/CrossProfileAppsStub.java"
+            line="21"
+            column="37"/>
+    </issue>
+
+    <issue
+        id="NewApi"
+        message="Class requires API level 28 (current min is 21): `android.content.pm.CrossProfileApps`"
+        errorLine1="        CrossProfileApps service = (CrossProfileApps) VirtualCore.get().getContext()"
+        errorLine2="                                    ~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/lody/virtual/client/hook/proxies/crossprofile/CrossProfileAppsStub.java"
+            line="29"
+            column="37"/>
+    </issue>
+
+    <issue
+        id="NewApi"
+        message="Call requires API level 24 (current min is 21): `new java.lang.RuntimeException`"
+        errorLine1="        super(message, cause, enableSuppression, writableStackTrace);"
+        errorLine2="        ~~~~~">
+        <location
+            file="src/main/java/com/lody/virtual/client/env/DeadServerException.java"
+            line="25"
+            column="9"/>
+    </issue>
+
+    <issue
+        id="NewApi"
+        message="Call requires API level 26 (current min is 21): `android.app.job.JobWorkItem#writeToParcel`"
+        errorLine1="                        work.writeToParcel(_data, 0);"
+        errorLine2="                             ~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/lody/virtual/server/IJobScheduler.java"
+            line="235"
+            column="30"/>
+    </issue>
+
+    <issue
+        id="NewApi"
+        message="Field requires API level 22 (current min is 21): `android.content.pm.PackageInfo#splitRevisionCodes`"
+        errorLine1="            pi.splitRevisionCodes = new int[pi.splitNames.length];"
+        errorLine2="            ~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/lody/virtual/server/pm/parser/PackageParserEx.java"
+            line="403"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="NewApi"
+        message="Field requires API level 26 (current min is 21): `android.content.pm.ApplicationInfo#splitNames`"
+        errorLine1="            ai.splitNames = p.splitNames != null ? p.splitNames.clone() : new String[0];"
+        errorLine2="            ~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/lody/virtual/server/pm/parser/PackageParserEx.java"
+            line="524"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="NewApi"
+        message="Call requires API level 28 (current min is 21): `android.app.Application#getProcessName`"
+        errorLine1="            return android.app.Application.getProcessName();"
+        errorLine2="                                           ~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/lody/virtual/client/stub/StubIsolatedService.java"
+            line="255"
+            column="44"/>
+    </issue>
+
+    <issue
+        id="PrivateApi"
+        message="Accessing internal APIs via reflection is not supported and may not work on all devices or in the future"
+        errorLine1="            gCameraNativeSetup = Camera.class.getDeclaredMethod(&quot;native_setup&quot;, Object.class, int.class, String.class);"
+        errorLine2="                                 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/lody/virtual/client/natives/NativeMethods.java"
+            line="45"
+            column="34"/>
+    </issue>
+
+    <issue
+        id="PrivateApi"
+        message="Accessing internal APIs via reflection is not supported and may not work on all devices or in the future"
+        errorLine1="                gCameraNativeSetup = Camera.class.getDeclaredMethod(&quot;native_setup&quot;, Object.class, int.class, int.class, String.class);"
+        errorLine2="                                     ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/lody/virtual/client/natives/NativeMethods.java"
+            line="52"
+            column="38"/>
+    </issue>
+
+    <issue
+        id="PrivateApi"
+        message="Accessing internal APIs via reflection is not supported and may not work on all devices or in the future"
+        errorLine1="                gCameraNativeSetup = Camera.class.getDeclaredMethod(&quot;native_setup&quot;, Object.class, int.class, int.class, String.class, boolean.class);"
+        errorLine2="                                     ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/lody/virtual/client/natives/NativeMethods.java"
+            line="61"
+            column="38"/>
+    </issue>
+
+    <issue
+        id="PrivateApi"
+        message="Accessing internal APIs via reflection is not supported and may not work on all devices or in the future"
+        errorLine1="                gCameraNativeSetup = Camera.class.getDeclaredMethod(&quot;native_setup&quot;, Object.class, int.class, String.class, boolean.class);"
+        errorLine2="                                     ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/lody/virtual/client/natives/NativeMethods.java"
+            line="70"
+            column="38"/>
+    </issue>
+
+    <issue
+        id="PrivateApi"
+        message="Accessing internal APIs via reflection is not supported and may not work on all devices or in the future"
+        errorLine1="            return Class.forName(&quot;android.safetycenter.ISafetyCenterManager$Stub&quot;);"
+        errorLine2="                   ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/lody/virtual/client/hook/proxies/safetycenter/SafetyCenterManagerStub.java"
+            line="23"
+            column="20"/>
+    </issue>
+
+    <issue
+        id="PrivateApi"
+        message="Accessing internal APIs via reflection is not supported and may not work on all devices or in the future"
+        errorLine1="            Method attachApplication = Application.class.getDeclaredMethod(&quot;attach&quot;, Context.class);"
+        errorLine2="                                       ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/lody/virtual/client/stub/StubIsolatedService.java"
+            line="151"
+            column="40"/>
+    </issue>
+
+    <issue
+        id="PrivateApi"
+        message="Accessing internal APIs via reflection is not supported and may not work on all devices or in the future"
+        errorLine1="            sClass = Class.forName(&quot;android.os.SystemProperties&quot;);"
+        errorLine2="                     ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/lody/virtual/helper/compat/SystemPropertiesCompat.java"
+            line="16"
+            column="22"/>
+    </issue>
+
+    <issue
+        id="SuspiciousIndentation"
+        message="The indentation string here is different from on the previous line (`&quot; &quot;` vs `\t`)"
+        errorLine1="   if (BuildCompat.isQ()) {"
+        errorLine2="~~~">
+        <location
+            file="src/main/java/com/lody/virtual/client/core/InvocationStubManager.java"
+            line="205"
+            column="1"/>
+        <location
+            file="src/main/java/com/lody/virtual/client/core/InvocationStubManager.java"
+            line="202"
+            column="1"
+            message="Previous line indentation here"/>
+    </issue>
+
+    <issue
+        id="UnusedAttribute"
+        message="Attribute `useAppZygote` is only used in API level 29 and higher (current min is 21)"
+        errorLine1="            android:useAppZygote=&quot;true&quot; />"
+        errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/AndroidManifest.xml"
+            line="1709"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="UnusedAttribute"
+        message="Attribute `useAppZygote` is only used in API level 29 and higher (current min is 21)"
+        errorLine1="            android:useAppZygote=&quot;true&quot; />"
+        errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/AndroidManifest.xml"
+            line="1716"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="UnusedAttribute"
+        message="Attribute `useAppZygote` is only used in API level 29 and higher (current min is 21)"
+        errorLine1="            android:useAppZygote=&quot;true&quot; />"
+        errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/AndroidManifest.xml"
+            line="1723"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="UnusedAttribute"
+        message="Attribute `useAppZygote` is only used in API level 29 and higher (current min is 21)"
+        errorLine1="            android:useAppZygote=&quot;true&quot; />"
+        errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/AndroidManifest.xml"
+            line="1730"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="UnusedAttribute"
+        message="Attribute `useAppZygote` is only used in API level 29 and higher (current min is 21)"
+        errorLine1="            android:useAppZygote=&quot;true&quot; />"
+        errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/AndroidManifest.xml"
+            line="1737"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="UnusedAttribute"
+        message="Attribute `useAppZygote` is only used in API level 29 and higher (current min is 21)"
+        errorLine1="            android:useAppZygote=&quot;true&quot; />"
+        errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/AndroidManifest.xml"
+            line="1744"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="UnusedAttribute"
+        message="Attribute `useAppZygote` is only used in API level 29 and higher (current min is 21)"
+        errorLine1="            android:useAppZygote=&quot;true&quot; />"
+        errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/AndroidManifest.xml"
+            line="1751"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="UnusedAttribute"
+        message="Attribute `useAppZygote` is only used in API level 29 and higher (current min is 21)"
+        errorLine1="            android:useAppZygote=&quot;true&quot; />"
+        errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/AndroidManifest.xml"
+            line="1758"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="UnusedAttribute"
+        message="Attribute `useAppZygote` is only used in API level 29 and higher (current min is 21)"
+        errorLine1="            android:useAppZygote=&quot;true&quot; />"
+        errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/AndroidManifest.xml"
+            line="1765"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="UnusedAttribute"
+        message="Attribute `useAppZygote` is only used in API level 29 and higher (current min is 21)"
+        errorLine1="            android:useAppZygote=&quot;true&quot; />"
+        errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/AndroidManifest.xml"
+            line="1772"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="UnusedAttribute"
+        message="Attribute `useAppZygote` is only used in API level 29 and higher (current min is 21)"
+        errorLine1="            android:useAppZygote=&quot;true&quot; />"
+        errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/AndroidManifest.xml"
+            line="1779"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="UnusedAttribute"
+        message="Attribute `useAppZygote` is only used in API level 29 and higher (current min is 21)"
+        errorLine1="            android:useAppZygote=&quot;true&quot; />"
+        errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/AndroidManifest.xml"
+            line="1786"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="UnusedAttribute"
+        message="Attribute `useAppZygote` is only used in API level 29 and higher (current min is 21)"
+        errorLine1="            android:useAppZygote=&quot;true&quot; />"
+        errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/AndroidManifest.xml"
+            line="1793"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="UnusedAttribute"
+        message="Attribute `useAppZygote` is only used in API level 29 and higher (current min is 21)"
+        errorLine1="            android:useAppZygote=&quot;true&quot; />"
+        errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/AndroidManifest.xml"
+            line="1800"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="UnusedAttribute"
+        message="Attribute `useAppZygote` is only used in API level 29 and higher (current min is 21)"
+        errorLine1="            android:useAppZygote=&quot;true&quot; />"
+        errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/AndroidManifest.xml"
+            line="1807"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="UnusedAttribute"
+        message="Attribute `useAppZygote` is only used in API level 29 and higher (current min is 21)"
+        errorLine1="            android:useAppZygote=&quot;true&quot; />"
+        errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/AndroidManifest.xml"
+            line="1814"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="UnusedAttribute"
+        message="Attribute `useAppZygote` is only used in API level 29 and higher (current min is 21)"
+        errorLine1="            android:useAppZygote=&quot;true&quot; />"
+        errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/AndroidManifest.xml"
+            line="1821"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="UnusedAttribute"
+        message="Attribute `useAppZygote` is only used in API level 29 and higher (current min is 21)"
+        errorLine1="            android:useAppZygote=&quot;true&quot; />"
+        errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/AndroidManifest.xml"
+            line="1828"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="UnusedAttribute"
+        message="Attribute `useAppZygote` is only used in API level 29 and higher (current min is 21)"
+        errorLine1="            android:useAppZygote=&quot;true&quot; />"
+        errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/AndroidManifest.xml"
+            line="1835"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="UnusedAttribute"
+        message="Attribute `useAppZygote` is only used in API level 29 and higher (current min is 21)"
+        errorLine1="            android:useAppZygote=&quot;true&quot; />"
+        errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/AndroidManifest.xml"
+            line="1842"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="UnusedAttribute"
+        message="Attribute `useAppZygote` is only used in API level 29 and higher (current min is 21)"
+        errorLine1="            android:useAppZygote=&quot;true&quot; />"
+        errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/AndroidManifest.xml"
+            line="1849"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="UnusedAttribute"
+        message="Attribute `useAppZygote` is only used in API level 29 and higher (current min is 21)"
+        errorLine1="            android:useAppZygote=&quot;true&quot; />"
+        errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/AndroidManifest.xml"
+            line="1856"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="UnusedAttribute"
+        message="Attribute `useAppZygote` is only used in API level 29 and higher (current min is 21)"
+        errorLine1="            android:useAppZygote=&quot;true&quot; />"
+        errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/AndroidManifest.xml"
+            line="1863"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="UnusedAttribute"
+        message="Attribute `useAppZygote` is only used in API level 29 and higher (current min is 21)"
+        errorLine1="            android:useAppZygote=&quot;true&quot; />"
+        errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/AndroidManifest.xml"
+            line="1870"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="UnusedAttribute"
+        message="Attribute `useAppZygote` is only used in API level 29 and higher (current min is 21)"
+        errorLine1="            android:useAppZygote=&quot;true&quot; />"
+        errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/AndroidManifest.xml"
+            line="1877"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="UnusedAttribute"
+        message="Attribute `useAppZygote` is only used in API level 29 and higher (current min is 21)"
+        errorLine1="            android:useAppZygote=&quot;true&quot; />"
+        errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/AndroidManifest.xml"
+            line="1884"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="UnusedAttribute"
+        message="Attribute `useAppZygote` is only used in API level 29 and higher (current min is 21)"
+        errorLine1="            android:useAppZygote=&quot;true&quot; />"
+        errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/AndroidManifest.xml"
+            line="1891"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="UnusedAttribute"
+        message="Attribute `useAppZygote` is only used in API level 29 and higher (current min is 21)"
+        errorLine1="            android:useAppZygote=&quot;true&quot; />"
+        errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/AndroidManifest.xml"
+            line="1898"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="UnusedAttribute"
+        message="Attribute `useAppZygote` is only used in API level 29 and higher (current min is 21)"
+        errorLine1="            android:useAppZygote=&quot;true&quot; />"
+        errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/AndroidManifest.xml"
+            line="1905"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="UnusedAttribute"
+        message="Attribute `useAppZygote` is only used in API level 29 and higher (current min is 21)"
+        errorLine1="            android:useAppZygote=&quot;true&quot; />"
+        errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/AndroidManifest.xml"
+            line="1912"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="UnusedAttribute"
+        message="Attribute `useAppZygote` is only used in API level 29 and higher (current min is 21)"
+        errorLine1="            android:useAppZygote=&quot;true&quot; />"
+        errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/AndroidManifest.xml"
+            line="1919"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="UnusedAttribute"
+        message="Attribute `useAppZygote` is only used in API level 29 and higher (current min is 21)"
+        errorLine1="            android:useAppZygote=&quot;true&quot; />"
+        errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/AndroidManifest.xml"
+            line="1926"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="UnusedAttribute"
+        message="Attribute `useAppZygote` is only used in API level 29 and higher (current min is 21)"
+        errorLine1="            android:useAppZygote=&quot;true&quot; />"
+        errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/AndroidManifest.xml"
+            line="1933"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="UnusedAttribute"
+        message="Attribute `useAppZygote` is only used in API level 29 and higher (current min is 21)"
+        errorLine1="            android:useAppZygote=&quot;true&quot; />"
+        errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/AndroidManifest.xml"
+            line="1940"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="UnusedAttribute"
+        message="Attribute `useAppZygote` is only used in API level 29 and higher (current min is 21)"
+        errorLine1="            android:useAppZygote=&quot;true&quot; />"
+        errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/AndroidManifest.xml"
+            line="1947"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="UnusedAttribute"
+        message="Attribute `useAppZygote` is only used in API level 29 and higher (current min is 21)"
+        errorLine1="            android:useAppZygote=&quot;true&quot; />"
+        errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/AndroidManifest.xml"
+            line="1954"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="UnusedAttribute"
+        message="Attribute `useAppZygote` is only used in API level 29 and higher (current min is 21)"
+        errorLine1="            android:useAppZygote=&quot;true&quot; />"
+        errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/AndroidManifest.xml"
+            line="1961"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="UnusedAttribute"
+        message="Attribute `useAppZygote` is only used in API level 29 and higher (current min is 21)"
+        errorLine1="            android:useAppZygote=&quot;true&quot; />"
+        errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/AndroidManifest.xml"
+            line="1968"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="UnusedAttribute"
+        message="Attribute `useAppZygote` is only used in API level 29 and higher (current min is 21)"
+        errorLine1="            android:useAppZygote=&quot;true&quot; />"
+        errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/AndroidManifest.xml"
+            line="1975"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="UnusedAttribute"
+        message="Attribute `useAppZygote` is only used in API level 29 and higher (current min is 21)"
+        errorLine1="            android:useAppZygote=&quot;true&quot; />"
+        errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/AndroidManifest.xml"
+            line="1982"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="UnusedAttribute"
+        message="Attribute `useAppZygote` is only used in API level 29 and higher (current min is 21)"
+        errorLine1="            android:useAppZygote=&quot;true&quot; />"
+        errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/AndroidManifest.xml"
+            line="1989"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="UnusedAttribute"
+        message="Attribute `useAppZygote` is only used in API level 29 and higher (current min is 21)"
+        errorLine1="            android:useAppZygote=&quot;true&quot; />"
+        errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/AndroidManifest.xml"
+            line="1996"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="UnusedAttribute"
+        message="Attribute `useAppZygote` is only used in API level 29 and higher (current min is 21)"
+        errorLine1="            android:useAppZygote=&quot;true&quot; />"
+        errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/AndroidManifest.xml"
+            line="2003"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="UnusedAttribute"
+        message="Attribute `useAppZygote` is only used in API level 29 and higher (current min is 21)"
+        errorLine1="            android:useAppZygote=&quot;true&quot; />"
+        errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/AndroidManifest.xml"
+            line="2010"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="UnusedAttribute"
+        message="Attribute `useAppZygote` is only used in API level 29 and higher (current min is 21)"
+        errorLine1="            android:useAppZygote=&quot;true&quot; />"
+        errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/AndroidManifest.xml"
+            line="2017"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="UnusedAttribute"
+        message="Attribute `useAppZygote` is only used in API level 29 and higher (current min is 21)"
+        errorLine1="            android:useAppZygote=&quot;true&quot; />"
+        errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/AndroidManifest.xml"
+            line="2024"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="UnusedAttribute"
+        message="Attribute `useAppZygote` is only used in API level 29 and higher (current min is 21)"
+        errorLine1="            android:useAppZygote=&quot;true&quot; />"
+        errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/AndroidManifest.xml"
+            line="2031"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="UnusedAttribute"
+        message="Attribute `useAppZygote` is only used in API level 29 and higher (current min is 21)"
+        errorLine1="            android:useAppZygote=&quot;true&quot; />"
+        errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/AndroidManifest.xml"
+            line="2038"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="UnusedAttribute"
+        message="Attribute `useAppZygote` is only used in API level 29 and higher (current min is 21)"
+        errorLine1="            android:useAppZygote=&quot;true&quot; />"
+        errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/AndroidManifest.xml"
+            line="2045"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="UnusedAttribute"
+        message="Attribute `useAppZygote` is only used in API level 29 and higher (current min is 21)"
+        errorLine1="            android:useAppZygote=&quot;true&quot; />"
+        errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/AndroidManifest.xml"
+            line="2052"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="InflateParams"
+        message="Avoid passing `null` as the view root (needed to resolve layout parameters on the inflated layout&apos;s root element)"
+        errorLine1="                convertView = mLayoutInflater.inflate(R.layout.choose_account_row, null);"
+        errorLine2="                                                                                   ~~~~">
+        <location
+            file="src/main/java/com/lody/virtual/client/stub/ChooseAccountTypeActivity.java"
+            line="160"
+            column="84"/>
+    </issue>
+
+    <issue
+        id="ProtectedPermissions"
+        message="Permission is only granted to system apps"
+        errorLine1="    &lt;uses-permission android:name=&quot;android.permission.BIND_DIRECTORY_SEARCH&quot; />"
+        errorLine2="                     ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/AndroidManifest.xml"
+            line="21"
+            column="22"/>
+    </issue>
+
+    <issue
+        id="ProtectedPermissions"
+        message="Permission is only granted to system apps"
+        errorLine1="    &lt;uses-permission android:name=&quot;android.permission.UPDATE_APP_OPS_STATS&quot; />"
+        errorLine2="                     ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/AndroidManifest.xml"
+            line="22"
+            column="22"/>
+    </issue>
+
+    <issue
+        id="ProtectedPermissions"
+        message="Permission is only granted to system apps"
+        errorLine1="        android:name=&quot;android.permission.ACCESS_MOCK_LOCATION&quot;"
+        errorLine2="        ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/AndroidManifest.xml"
+            line="38"
+            column="9"/>
+    </issue>
+
+    <issue
+        id="ProtectedPermissions"
+        message="Permission is only granted to system apps"
+        errorLine1="    &lt;uses-permission android:name=&quot;android.permission.CLEAR_APP_CACHE&quot; />"
+        errorLine2="                     ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/AndroidManifest.xml"
+            line="57"
+            column="22"/>
+    </issue>
+
+    <issue
+        id="ProtectedPermissions"
+        message="Permission is only granted to system apps"
+        errorLine1="    &lt;uses-permission android:name=&quot;android.permission.SET_TIME_ZONE&quot; />"
+        errorLine2="                     ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/AndroidManifest.xml"
+            line="94"
+            column="22"/>
+    </issue>
+
+    <issue
+        id="ProtectedPermissions"
+        message="Permission is only granted to system apps"
+        errorLine1="    &lt;uses-permission android:name=&quot;android.permission.BATTERY_STATS&quot; />"
+        errorLine2="                     ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/AndroidManifest.xml"
+            line="193"
+            column="22"/>
+    </issue>
+
+    <issue
+        id="ProtectedPermissions"
+        message="Permission is only granted to system apps"
+        errorLine1="    &lt;uses-permission android:name=&quot;android.permission.GET_INTENT_SENDER_INTENT&quot; />"
+        errorLine2="                     ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/AndroidManifest.xml"
+            line="213"
+            column="22"/>
+    </issue>
+
+    <issue
+        id="EllipsizeMaxLines"
+        message="Combining `ellipsize=marquee` and `maxLines=1` can lead to crashes. Use `singleLine=true` instead."
+        errorLine1="            android:maxLines=&quot;1&quot;"
+        errorLine2="            ~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/layout/resolve_list_item.xml"
+            line="52"
+            column="13"/>
+        <location
+            file="src/main/res/layout/resolve_list_item.xml"
+            line="51"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="EllipsizeMaxLines"
+        message="Combining `ellipsize=marquee` and `maxLines=1` can lead to crashes. Use `singleLine=true` instead."
+        errorLine1="            android:maxLines=&quot;1&quot;"
+        errorLine2="            ~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/layout/resolve_list_item.xml"
+            line="60"
+            column="13"/>
+        <location
+            file="src/main/res/layout/resolve_list_item.xml"
+            line="59"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="ParcelClassLoader"
+        message="Using the default class loader will not work if you are restoring your own classes. Consider using for example `readBundle(getClass().getClassLoader())` instead."
+        errorLine1="        this.mResultExtras = in.readBundle();"
+        errorLine2="                                ~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/lody/virtual/remote/PendingResultData.java"
+            line="85"
+            column="33"/>
+    </issue>
+
+    <issue
+        id="DiscouragedApi"
+        message="Fixed screen orientations will be ignored in most cases, starting from Android 16. Android is moving toward a model where apps are expected to adapt to various orientations, display sizes, and aspect ratios."
+        errorLine1="            android:screenOrientation=&quot;portrait&quot; />"
+        errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/AndroidManifest.xml"
+            line="267"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="DiscouragedApi"
+        message="Fixed screen orientations will be ignored in most cases, starting from Android 16. Android is moving toward a model where apps are expected to adapt to various orientations, display sizes, and aspect ratios."
+        errorLine1="            android:screenOrientation=&quot;portrait&quot; />"
+        errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/AndroidManifest.xml"
+            line="275"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="DiscouragedApi"
+        message="Fixed screen orientations will be ignored in most cases, starting from Android 16. Android is moving toward a model where apps are expected to adapt to various orientations, display sizes, and aspect ratios."
+        errorLine1="            android:screenOrientation=&quot;portrait&quot;"
+        errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/AndroidManifest.xml"
+            line="284"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="DiscouragedApi"
+        message="Fixed screen orientations will be ignored in most cases, starting from Android 16. Android is moving toward a model where apps are expected to adapt to various orientations, display sizes, and aspect ratios."
+        errorLine1="            android:screenOrientation=&quot;portrait&quot;"
+        errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/AndroidManifest.xml"
+            line="294"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="DiscouragedApi"
+        message="Use of this function is discouraged because resource reflection makes it harder to perform build optimizations and compile-time verification of code. It is much more efficient to retrieve resources by identifier (e.g. `R.foo.bar`) than by name (e.g. `getIdentifier(&quot;bar&quot;, &quot;foo&quot;, null)`)."
+        errorLine1="                            int resId = resources.getIdentifier(icon.resourceName, &quot;drawable&quot;, pkg);"
+        errorLine2="                                                  ~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/lody/virtual/client/hook/proxies/am/MethodProxies.java"
+            line="1812"
+            column="51"/>
+    </issue>
+
+    <issue
+        id="DiscouragedApi"
+        message="Use of this function is discouraged because resource reflection makes it harder to perform build optimizations and compile-time verification of code. It is much more efficient to retrieve resources by identifier (e.g. `R.foo.bar`) than by name (e.g. `getIdentifier(&quot;bar&quot;, &quot;foo&quot;, null)`)."
+        errorLine1="            int id = sysContext.getResources().getIdentifier(name, &quot;dimen&quot;, NotificationCompat.SYSTEM_UI_PKG);"
+        errorLine2="                                               ~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/lody/virtual/server/notification/RemoteViewsFixer.java"
+            line="260"
+            column="48"/>
+    </issue>
+
+    <issue
+        id="DiscouragedApi"
+        message="Use of this function is discouraged because resource reflection makes it harder to perform build optimizations and compile-time verification of code. It is much more efficient to retrieve resources by identifier (e.g. `R.foo.bar`) than by name (e.g. `getIdentifier(&quot;bar&quot;, &quot;foo&quot;, null)`)."
+        errorLine1="        return systemUi.getResources().getIdentifier(name, type, NotificationCompat.SYSTEM_UI_PKG);"
+        errorLine2="                                       ~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/lody/virtual/server/notification/WidthCompat.java"
+            line="131"
+            column="40"/>
+    </issue>
+
+    <issue
+        id="UseRequiresApi"
+        message="Use `@RequiresApi(Build.VERSION_CODES.KITKAT) instead of `@TargetApi` to propagate the requirement to users of `AppOpsManagerStub`"
+        errorLine1="@TargetApi(Build.VERSION_CODES.KITKAT)"
+        errorLine2="~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/lody/virtual/client/hook/proxies/appops/AppOpsManagerStub.java"
+            line="22"
+            column="1"/>
+    </issue>
+
+    <issue
+        id="UseRequiresApi"
+        message="Use `@RequiresApi(Build.VERSION_CODES.LOLLIPOP) instead of `@TargetApi` to propagate the requirement to users of `AppWidgetManagerStub`"
+        errorLine1="@TargetApi(Build.VERSION_CODES.LOLLIPOP)"
+        errorLine2="~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/lody/virtual/client/hook/proxies/appwidget/AppWidgetManagerStub.java"
+            line="17"
+            column="1"/>
+    </issue>
+
+    <issue
+        id="UseRequiresApi"
+        message="Use `@RequiresApi(Build.VERSION_CODES.HONEYCOMB_MR2) instead of `@TargetApi` to propagate the requirement to callers of `dumpAsync`"
+        errorLine1="    @TargetApi(Build.VERSION_CODES.HONEYCOMB_MR2)"
+        errorLine2="    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/lody/virtual/client/hook/base/BinderInvocationStub.java"
+            line="113"
+            column="5"/>
+    </issue>
+
+    <issue
+        id="UseRequiresApi"
+        message="Use `@RequiresApi(Build.VERSION_CODES.JELLY_BEAN_MR1) instead of `@TargetApi` to propagate the requirement to users of `CellIdentityCdma`"
+        errorLine1="@TargetApi(Build.VERSION_CODES.JELLY_BEAN_MR1)"
+        errorLine2="~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/mirror/android/telephony/CellIdentityCdma.java"
+            line="14"
+            column="1"/>
+    </issue>
+
+    <issue
+        id="UseRequiresApi"
+        message="Use `@RequiresApi(Build.VERSION_CODES.JELLY_BEAN_MR1) instead of `@TargetApi` to propagate the requirement to users of `CellIdentityGsm`"
+        errorLine1="@TargetApi(Build.VERSION_CODES.JELLY_BEAN_MR1)"
+        errorLine2="~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/mirror/android/telephony/CellIdentityGsm.java"
+            line="14"
+            column="1"/>
+    </issue>
+
+    <issue
+        id="UseRequiresApi"
+        message="Use `@RequiresApi(Build.VERSION_CODES.JELLY_BEAN_MR1) instead of `@TargetApi` to propagate the requirement to users of `CellInfoCdma`"
+        errorLine1="@TargetApi(Build.VERSION_CODES.JELLY_BEAN_MR1)"
+        errorLine2="~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/mirror/android/telephony/CellInfoCdma.java"
+            line="15"
+            column="1"/>
+    </issue>
+
+    <issue
+        id="UseRequiresApi"
+        message="Use `@RequiresApi(Build.VERSION_CODES.JELLY_BEAN_MR1) instead of `@TargetApi` to propagate the requirement to users of `CellInfoGsm`"
+        errorLine1="@TargetApi(Build.VERSION_CODES.JELLY_BEAN_MR1)"
+        errorLine2="~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/mirror/android/telephony/CellInfoGsm.java"
+            line="14"
+            column="1"/>
+    </issue>
+
+    <issue
+        id="UseRequiresApi"
+        message="Use `@RequiresApi(Build.VERSION_CODES.JELLY_BEAN_MR1) instead of `@TargetApi` to propagate the requirement to users of `CellSignalStrengthCdma`"
+        errorLine1="@TargetApi(Build.VERSION_CODES.JELLY_BEAN_MR1)"
+        errorLine2="~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/mirror/android/telephony/CellSignalStrengthCdma.java"
+            line="14"
+            column="1"/>
+    </issue>
+
+    <issue
+        id="UseRequiresApi"
+        message="Use `@RequiresApi(Build.VERSION_CODES.JELLY_BEAN_MR1) instead of `@TargetApi` to propagate the requirement to users of `CellSignalStrengthGsm`"
+        errorLine1="@TargetApi(Build.VERSION_CODES.JELLY_BEAN_MR1)"
+        errorLine2="~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/mirror/android/telephony/CellSignalStrengthGsm.java"
+            line="14"
+            column="1"/>
+    </issue>
+
+    <issue
+        id="UseRequiresApi"
+        message="Use `@RequiresApi(Build.VERSION_CODES.LOLLIPOP) instead of `@TargetApi` to propagate the requirement to users of `DaemonJobService`"
+        errorLine1="@TargetApi(Build.VERSION_CODES.LOLLIPOP)"
+        errorLine2="~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/lody/virtual/client/stub/DaemonJobService.java"
+            line="19"
+            column="1"/>
+    </issue>
+
+    <issue
+        id="UseRequiresApi"
+        message="Use `@RequiresApi(Build.VERSION_CODES.M) instead of `@TargetApi` to propagate the requirement to users of `DelegateApplication64Bit`"
+        errorLine1="@TargetApi(Build.VERSION_CODES.M)"
+        errorLine2="~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/lody/virtual/DelegateApplication64Bit.java"
+            line="28"
+            column="1"/>
+    </issue>
+
+    <issue
+        id="UseRequiresApi"
+        message="Use `@RequiresApi(Build.VERSION_CODES.JELLY_BEAN_MR1) instead of `@TargetApi` to propagate the requirement to users of `DisplayStub`"
+        errorLine1="@TargetApi(Build.VERSION_CODES.JELLY_BEAN_MR1)"
+        errorLine2="~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/lody/virtual/client/hook/proxies/display/DisplayStub.java"
+            line="16"
+            column="1"/>
+    </issue>
+
+    <issue
+        id="UseRequiresApi"
+        message="Use `@RequiresApi(Build.VERSION_CODES.LOLLIPOP) instead of `@TargetApi` to propagate the requirement to users of `FileBridge`"
+        errorLine1="@TargetApi(Build.VERSION_CODES.LOLLIPOP)"
+        errorLine2="~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/lody/virtual/server/pm/installer/FileBridge.java"
+            line="26"
+            column="1"/>
+    </issue>
+
+    <issue
+        id="UseRequiresApi"
+        message="Use `@RequiresApi(Build.VERSION_CODES.M) instead of `@TargetApi` to propagate the requirement to users of `FingerprintManagerStub`"
+        errorLine1="@TargetApi(Build.VERSION_CODES.M)"
+        errorLine2="~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/lody/virtual/client/hook/proxies/fingerprint/FingerprintManagerStub.java"
+            line="16"
+            column="1"/>
+    </issue>
+
+    <issue
+        id="UseRequiresApi"
+        message="Use `@RequiresApi(29) instead of `@TargetApi` to propagate the requirement to users of `IDeviceIdentifiersPolicyService`"
+        errorLine1="@TargetApi(29)"
+        errorLine2="~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/mirror/android/os/IDeviceIdentifiersPolicyService.java"
+            line="15"
+            column="1"/>
+    </issue>
+
+    <issue
+        id="UseRequiresApi"
+        message="Use `@RequiresApi(Build.VERSION_CODES.M) instead of `@TargetApi` to propagate the requirement to users of `Icon`"
+        errorLine1="@TargetApi(Build.VERSION_CODES.M)"
+        errorLine2="~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/mirror/android/graphics/drawable/Icon.java"
+            line="9"
+            column="1"/>
+    </issue>
+
+    <issue
+        id="UseRequiresApi"
+        message="Use `@RequiresApi(Build.VERSION_CODES.JELLY_BEAN) instead of `@TargetApi` to propagate the requirement to users of `InputMethodManagerStub`"
+        errorLine1="@TargetApi(Build.VERSION_CODES.JELLY_BEAN)"
+        errorLine2="~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/lody/virtual/client/hook/proxies/input/InputMethodManagerStub.java"
+            line="17"
+            column="1"/>
+    </issue>
+
+    <issue
+        id="UseRequiresApi"
+        message="Use `@RequiresApi(Build.VERSION_CODES.LOLLIPOP) instead of `@TargetApi` to propagate the requirement to callers of `callActivityOnCreate`"
+        errorLine1=" @TargetApi(Build.VERSION_CODES.LOLLIPOP)"
+        errorLine2=" ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/lody/virtual/client/hook/delegate/InstrumentationDelegate.java"
+            line="247"
+            column="2"/>
+    </issue>
+
+    <issue
+        id="UseRequiresApi"
+        message="Use `@RequiresApi(Build.VERSION_CODES.LOLLIPOP) instead of `@TargetApi` to propagate the requirement to callers of `callActivityOnRestoreInstanceState`"
+        errorLine1=" @TargetApi(Build.VERSION_CODES.LOLLIPOP)"
+        errorLine2=" ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/lody/virtual/client/hook/delegate/InstrumentationDelegate.java"
+            line="263"
+            column="2"/>
+    </issue>
+
+    <issue
+        id="UseRequiresApi"
+        message="Use `@RequiresApi(Build.VERSION_CODES.LOLLIPOP) instead of `@TargetApi` to propagate the requirement to callers of `callActivityOnPostCreate`"
+        errorLine1=" @TargetApi(Build.VERSION_CODES.LOLLIPOP)"
+        errorLine2=" ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/lody/virtual/client/hook/delegate/InstrumentationDelegate.java"
+            line="275"
+            column="2"/>
+    </issue>
+
+    <issue
+        id="UseRequiresApi"
+        message="Use `@RequiresApi(Build.VERSION_CODES.LOLLIPOP) instead of `@TargetApi` to propagate the requirement to callers of `callActivityOnSaveInstanceState`"
+        errorLine1=" @TargetApi(Build.VERSION_CODES.LOLLIPOP)"
+        errorLine2=" ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/lody/virtual/client/hook/delegate/InstrumentationDelegate.java"
+            line="312"
+            column="2"/>
+    </issue>
+
+    <issue
+        id="UseRequiresApi"
+        message="Use `@RequiresApi(Build.VERSION_CODES.JELLY_BEAN_MR2) instead of `@TargetApi` to propagate the requirement to callers of `getUiAutomation`"
+        errorLine1=" @TargetApi(Build.VERSION_CODES.JELLY_BEAN_MR2)"
+        errorLine2=" ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/lody/virtual/client/hook/delegate/InstrumentationDelegate.java"
+            line="340"
+            column="2"/>
+    </issue>
+
+    <issue
+        id="UseRequiresApi"
+        message="Use `@RequiresApi(Build.VERSION_CODES.LOLLIPOP) instead of `@TargetApi` to propagate the requirement to users of `JobInfo`"
+        errorLine1="@TargetApi(Build.VERSION_CODES.LOLLIPOP)"
+        errorLine2="~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/mirror/android/app/job/JobInfo.java"
+            line="15"
+            column="1"/>
+    </issue>
+
+    <issue
+        id="UseRequiresApi"
+        message="Use `@RequiresApi(Build.VERSION_CODES.LOLLIPOP) instead of `@TargetApi` to propagate the requirement to users of `JobParameters`"
+        errorLine1="@TargetApi(Build.VERSION_CODES.LOLLIPOP)"
+        errorLine2="~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/mirror/android/app/job/JobParameters.java"
+            line="18"
+            column="1"/>
+    </issue>
+
+    <issue
+        id="UseRequiresApi"
+        message="Use `@RequiresApi(Build.VERSION_CODES.LOLLIPOP) instead of `@TargetApi` to propagate the requirement to users of `JobServiceStub`"
+        errorLine1="@TargetApi(Build.VERSION_CODES.LOLLIPOP)"
+        errorLine2="~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/lody/virtual/client/hook/proxies/job/JobServiceStub.java"
+            line="24"
+            column="1"/>
+    </issue>
+
+    <issue
+        id="UseRequiresApi"
+        message="Use `@RequiresApi(Build.VERSION_CODES.O) instead of `@TargetApi` to propagate the requirement to users of `JobWorkItem`"
+        errorLine1="@TargetApi(Build.VERSION_CODES.O)"
+        errorLine2="~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/mirror/android/app/job/JobWorkItem.java"
+            line="17"
+            column="1"/>
+    </issue>
+
+    <issue
+        id="UseRequiresApi"
+        message="Use `@RequiresApi(Build.VERSION_CODES.TIRAMISU) instead of `@TargetApi` to propagate the requirement to users of `LocaleManagerStub`"
+        errorLine1="@TargetApi(Build.VERSION_CODES.TIRAMISU)"
+        errorLine2="~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/lody/virtual/client/hook/proxies/locale/LocaleManagerStub.java"
+            line="16"
+            column="1"/>
+    </issue>
+
+    <issue
+        id="UseRequiresApi"
+        message="Use `@RequiresApi(Build.VERSION_CODES.JELLY_BEAN) instead of `@TargetApi` to propagate the requirement to users of `MediaRouterServiceStub`"
+        errorLine1="@TargetApi(Build.VERSION_CODES.JELLY_BEAN)"
+        errorLine2="~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/lody/virtual/client/hook/proxies/media/router/MediaRouterServiceStub.java"
+            line="16"
+            column="1"/>
+    </issue>
+
+    <issue
+        id="UseRequiresApi"
+        message="Use `@RequiresApi(Build.VERSION_CODES.JELLY_BEAN_MR1) instead of `@TargetApi` to propagate the requirement to users of `GetPermissionFlags`"
+        errorLine1="    @TargetApi(Build.VERSION_CODES.JELLY_BEAN_MR1)"
+        errorLine2="    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/lody/virtual/client/hook/proxies/pm/MethodProxies.java"
+            line="1212"
+            column="5"/>
+    </issue>
+
+    <issue
+        id="UseRequiresApi"
+        message="Use `@RequiresApi(Build.VERSION_CODES.KITKAT) instead of `@TargetApi` to propagate the requirement to users of `QueryIntentContentProviders`"
+        errorLine1="    @TargetApi(Build.VERSION_CODES.KITKAT)"
+        errorLine2="    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/lody/virtual/client/hook/proxies/pm/MethodProxies.java"
+            line="1250"
+            column="5"/>
+    </issue>
+
+    <issue
+        id="UseRequiresApi"
+        message="Use `@RequiresApi(Build.VERSION_CODES.LOLLIPOP) instead of `@TargetApi` to propagate the requirement to users of `SetTaskDescription`"
+        errorLine1="    @TargetApi(Build.VERSION_CODES.LOLLIPOP)"
+        errorLine2="    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/lody/virtual/client/hook/proxies/am/MethodProxies.java"
+            line="1592"
+            column="5"/>
+    </issue>
+
+    <issue
+        id="UseRequiresApi"
+        message="Use `@RequiresApi(Build.VERSION_CODES.LOLLIPOP) instead of `@TargetApi` to propagate the requirement to callers of `copyNativeBinariesAfterL`"
+        errorLine1=" @TargetApi(Build.VERSION_CODES.LOLLIPOP)"
+        errorLine2=" ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/lody/virtual/helper/compat/NativeLibraryHelperCompat.java"
+            line="42"
+            column="2"/>
+    </issue>
+
+    <issue
+        id="UseRequiresApi"
+        message="Use `@RequiresApi(Build.VERSION_CODES.LOLLIPOP) instead of `@TargetApi` to propagate the requirement to callers of `isVM64`"
+        errorLine1=" @TargetApi(Build.VERSION_CODES.LOLLIPOP)"
+        errorLine2=" ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/lody/virtual/helper/compat/NativeLibraryHelperCompat.java"
+            line="90"
+            column="2"/>
+    </issue>
+
+    <issue
+        id="UseRequiresApi"
+        message="Use `@RequiresApi(Build.VERSION_CODES.M) instead of `@TargetApi` to propagate the requirement to users of `NetworkManagementStub`"
+        errorLine1="@TargetApi(Build.VERSION_CODES.M)"
+        errorLine2="~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/lody/virtual/client/hook/proxies/network/NetworkManagementStub.java"
+            line="11"
+            column="1"/>
+    </issue>
+
+    <issue
+        id="UseRequiresApi"
+        message="Use `@RequiresApi(Build.VERSION_CODES.LOLLIPOP) instead of `@TargetApi` to propagate the requirement to users of `NotificationCompatCompatV21`"
+        errorLine1="@TargetApi(Build.VERSION_CODES.LOLLIPOP)"
+        errorLine2="~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/lody/virtual/server/notification/NotificationCompatCompatV21.java"
+            line="21"
+            column="1"/>
+    </issue>
+
+    <issue
+        id="UseRequiresApi"
+        message="Use `@RequiresApi(Build.VERSION_CODES.M) instead of `@TargetApi` to propagate the requirement to callers of `fixIcon`"
+        errorLine1="    @TargetApi(Build.VERSION_CODES.M)"
+        errorLine2="    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/lody/virtual/server/notification/NotificationFixer.java"
+            line="80"
+            column="5"/>
+    </issue>
+
+    <issue
+        id="UseRequiresApi"
+        message="Use `@RequiresApi(Build.VERSION_CODES.LOLLIPOP) instead of `@TargetApi` to propagate the requirement to callers of `fixNotificationRemoteViews`"
+        errorLine1="    @TargetApi(Build.VERSION_CODES.LOLLIPOP)"
+        errorLine2="    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/lody/virtual/server/notification/NotificationFixer.java"
+            line="100"
+            column="5"/>
+    </issue>
+
+    <issue
+        id="UseRequiresApi"
+        message="Use `@RequiresApi(Build.VERSION_CODES.LOLLIPOP) instead of `@TargetApi` to propagate the requirement to users of `PackageHelper`"
+        errorLine1="@TargetApi(Build.VERSION_CODES.LOLLIPOP)"
+        errorLine2="~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/lody/virtual/server/pm/installer/PackageHelper.java"
+            line="28"
+            column="1"/>
+    </issue>
+
+    <issue
+        id="UseRequiresApi"
+        message="Use `@RequiresApi(Build.VERSION_CODES.LOLLIPOP) instead of `@TargetApi` to propagate the requirement to users of `PackageInstallerSession`"
+        errorLine1="@TargetApi(Build.VERSION_CODES.LOLLIPOP)"
+        errorLine2="~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/lody/virtual/server/pm/installer/PackageInstallerSession.java"
+            line="41"
+            column="1"/>
+    </issue>
+
+    <issue
+        id="UseRequiresApi"
+        message="Use `@RequiresApi(Build.VERSION_CODES.KITKAT) instead of `@TargetApi` to propagate the requirement to callers of `allowFilterResult`"
+        errorLine1="    @TargetApi(Build.VERSION_CODES.KITKAT)"
+        errorLine2="    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/lody/virtual/server/pm/ProviderIntentResolver.java"
+            line="86"
+            column="5"/>
+    </issue>
+
+    <issue
+        id="UseRequiresApi"
+        message="Use `@RequiresApi(Build.VERSION_CODES.KITKAT) instead of `@TargetApi` to propagate the requirement to callers of `newResult`"
+        errorLine1="    @TargetApi(Build.VERSION_CODES.KITKAT)"
+        errorLine2="    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/lody/virtual/server/pm/ProviderIntentResolver.java"
+            line="115"
+            column="5"/>
+    </issue>
+
+    <issue
+        id="UseRequiresApi"
+        message="Use `@RequiresApi(Build.VERSION_CODES.ICE_CREAM_SANDWICH_MR1) instead of `@TargetApi` to propagate the requirement to callers of `getIcon`"
+        errorLine1="    @TargetApi(Build.VERSION_CODES.ICE_CREAM_SANDWICH_MR1)"
+        errorLine2="    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/lody/virtual/client/stub/ResolverActivity.java"
+            line="177"
+            column="5"/>
+    </issue>
+
+    <issue
+        id="UseRequiresApi"
+        message="Use `@RequiresApi(Build.VERSION_CODES.LOLLIPOP) instead of `@TargetApi` to propagate the requirement to users of `RestrictionStub`"
+        errorLine1="@TargetApi(Build.VERSION_CODES.LOLLIPOP)"
+        errorLine2="~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/lody/virtual/client/hook/proxies/restriction/RestrictionStub.java"
+            line="15"
+            column="1"/>
+    </issue>
+
+    <issue
+        id="UseRequiresApi"
+        message="Use `@RequiresApi(Build.VERSION_CODES.JELLY_BEAN_MR1) instead of `@TargetApi` to propagate the requirement to users of `SearchManagerStub`"
+        errorLine1="@TargetApi(Build.VERSION_CODES.JELLY_BEAN_MR1)"
+        errorLine2="~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/lody/virtual/client/hook/proxies/search/SearchManagerStub.java"
+            line="21"
+            column="1"/>
+    </issue>
+
+    <issue
+        id="UseRequiresApi"
+        message="Use `@RequiresApi(Build.VERSION_CODES.LOLLIPOP) instead of `@TargetApi` to propagate the requirement to users of `SessionManagerStub`"
+        errorLine1="@TargetApi(Build.VERSION_CODES.LOLLIPOP)"
+        errorLine2="~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/lody/virtual/client/hook/proxies/media/session/SessionManagerStub.java"
+            line="15"
+            column="1"/>
+    </issue>
+
+    <issue
+        id="UseRequiresApi"
+        message="Use `@RequiresApi(Build.VERSION_CODES.LOLLIPOP) instead of `@TargetApi` to propagate the requirement to users of `SessionParams`"
+        errorLine1="@TargetApi(Build.VERSION_CODES.LOLLIPOP)"
+        errorLine2="~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/lody/virtual/server/pm/installer/SessionParams.java"
+            line="17"
+            column="1"/>
+    </issue>
+
+    <issue
+        id="UseRequiresApi"
+        message="Use `@RequiresApi(Build.VERSION_CODES.JELLY_BEAN_MR1) instead of `@TargetApi` to propagate the requirement to users of `Global`"
+        errorLine1="    @TargetApi(Build.VERSION_CODES.JELLY_BEAN_MR1)"
+        errorLine2="    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/mirror/android/providers/Settings.java"
+            line="18"
+            column="5"/>
+    </issue>
+
+    <issue
+        id="UseRequiresApi"
+        message="Use `@RequiresApi(Build.VERSION_CODES.M) instead of `@TargetApi` to propagate the requirement to callers of `replaceShortcutInfo`"
+        errorLine1="    @TargetApi(Build.VERSION_CODES.M)"
+        errorLine2="    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/lody/virtual/client/hook/proxies/shortcut/ShortcutServiceStub.java"
+            line="79"
+            column="5"/>
+    </issue>
+
+    <issue
+        id="UseRequiresApi"
+        message="Use `@RequiresApi(Build.VERSION_CODES.M) instead of `@TargetApi` to propagate the requirement to callers of `createBitmapIcon`"
+        errorLine1="    @TargetApi(Build.VERSION_CODES.M)"
+        errorLine2="    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/lody/virtual/client/hook/proxies/shortcut/ShortcutServiceStub.java"
+            line="127"
+            column="5"/>
+    </issue>
+
+    <issue
+        id="UseRequiresApi"
+        message="Use `@RequiresApi(Build.VERSION_CODES.M) instead of `@TargetApi` to propagate the requirement to callers of `createFallbackIcon`"
+        errorLine1="    @TargetApi(Build.VERSION_CODES.M)"
+        errorLine2="    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/lody/virtual/client/hook/proxies/shortcut/ShortcutServiceStub.java"
+            line="136"
+            column="5"/>
+    </issue>
+
+    <issue
+        id="UseRequiresApi"
+        message="Use `@RequiresApi(Build.VERSION_CODES.N_MR1) instead of `@TargetApi` to propagate the requirement to callers of `findFirstShortcutList`"
+        errorLine1="        @TargetApi(Build.VERSION_CODES.N_MR1)"
+        errorLine2="        ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/lody/virtual/client/hook/proxies/shortcut/ShortcutServiceStub.java"
+            line="202"
+            column="9"/>
+    </issue>
+
+    <issue
+        id="UseRequiresApi"
+        message="Use `@RequiresApi(Build.VERSION_CODES.LOLLIPOP) instead of `@TargetApi` to propagate the requirement to callers of `beforeCall`"
+        errorLine1="        @TargetApi(Build.VERSION_CODES.LOLLIPOP)"
+        errorLine2="        ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/lody/virtual/client/hook/proxies/shortcut/ShortcutServiceStub.java"
+            line="222"
+            column="9"/>
+    </issue>
+
+    <issue
+        id="UseRequiresApi"
+        message="Use `@RequiresApi(Build.VERSION_CODES.N_MR1) instead of `@TargetApi` to propagate the requirement to callers of `findFirstShortcutInfo`"
+        errorLine1="        @TargetApi(Build.VERSION_CODES.N_MR1)"
+        errorLine2="        ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/lody/virtual/client/hook/proxies/shortcut/ShortcutServiceStub.java"
+            line="231"
+            column="9"/>
+    </issue>
+
+    <issue
+        id="UseRequiresApi"
+        message="Use `@RequiresApi(Build.VERSION_CODES.LOLLIPOP) instead of `@TargetApi` to propagate the requirement to users of `StubJob`"
+        errorLine1="@TargetApi(Build.VERSION_CODES.LOLLIPOP)"
+        errorLine2="~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/lody/virtual/client/stub/StubJob.java"
+            line="35"
+            column="1"/>
+    </issue>
+
+    <issue
+        id="UseRequiresApi"
+        message="Use `@RequiresApi(Build.VERSION_CODES.KITKAT) instead of `@TargetApi` to propagate the requirement to users of `SyncRequest`"
+        errorLine1="@TargetApi(Build.VERSION_CODES.KITKAT)"
+        errorLine2="~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/mirror/android/content/SyncRequest.java"
+            line="14"
+            column="1"/>
+    </issue>
+
+    <issue
+        id="UseRequiresApi"
+        message="Use `@RequiresApi(Build.VERSION_CODES.LOLLIPOP_MR1) instead of `@TargetApi` to propagate the requirement to users of `UsageStatsManagerStub`"
+        errorLine1="@TargetApi(Build.VERSION_CODES.LOLLIPOP_MR1)"
+        errorLine2="~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/lody/virtual/client/hook/proxies/usage/UsageStatsManagerStub.java"
+            line="15"
+            column="1"/>
+    </issue>
+
+    <issue
+        id="UseRequiresApi"
+        message="Use `@RequiresApi(Build.VERSION_CODES.JELLY_BEAN_MR1) instead of `@TargetApi` to propagate the requirement to users of `UserHandle`"
+        errorLine1="@TargetApi(Build.VERSION_CODES.JELLY_BEAN_MR1)"
+        errorLine2="~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/mirror/android/os/UserHandle.java"
+            line="15"
+            column="1"/>
+    </issue>
+
+    <issue
+        id="UseRequiresApi"
+        message="Use `@RequiresApi(Build.VERSION_CODES.JELLY_BEAN_MR1) instead of `@TargetApi` to propagate the requirement to users of `UserManagerStub`"
+        errorLine1="@TargetApi(Build.VERSION_CODES.JELLY_BEAN_MR1)"
+        errorLine2="~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/lody/virtual/client/hook/proxies/user/UserManagerStub.java"
+            line="21"
+            column="1"/>
+    </issue>
+
+    <issue
+        id="UseRequiresApi"
+        message="Use `@RequiresApi(Build.VERSION_CODES.O) instead of `@TargetApi` to propagate the requirement to callers of `enqueue`"
+        errorLine1="    @TargetApi(Build.VERSION_CODES.O)"
+        errorLine2="    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/lody/virtual/client/ipc/VJobScheduler.java"
+            line="85"
+            column="5"/>
+    </issue>
+
+    <issue
+        id="UseRequiresApi"
+        message="Use `@RequiresApi(Build.VERSION_CODES.LOLLIPOP) instead of `@TargetApi` to propagate the requirement to users of `VJobSchedulerService`"
+        errorLine1="@TargetApi(Build.VERSION_CODES.LOLLIPOP)"
+        errorLine2="~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/lody/virtual/server/job/VJobSchedulerService.java"
+            line="37"
+            column="1"/>
+    </issue>
+
+    <issue
+        id="UseRequiresApi"
+        message="Use `@RequiresApi(Build.VERSION_CODES.LOLLIPOP) instead of `@TargetApi` to propagate the requirement to users of `VPackageInstallerService`"
+        errorLine1="@TargetApi(Build.VERSION_CODES.LOLLIPOP)"
+        errorLine2="~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/lody/virtual/server/pm/installer/VPackageInstallerService.java"
+            line="45"
+            column="1"/>
+    </issue>
+
+    <issue
+        id="UseRequiresApi"
+        message="Use `@RequiresApi(Build.VERSION_CODES.KITKAT) instead of `@TargetApi` to propagate the requirement to callers of `queryIntentContentProviders`"
+        errorLine1="    @TargetApi(Build.VERSION_CODES.KITKAT)"
+        errorLine2="    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/lody/virtual/server/pm/VPackageManagerService.java"
+            line="560"
+            column="5"/>
+    </issue>
+
+    <issue
+        id="UseRequiresApi"
+        message="Use `@RequiresApi(Build.VERSION_CODES.N_MR1) instead of `@TargetApi` to propagate the requirement to callers of `createShortcutAboveN`"
+        errorLine1="    @TargetApi(Build.VERSION_CODES.N_MR1)"
+        errorLine2="    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/lody/virtual/client/core/VirtualCore.java"
+            line="530"
+            column="5"/>
+    </issue>
+
+    <issue
+        id="UseRequiresApi"
+        message="Use `@RequiresApi(Build.VERSION_CODES.O) instead of `@TargetApi` to propagate the requirement to callers of `createDeskShortcutAboveO`"
+        errorLine1="    @TargetApi(Build.VERSION_CODES.O)"
+        errorLine2="    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/lody/virtual/client/core/VirtualCore.java"
+            line="559"
+            column="5"/>
+    </issue>
+
+    <issue
+        id="UseRequiresApi"
+        message="Use `@RequiresApi(Build.VERSION_CODES.KITKAT) instead of `@TargetApi` to propagate the requirement to users of `WifiSsid`"
+        errorLine1="@TargetApi(Build.VERSION_CODES.KITKAT)"
+        errorLine2="~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/mirror/android/net/wifi/WifiSsid.java"
+            line="13"
+            column="1"/>
+    </issue>
+
+    <issue
+        id="MissingTranslation"
+        message="&quot;engine_process_name&quot; is not translated in &quot;ru&quot; (Russian) or &quot;uk&quot; (Ukrainian)"
+        errorLine1="    &lt;string name=&quot;engine_process_name&quot;>:x&lt;/string>"
+        errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/values/strings.xml"
+            line="3"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="SetWorldReadable"
+        message="Setting file permissions to world-readable can be risky, review carefully"
+        errorLine1="            destination.setReadable(true, false);"
+        errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/lody/virtual/helper/compat/NativeLibraryExtractor.java"
+            line="104"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="SystemPermissionTypo"
+        message="Did you mean `android.permission.ACCESS_WIFI_STATE`?"
+        errorLine1="    &lt;uses-permission android:name=&quot;android.permission.ACCESS_WIMAX_STATE&quot; />"
+        errorLine2="                                   ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/AndroidManifest.xml"
+            line="42"
+            column="36"/>
+    </issue>
+
+    <issue
+        id="SystemPermissionTypo"
+        message="Did you mean `android.permission.CHANGE_WIFI_STATE`?"
+        errorLine1="    &lt;uses-permission android:name=&quot;android.permission.CHANGE_WIMAX_STATE&quot; />"
+        errorLine2="                                   ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/AndroidManifest.xml"
+            line="56"
+            column="36"/>
+    </issue>
+
+    <issue
+        id="SystemPermissionTypo"
+        message="Did you mean `android.permission.READ_LOGS`?"
+        errorLine1="    &lt;uses-permission android:name=&quot;android.permission.READ_CLIPS&quot; />"
+        errorLine2="                                   ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/AndroidManifest.xml"
+            line="75"
+            column="36"/>
+    </issue>
+
+    <issue
+        id="SystemPermissionTypo"
+        message="Did you mean `android.permission.WRITE_FLAGS`?"
+        errorLine1="    &lt;uses-permission android:name=&quot;android.permission.WRITE_CLIPS&quot; />"
+        errorLine2="                                   ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/AndroidManifest.xml"
+            line="106"
+            column="36"/>
+    </issue>
+
+    <issue
+        id="SystemPermissionTypo"
+        message="Did you mean `android.permission.WRITE_OBB`?"
+        errorLine1="    &lt;uses-permission android:name=&quot;android.permission.WRITE_SMS&quot; />"
+        errorLine2="                                   ~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/AndroidManifest.xml"
+            line="111"
+            column="36"/>
+    </issue>
+
+    <issue
+        id="SystemPermissionTypo"
+        message="Did you mean `android.permission.WRITE_SETTINGS`?"
+        errorLine1="    &lt;uses-permission android:name=&quot;com.android.launcher.permission.WRITE_SETTINGS&quot; />"
+        errorLine2="                                   ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/AndroidManifest.xml"
+            line="196"
+            column="36"/>
+    </issue>
+
+    <issue
+        id="UnsafeDynamicallyLoadedCode"
+        message="Dynamically loading code using `load` is risky, please use `loadLibrary` instead when possible"
+        errorLine1="                    System.load(library.getAbsolutePath());"
+        errorLine2="                    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/lody/virtual/client/stub/StubIsolatedService.java"
+            line="65"
+            column="21"/>
+    </issue>
+
+    <issue
+        id="ExpiredTargetSdkVersion"
+        message="Google Play requires that apps target API level 33 or higher."
+        errorLine1="        targetSdk 23"
+        errorLine2="        ~~~~~~~~~~~~">
+        <location
+            file="build.gradle"
+            line="13"
+            column="9"/>
+    </issue>
+
+    <issue
+        id="ObsoleteSdkInt"
+        message="Unnecessary; `SDK_INT` is always >= 21"
+        errorLine1="  if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {"
+        errorLine2="      ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/lody/virtual/client/fixer/ActivityFixer.java"
+            line="43"
+            column="7"/>
+    </issue>
+
+    <issue
+        id="ObsoleteSdkInt"
+        message="Unnecessary; `Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP` is always true here (`SDK_INT` ≥ 21 and &lt; 24)"
+        errorLine1="  } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {"
+        errorLine2="             ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/lody/virtual/helper/compat/ActivityManagerCompat.java"
+            line="78"
+            column="14"/>
+    </issue>
+
+    <issue
+        id="ObsoleteSdkInt"
+        message="Unnecessary; `SDK_INT` is always >= 21"
+        errorLine1="        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {"
+        errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/lody/virtual/server/am/ActivityStack.java"
+            line="240"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="ObsoleteSdkInt"
+        message="Unnecessary; `SDK_INT` is always >= 21"
+        errorLine1="        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {"
+        errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/lody/virtual/server/am/ActivityStack.java"
+            line="318"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="ObsoleteSdkInt"
+        message="Unnecessary; `SDK_INT` is never &lt; 21"
+        errorLine1="            if (Build.VERSION.SDK_INT &lt; Build.VERSION_CODES.LOLLIPOP) {"
+        errorLine2="                ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/lody/virtual/server/am/ActivityStack.java"
+            line="440"
+            column="17"/>
+    </issue>
+
+    <issue
+        id="ObsoleteSdkInt"
+        message="Unnecessary; `SDK_INT` is always >= 21"
+        errorLine1="            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.JELLY_BEAN) {"
+        errorLine2="                ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/lody/virtual/server/am/ActivityStack.java"
+            line="447"
+            column="17"/>
+    </issue>
+
+    <issue
+        id="ObsoleteSdkInt"
+        message="Unnecessary; `SDK_INT` is always >= 21"
+        errorLine1="        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.JELLY_BEAN_MR2) {"
+        errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/lody/virtual/server/am/ActivityStack.java"
+            line="525"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="ObsoleteSdkInt"
+        message="Unnecessary; `SDK_INT` is never &lt; 21"
+        errorLine1="        if (Build.VERSION.SDK_INT &lt;= Build.VERSION_CODES.ICE_CREAM_SANDWICH_MR1) {"
+        errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/mirror/android/app/ActivityThread.java"
+            line="58"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="ObsoleteSdkInt"
+        message="Unnecessary; `SDK_INT` is always >= 21"
+        errorLine1="   if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {"
+        errorLine2="       ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/lody/virtual/client/hook/proxies/alarm/AlarmManagerStub.java"
+            line="54"
+            column="8"/>
+    </issue>
+
+    <issue
+        id="ObsoleteSdkInt"
+        message="Unnecessary; `SDK_INT` is always >= 19"
+        errorLine1="@TargetApi(Build.VERSION_CODES.KITKAT)"
+        errorLine2="~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/lody/virtual/client/hook/proxies/appops/AppOpsManagerStub.java"
+            line="22"
+            column="1"/>
+    </issue>
+
+    <issue
+        id="ObsoleteSdkInt"
+        message="Unnecessary; `SDK_INT` is always >= 21"
+        errorLine1="@TargetApi(Build.VERSION_CODES.LOLLIPOP)"
+        errorLine2="~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/lody/virtual/client/hook/proxies/appwidget/AppWidgetManagerStub.java"
+            line="17"
+            column="1"/>
+    </issue>
+
+    <issue
+        id="ObsoleteSdkInt"
+        message="Unnecessary; `SDK_INT` is always >= 13"
+        errorLine1="    @TargetApi(Build.VERSION_CODES.HONEYCOMB_MR2)"
+        errorLine2="    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/lody/virtual/client/hook/base/BinderInvocationStub.java"
+            line="113"
+            column="5"/>
+    </issue>
+
+    <issue
+        id="ObsoleteSdkInt"
+        message="Unnecessary; `SDK_INT` is always >= 21"
+        errorLine1="        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {"
+        errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/lody/virtual/server/BinderProvider.java"
+            line="52"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="ObsoleteSdkInt"
+        message="Unnecessary; `SDK_INT` is always >= 21"
+        errorLine1="    public static final String SERVICE_NAME = Build.VERSION.SDK_INT >= 17 ?"
+        errorLine2="                                              ~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/lody/virtual/client/hook/proxies/bluetooth/BluetoothStub.java"
+            line="17"
+            column="47"/>
+    </issue>
+
+    <issue
+        id="ObsoleteSdkInt"
+        message="Unnecessary; `SDK_INT` is always >= 21"
+        errorLine1="        if (Build.VERSION.SDK_INT >= 18) {"
+        errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/lody/virtual/helper/compat/BundleCompat.java"
+            line="16"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="ObsoleteSdkInt"
+        message="Unnecessary; `SDK_INT` is always >= 21"
+        errorLine1="        if (Build.VERSION.SDK_INT >= 18) {"
+        errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/lody/virtual/helper/compat/BundleCompat.java"
+            line="24"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="ObsoleteSdkInt"
+        message="Unnecessary; `SDK_INT` is always >= 17"
+        errorLine1="@TargetApi(Build.VERSION_CODES.JELLY_BEAN_MR1)"
+        errorLine2="~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/mirror/android/telephony/CellIdentityCdma.java"
+            line="14"
+            column="1"/>
+    </issue>
+
+    <issue
+        id="ObsoleteSdkInt"
+        message="Unnecessary; `SDK_INT` is always >= 17"
+        errorLine1="@TargetApi(Build.VERSION_CODES.JELLY_BEAN_MR1)"
+        errorLine2="~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/mirror/android/telephony/CellIdentityGsm.java"
+            line="14"
+            column="1"/>
+    </issue>
+
+    <issue
+        id="ObsoleteSdkInt"
+        message="Unnecessary; `SDK_INT` is always >= 17"
+        errorLine1="@TargetApi(Build.VERSION_CODES.JELLY_BEAN_MR1)"
+        errorLine2="~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/mirror/android/telephony/CellInfoCdma.java"
+            line="15"
+            column="1"/>
+    </issue>
+
+    <issue
+        id="ObsoleteSdkInt"
+        message="Unnecessary; `SDK_INT` is always >= 17"
+        errorLine1="@TargetApi(Build.VERSION_CODES.JELLY_BEAN_MR1)"
+        errorLine2="~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/mirror/android/telephony/CellInfoGsm.java"
+            line="14"
+            column="1"/>
+    </issue>
+
+    <issue
+        id="ObsoleteSdkInt"
+        message="Unnecessary; `SDK_INT` is always >= 17"
+        errorLine1="@TargetApi(Build.VERSION_CODES.JELLY_BEAN_MR1)"
+        errorLine2="~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/mirror/android/telephony/CellSignalStrengthCdma.java"
+            line="14"
+            column="1"/>
+    </issue>
+
+    <issue
+        id="ObsoleteSdkInt"
+        message="Unnecessary; `SDK_INT` is always >= 17"
+        errorLine1="@TargetApi(Build.VERSION_CODES.JELLY_BEAN_MR1)"
+        errorLine2="~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/mirror/android/telephony/CellSignalStrengthGsm.java"
+            line="14"
+            column="1"/>
+    </issue>
+
+    <issue
+        id="ObsoleteSdkInt"
+        message="Unnecessary; `SDK_INT` is always >= 21"
+        errorLine1="        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {"
+        errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/lody/virtual/client/stub/ChooseTypeAndAccountActivity.java"
+            line="391"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="ObsoleteSdkInt"
+        message="Unnecessary; `SDK_INT` is always >= 21"
+        errorLine1="        if (Build.VERSION.SDK_INT > Build.VERSION_CODES.JELLY_BEAN_MR1) {"
+        errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/lody/virtual/client/hook/proxies/clipboard/ClipBoardStub.java"
+            line="40"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="ObsoleteSdkInt"
+        message="Unnecessary; `SDK_INT` is never &lt; 21"
+        errorLine1="        if (VERSION.SDK_INT &lt; Build.VERSION_CODES.JELLY_BEAN_MR1) {"
+        errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/lody/virtual/helper/compat/ContentProviderCompat.java"
+            line="18"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="ObsoleteSdkInt"
+        message="Unnecessary; `SDK_INT` is always >= 21"
+        errorLine1="        if (VERSION.SDK_INT >= Build.VERSION_CODES.JELLY_BEAN) {"
+        errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/lody/virtual/helper/compat/ContentProviderCompat.java"
+            line="35"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="ObsoleteSdkInt"
+        message="Unnecessary; `SDK_INT` is always >= 21"
+        errorLine1="        if (VERSION.SDK_INT >= Build.VERSION_CODES.JELLY_BEAN) {"
+        errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/lody/virtual/helper/compat/ContentProviderCompat.java"
+            line="68"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="ObsoleteSdkInt"
+        message="Unnecessary; `SDK_INT` is always >= 21"
+        errorLine1="        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.KITKAT) {"
+        errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/lody/virtual/client/fixer/ContextFixer.java"
+            line="67"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="ObsoleteSdkInt"
+        message="Unnecessary; `SDK_INT` is always >= 21"
+        errorLine1="        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.JELLY_BEAN_MR2) {"
+        errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/lody/virtual/client/fixer/ContextFixer.java"
+            line="70"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="ObsoleteSdkInt"
+        message="Unnecessary; `SDK_INT` is always >= 21"
+        errorLine1="@TargetApi(Build.VERSION_CODES.LOLLIPOP)"
+        errorLine2="~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/lody/virtual/client/stub/DaemonJobService.java"
+            line="19"
+            column="1"/>
+    </issue>
+
+    <issue
+        id="ObsoleteSdkInt"
+        message="Unnecessary; `Build.VERSION.SDK_INT &lt; Build.VERSION_CODES.LOLLIPOP` is never true here"
+        errorLine1="        if (Build.VERSION.SDK_INT &lt; Build.VERSION_CODES.LOLLIPOP) {"
+        errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/lody/virtual/client/stub/DaemonJobService.java"
+            line="34"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="ObsoleteSdkInt"
+        message="Unnecessary; `SDK_INT` is always >= 23"
+        errorLine1="        if (Build.VERSION.SDK_INT >= 23) {"
+        errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/lody/virtual/DelegateApplication64Bit.java"
+            line="106"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="ObsoleteSdkInt"
+        message="Unnecessary; `Build.VERSION.SDK_INT >= Build.VERSION_CODES.M` is always true here (`SDK_INT` ≥ 23 and &lt; 26)"
+        errorLine1="            } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {"
+        errorLine2="                       ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/lody/virtual/DelegateApplication64Bit.java"
+            line="131"
+            column="24"/>
+    </issue>
+
+    <issue
+        id="ObsoleteSdkInt"
+        message="Unnecessary; `SDK_INT` is always >= 17"
+        errorLine1="@TargetApi(Build.VERSION_CODES.JELLY_BEAN_MR1)"
+        errorLine2="~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/lody/virtual/client/hook/proxies/display/DisplayStub.java"
+            line="16"
+            column="1"/>
+    </issue>
+
+    <issue
+        id="ObsoleteSdkInt"
+        message="Unnecessary; `SDK_INT` is always >= 21"
+        errorLine1="@TargetApi(Build.VERSION_CODES.LOLLIPOP)"
+        errorLine2="~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/lody/virtual/server/pm/installer/FileBridge.java"
+            line="26"
+            column="1"/>
+    </issue>
+
+    <issue
+        id="ObsoleteSdkInt"
+        message="Unnecessary; `SDK_INT` is always >= 21"
+        errorLine1="        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {"
+        errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/lody/virtual/helper/utils/FileUtils.java"
+            line="40"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="ObsoleteSdkInt"
+        message="Unnecessary; `SDK_INT` is always >= 21"
+        errorLine1="        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {"
+        errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/lody/virtual/helper/utils/FileUtils.java"
+            line="59"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="ObsoleteSdkInt"
+        message="Unnecessary; `SDK_INT` is always >= 21"
+        errorLine1="        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.KITKAT) {"
+        errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/lody/virtual/helper/compat/IApplicationThreadCompat.java"
+            line="31"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="ObsoleteSdkInt"
+        message="Unnecessary; `Build.VERSION.SDK_INT >= Build.VERSION_CODES.ICE_CREAM_SANDWICH_MR1` is never true here"
+        errorLine1="        } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.ICE_CREAM_SANDWICH_MR1) {"
+        errorLine2="                   ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/lody/virtual/helper/compat/IApplicationThreadCompat.java"
+            line="34"
+            column="20"/>
+    </issue>
+
+    <issue
+        id="ObsoleteSdkInt"
+        message="Unnecessary; `SDK_INT` is always >= 21"
+        errorLine1="        } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.KITKAT) {"
+        errorLine2="                   ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/lody/virtual/helper/compat/IApplicationThreadCompat.java"
+            line="48"
+            column="20"/>
+    </issue>
+
+    <issue
+        id="ObsoleteSdkInt"
+        message="Unnecessary; `Build.VERSION.SDK_INT >= Build.VERSION_CODES.ICE_CREAM_SANDWICH_MR1` is always true here (`SDK_INT` ≥ 21 and &lt; 26)"
+        errorLine1="        } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.ICE_CREAM_SANDWICH_MR1) {"
+        errorLine2="                   ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/lody/virtual/helper/compat/IApplicationThreadCompat.java"
+            line="166"
+            column="20"/>
+    </issue>
+
+    <issue
+        id="ObsoleteSdkInt"
+        message="Unnecessary; `Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP` is always true here (`SDK_INT` ≥ 21 and &lt; 23)"
+        errorLine1="        } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {"
+        errorLine2="                   ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/lody/virtual/client/hook/proxies/isms/ISmsStub.java"
+            line="35"
+            column="20"/>
+    </issue>
+
+    <issue
+        id="ObsoleteSdkInt"
+        message="Unnecessary; `Build.VERSION.SDK_INT >= Build.VERSION_CODES.JELLY_BEAN_MR2` is never true here"
+        errorLine1="        } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.JELLY_BEAN_MR2) {"
+        errorLine2="                   ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/lody/virtual/client/hook/proxies/isms/ISmsStub.java"
+            line="50"
+            column="20"/>
+    </issue>
+
+    <issue
+        id="ObsoleteSdkInt"
+        message="Unnecessary; `SDK_INT` is always >= 16"
+        errorLine1="@TargetApi(Build.VERSION_CODES.JELLY_BEAN)"
+        errorLine2="~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/lody/virtual/client/hook/proxies/input/InputMethodManagerStub.java"
+            line="17"
+            column="1"/>
+    </issue>
+
+    <issue
+        id="ObsoleteSdkInt"
+        message="Unnecessary; `SDK_INT` is always >= 21"
+        errorLine1=" @TargetApi(Build.VERSION_CODES.LOLLIPOP)"
+        errorLine2=" ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/lody/virtual/client/hook/delegate/InstrumentationDelegate.java"
+            line="247"
+            column="2"/>
+    </issue>
+
+    <issue
+        id="ObsoleteSdkInt"
+        message="Unnecessary; `SDK_INT` is always >= 21"
+        errorLine1=" @TargetApi(Build.VERSION_CODES.LOLLIPOP)"
+        errorLine2=" ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/lody/virtual/client/hook/delegate/InstrumentationDelegate.java"
+            line="263"
+            column="2"/>
+    </issue>
+
+    <issue
+        id="ObsoleteSdkInt"
+        message="Unnecessary; `SDK_INT` is always >= 21"
+        errorLine1=" @TargetApi(Build.VERSION_CODES.LOLLIPOP)"
+        errorLine2=" ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/lody/virtual/client/hook/delegate/InstrumentationDelegate.java"
+            line="275"
+            column="2"/>
+    </issue>
+
+    <issue
+        id="ObsoleteSdkInt"
+        message="Unnecessary; `SDK_INT` is always >= 21"
+        errorLine1=" @TargetApi(Build.VERSION_CODES.LOLLIPOP)"
+        errorLine2=" ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/lody/virtual/client/hook/delegate/InstrumentationDelegate.java"
+            line="312"
+            column="2"/>
+    </issue>
+
+    <issue
+        id="ObsoleteSdkInt"
+        message="Unnecessary; `SDK_INT` is always >= 18"
+        errorLine1=" @TargetApi(Build.VERSION_CODES.JELLY_BEAN_MR2)"
+        errorLine2=" ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/lody/virtual/client/hook/delegate/InstrumentationDelegate.java"
+            line="340"
+            column="2"/>
+    </issue>
+
+    <issue
+        id="ObsoleteSdkInt"
+        message="Unnecessary; `SDK_INT` is always >= 21"
+        errorLine1="  if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.KITKAT) {"
+        errorLine2="      ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/lody/virtual/server/pm/IntentResolver.java"
+            line="149"
+            column="7"/>
+    </issue>
+
+    <issue
+        id="ObsoleteSdkInt"
+        message="Unnecessary; `SDK_INT` is always >= 21"
+        errorLine1="   if (Build.VERSION.SDK_INT >= JELLY_BEAN_MR2) {"
+        errorLine2="       ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/lody/virtual/client/core/InvocationStubManager.java"
+            line="157"
+            column="8"/>
+    </issue>
+
+    <issue
+        id="ObsoleteSdkInt"
+        message="Unnecessary; `SDK_INT` is always >= 21"
+        errorLine1="   if (Build.VERSION.SDK_INT >= JELLY_BEAN_MR1) {"
+        errorLine2="       ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/lody/virtual/client/core/InvocationStubManager.java"
+            line="163"
+            column="8"/>
+    </issue>
+
+    <issue
+        id="ObsoleteSdkInt"
+        message="Unnecessary; `SDK_INT` is always >= 21"
+        errorLine1="   if (Build.VERSION.SDK_INT >= JELLY_BEAN_MR1) {"
+        errorLine2="       ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/lody/virtual/client/core/InvocationStubManager.java"
+            line="167"
+            column="8"/>
+    </issue>
+
+    <issue
+        id="ObsoleteSdkInt"
+        message="Unnecessary; `SDK_INT` is always >= 21"
+        errorLine1="   if (Build.VERSION.SDK_INT >= LOLLIPOP) {"
+        errorLine2="       ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/lody/virtual/client/core/InvocationStubManager.java"
+            line="170"
+            column="8"/>
+    </issue>
+
+    <issue
+        id="ObsoleteSdkInt"
+        message="Unnecessary; `SDK_INT` is always >= 21"
+        errorLine1="   if (Build.VERSION.SDK_INT >= KITKAT) {"
+        errorLine2="       ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/lody/virtual/client/core/InvocationStubManager.java"
+            line="178"
+            column="8"/>
+    </issue>
+
+    <issue
+        id="ObsoleteSdkInt"
+        message="Unnecessary; `SDK_INT` is always >= 21"
+        errorLine1="@TargetApi(Build.VERSION_CODES.LOLLIPOP)"
+        errorLine2="~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/mirror/android/app/job/JobInfo.java"
+            line="15"
+            column="1"/>
+    </issue>
+
+    <issue
+        id="ObsoleteSdkInt"
+        message="Unnecessary; `SDK_INT` is always >= 21"
+        errorLine1="@TargetApi(Build.VERSION_CODES.LOLLIPOP)"
+        errorLine2="~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/mirror/android/app/job/JobParameters.java"
+            line="18"
+            column="1"/>
+    </issue>
+
+    <issue
+        id="ObsoleteSdkInt"
+        message="Unnecessary; `SDK_INT` is always >= 21"
+        errorLine1="@TargetApi(Build.VERSION_CODES.LOLLIPOP)"
+        errorLine2="~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/lody/virtual/client/hook/proxies/job/JobServiceStub.java"
+            line="24"
+            column="1"/>
+    </issue>
+
+    <issue
+        id="ObsoleteSdkInt"
+        message="Unnecessary; `SDK_INT` is always >= 21"
+        errorLine1="        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {"
+        errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/lody/virtual/client/hook/proxies/location/LocationManagerStub.java"
+            line="41"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="ObsoleteSdkInt"
+        message="Unnecessary; `SDK_INT` is always >= 21"
+        errorLine1="        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.JELLY_BEAN_MR1) {"
+        errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/lody/virtual/client/hook/proxies/location/LocationManagerStub.java"
+            line="47"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="ObsoleteSdkInt"
+        message="Unnecessary; `SDK_INT` is never &lt; 21"
+        errorLine1="        if (Build.VERSION.SDK_INT &lt;= Build.VERSION_CODES.JELLY_BEAN) {"
+        errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/lody/virtual/client/hook/proxies/location/LocationManagerStub.java"
+            line="52"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="ObsoleteSdkInt"
+        message="Unnecessary; `SDK_INT` is always >= 21"
+        errorLine1="        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.JELLY_BEAN_MR1) {"
+        errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/lody/virtual/client/hook/proxies/location/LocationManagerStub.java"
+            line="56"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="ObsoleteSdkInt"
+        message="Unnecessary; `SDK_INT` is always >= 16"
+        errorLine1="@TargetApi(Build.VERSION_CODES.JELLY_BEAN)"
+        errorLine2="~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/lody/virtual/client/hook/proxies/media/router/MediaRouterServiceStub.java"
+            line="16"
+            column="1"/>
+    </issue>
+
+    <issue
+        id="ObsoleteSdkInt"
+        message="Unnecessary; `SDK_INT` is never &lt; 21"
+        errorLine1="            if (Build.VERSION.SDK_INT &lt; Build.VERSION_CODES.KITKAT) {"
+        errorLine2="                ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/lody/virtual/client/hook/proxies/mount/MethodProxies.java"
+            line="69"
+            column="17"/>
+    </issue>
+
+    <issue
+        id="ObsoleteSdkInt"
+        message="Unnecessary; `SDK_INT` is always >= 21"
+        errorLine1="            int tagIndex = (Build.VERSION.SDK_INT >= 18 ? 2 : 1);"
+        errorLine2="                            ~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/lody/virtual/client/hook/proxies/notification/MethodProxies.java"
+            line="95"
+            column="29"/>
+    </issue>
+
+    <issue
+        id="ObsoleteSdkInt"
+        message="Unnecessary; `SDK_INT` is always >= 21"
+        errorLine1="            if (Build.VERSION.SDK_INT >= 18 &amp;&amp; args[1] instanceof String) {"
+        errorLine2="                ~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/lody/virtual/client/hook/proxies/notification/MethodProxies.java"
+            line="110"
+            column="17"/>
+    </issue>
+
+    <issue
+        id="ObsoleteSdkInt"
+        message="Unnecessary; `SDK_INT` is always >= 21"
+        errorLine1="            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.ICE_CREAM_SANDWICH_MR1) {"
+        errorLine2="                ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/lody/virtual/client/hook/proxies/am/MethodProxies.java"
+            line="332"
+            column="17"/>
+    </issue>
+
+    <issue
+        id="ObsoleteSdkInt"
+        message="Unnecessary; `SDK_INT` is always >= 21"
+        errorLine1="            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.JELLY_BEAN_MR2) {"
+        errorLine2="                ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/lody/virtual/client/hook/proxies/am/MethodProxies.java"
+            line="508"
+            column="17"/>
+    </issue>
+
+    <issue
+        id="ObsoleteSdkInt"
+        message="Unnecessary; `SDK_INT` is always >= 21"
+        errorLine1="                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {"
+        errorLine2="                    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/lody/virtual/client/hook/proxies/am/MethodProxies.java"
+            line="933"
+            column="21"/>
+    </issue>
+
+    <issue
+        id="ObsoleteSdkInt"
+        message="Unnecessary; `SDK_INT` is always >= 21"
+        errorLine1="            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.ICE_CREAM_SANDWICH_MR1) {"
+        errorLine2="                ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/lody/virtual/client/hook/proxies/am/MethodProxies.java"
+            line="1114"
+            column="17"/>
+    </issue>
+
+    <issue
+        id="ObsoleteSdkInt"
+        message="Unnecessary; `SDK_INT` is always >= 17"
+        errorLine1="    @TargetApi(Build.VERSION_CODES.JELLY_BEAN_MR1)"
+        errorLine2="    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/lody/virtual/client/hook/proxies/pm/MethodProxies.java"
+            line="1212"
+            column="5"/>
+    </issue>
+
+    <issue
+        id="ObsoleteSdkInt"
+        message="Unnecessary; `SDK_INT` is always >= 19"
+        errorLine1="    @TargetApi(Build.VERSION_CODES.KITKAT)"
+        errorLine2="    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/lody/virtual/client/hook/proxies/pm/MethodProxies.java"
+            line="1250"
+            column="5"/>
+    </issue>
+
+    <issue
+        id="ObsoleteSdkInt"
+        message="Unnecessary; `SDK_INT` is always >= 21"
+        errorLine1="        protected int mIIntentReceiverIndex = Build.VERSION.SDK_INT >= Build.VERSION_CODES.ICE_CREAM_SANDWICH_MR1"
+        errorLine2="                                              ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/lody/virtual/client/hook/proxies/am/MethodProxies.java"
+            line="1357"
+            column="47"/>
+    </issue>
+
+    <issue
+        id="ObsoleteSdkInt"
+        message="Unnecessary; `SDK_INT` is always >= 21"
+        errorLine1="        protected int mRequiredPermissionIndex = Build.VERSION.SDK_INT >= Build.VERSION_CODES.ICE_CREAM_SANDWICH_MR1"
+        errorLine2="                                                 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/lody/virtual/client/hook/proxies/am/MethodProxies.java"
+            line="1361"
+            column="50"/>
+    </issue>
+
+    <issue
+        id="ObsoleteSdkInt"
+        message="Unnecessary; `SDK_INT` is always >= 21"
+        errorLine1="        protected int mIntentFilterIndex = Build.VERSION.SDK_INT >= Build.VERSION_CODES.ICE_CREAM_SANDWICH_MR1"
+        errorLine2="                                           ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/lody/virtual/client/hook/proxies/am/MethodProxies.java"
+            line="1364"
+            column="44"/>
+    </issue>
+
+    <issue
+        id="ObsoleteSdkInt"
+        message="Unnecessary; `SDK_INT` is always >= 21"
+        errorLine1="                if (Build.VERSION.SDK_INT > Build.VERSION_CODES.JELLY_BEAN) {"
+        errorLine2="                    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/lody/virtual/client/hook/proxies/am/MethodProxies.java"
+            line="1435"
+            column="21"/>
+    </issue>
+
+    <issue
+        id="ObsoleteSdkInt"
+        message="Unnecessary; `SDK_INT` is always >= 21"
+        errorLine1="    @TargetApi(Build.VERSION_CODES.LOLLIPOP)"
+        errorLine2="    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/lody/virtual/client/hook/proxies/am/MethodProxies.java"
+            line="1592"
+            column="5"/>
+    </issue>
+
+    <issue
+        id="ObsoleteSdkInt"
+        message="Unnecessary; `SDK_INT` is always >= 21"
+        errorLine1="  if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {"
+        errorLine2="      ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/lody/virtual/helper/compat/NativeLibraryHelperCompat.java"
+            line="25"
+            column="7"/>
+    </issue>
+
+    <issue
+        id="ObsoleteSdkInt"
+        message="Unnecessary; `SDK_INT` is always >= 21"
+        errorLine1=" @TargetApi(Build.VERSION_CODES.LOLLIPOP)"
+        errorLine2=" ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/lody/virtual/helper/compat/NativeLibraryHelperCompat.java"
+            line="42"
+            column="2"/>
+    </issue>
+
+    <issue
+        id="ObsoleteSdkInt"
+        message="Unnecessary; `SDK_INT` is always >= 21"
+        errorLine1=" @TargetApi(Build.VERSION_CODES.LOLLIPOP)"
+        errorLine2=" ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/lody/virtual/helper/compat/NativeLibraryHelperCompat.java"
+            line="90"
+            column="2"/>
+    </issue>
+
+    <issue
+        id="ObsoleteSdkInt"
+        message="Unnecessary; `SDK_INT` is always >= 21"
+        errorLine1="                Build.VERSION.SDK_INT >= Build.VERSION_CODES.KITKAT ? openDexFileNative : openDexFile;"
+        errorLine2="                ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/lody/virtual/client/natives/NativeMethods.java"
+            line="31"
+            column="17"/>
+    </issue>
+
+    <issue
+        id="ObsoleteSdkInt"
+        message="Unnecessary; `SDK_INT` is always >= 21"
+        errorLine1="        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {"
+        errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/lody/virtual/server/notification/NotificationCompat.java"
+            line="45"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="ObsoleteSdkInt"
+        message="Unnecessary; `SDK_INT` is always >= 21"
+        errorLine1="                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.JELLY_BEAN) {"
+        errorLine2="                    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/lody/virtual/server/notification/NotificationCompatCompatV14.java"
+            line="35"
+            column="21"/>
+    </issue>
+
+    <issue
+        id="ObsoleteSdkInt"
+        message="Unnecessary; `SDK_INT` is always >= 21"
+        errorLine1="        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.JELLY_BEAN) {"
+        errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/lody/virtual/server/notification/NotificationCompatCompatV14.java"
+            line="60"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="ObsoleteSdkInt"
+        message="Unnecessary; `SDK_INT` is always >= 21"
+        errorLine1="        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {"
+        errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/lody/virtual/server/notification/NotificationCompatCompatV14.java"
+            line="70"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="ObsoleteSdkInt"
+        message="Unnecessary; `SDK_INT` is always >= 21"
+        errorLine1="@TargetApi(Build.VERSION_CODES.LOLLIPOP)"
+        errorLine2="~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/lody/virtual/server/notification/NotificationCompatCompatV21.java"
+            line="21"
+            column="1"/>
+    </issue>
+
+    <issue
+        id="ObsoleteSdkInt"
+        message="Unnecessary; `SDK_INT` is always >= 21"
+        errorLine1="        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.JELLY_BEAN) {"
+        errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/lody/virtual/server/notification/NotificationCompatCompatV21.java"
+            line="89"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="ObsoleteSdkInt"
+        message="Unnecessary; `SDK_INT` is always >= 21"
+        errorLine1="        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {"
+        errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/lody/virtual/server/notification/NotificationCompatCompatV21.java"
+            line="95"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="ObsoleteSdkInt"
+        message="Unnecessary; `SDK_INT` is always >= 21"
+        errorLine1="    @TargetApi(Build.VERSION_CODES.LOLLIPOP)"
+        errorLine2="    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/lody/virtual/server/notification/NotificationFixer.java"
+            line="100"
+            column="5"/>
+    </issue>
+
+    <issue
+        id="ObsoleteSdkInt"
+        message="Unnecessary; `SDK_INT` is never &lt; 21"
+        errorLine1="            if (Build.VERSION.SDK_INT &lt; Build.VERSION_CODES.LOLLIPOP) {"
+        errorLine2="                ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/lody/virtual/server/notification/NotificationFixer.java"
+            line="197"
+            column="17"/>
+    </issue>
+
+    <issue
+        id="ObsoleteSdkInt"
+        message="Unnecessary; `SDK_INT` is always >= 21"
+        errorLine1="@TargetApi(Build.VERSION_CODES.LOLLIPOP)"
+        errorLine2="~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/lody/virtual/server/pm/installer/PackageHelper.java"
+            line="28"
+            column="1"/>
+    </issue>
+
+    <issue
+        id="ObsoleteSdkInt"
+        message="Unnecessary; `SDK_INT` is always >= 21"
+        errorLine1="@TargetApi(Build.VERSION_CODES.LOLLIPOP)"
+        errorLine2="~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/lody/virtual/server/pm/installer/PackageInstallerSession.java"
+            line="41"
+            column="1"/>
+    </issue>
+
+    <issue
+        id="ObsoleteSdkInt"
+        message="Unnecessary; `SDK_INT` is always >= 21"
+        errorLine1="        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {"
+        errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/lody/virtual/server/pm/parser/PackageParserEx.java"
+            line="275"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="ObsoleteSdkInt"
+        message="Unnecessary; `SDK_INT` is always >= 21"
+        errorLine1="        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {"
+        errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/lody/virtual/server/pm/parser/PackageParserEx.java"
+            line="300"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="ObsoleteSdkInt"
+        message="Unnecessary; `SDK_INT` is always >= 21"
+        errorLine1="        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {"
+        errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/lody/virtual/server/pm/parser/PackageParserEx.java"
+            line="331"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="ObsoleteSdkInt"
+        message="Unnecessary; `SDK_INT` is always >= 21"
+        errorLine1="        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {"
+        errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/lody/virtual/server/pm/parser/PackageParserEx.java"
+            line="401"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="ObsoleteSdkInt"
+        message="Unnecessary; `SDK_INT` is always >= 21"
+        errorLine1="        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {"
+        errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/lody/virtual/server/pm/parser/PackageParserEx.java"
+            line="523"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="ObsoleteSdkInt"
+        message="Unnecessary; `SDK_INT` is always >= 21"
+        errorLine1="        int start = Build.VERSION.SDK_INT >= Build.VERSION_CODES.JELLY_BEAN_MR2 ? 1 : 0;"
+        errorLine2="                    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/lody/virtual/client/hook/providers/ProviderHook.java"
+            line="157"
+            column="21"/>
+    </issue>
+
+    <issue
+        id="ObsoleteSdkInt"
+        message="Unnecessary; `SDK_INT` is always >= 19"
+        errorLine1="    @TargetApi(Build.VERSION_CODES.KITKAT)"
+        errorLine2="    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/lody/virtual/server/pm/ProviderIntentResolver.java"
+            line="86"
+            column="5"/>
+    </issue>
+
+    <issue
+        id="ObsoleteSdkInt"
+        message="Unnecessary; `SDK_INT` is always >= 19"
+        errorLine1="    @TargetApi(Build.VERSION_CODES.KITKAT)"
+        errorLine2="    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/lody/virtual/server/pm/ProviderIntentResolver.java"
+            line="115"
+            column="5"/>
+    </issue>
+
+    <issue
+        id="ObsoleteSdkInt"
+        message="Unnecessary; `SDK_INT` is never &lt; 21"
+        errorLine1="            if (Build.VERSION.SDK_INT &lt;= 19) {"
+        errorLine2="                ~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/lody/virtual/server/notification/RemoteViewsFixer.java"
+            line="232"
+            column="17"/>
+    </issue>
+
+    <issue
+        id="ObsoleteSdkInt"
+        message="Unnecessary; `SDK_INT` is always >= 21"
+        errorLine1="        if (Build.VERSION.SDK_INT >= 17) {"
+        errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/lody/virtual/client/stub/ResolverActivity.java"
+            line="115"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="ObsoleteSdkInt"
+        message="Unnecessary; `SDK_INT` is always >= 15"
+        errorLine1="    @TargetApi(Build.VERSION_CODES.ICE_CREAM_SANDWICH_MR1)"
+        errorLine2="    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/lody/virtual/client/stub/ResolverActivity.java"
+            line="177"
+            column="5"/>
+    </issue>
+
+    <issue
+        id="ObsoleteSdkInt"
+        message="Unnecessary; `SDK_INT` is always >= 21"
+        errorLine1="                    if (Build.VERSION.SDK_INT >= 19) {"
+        errorLine2="                        ~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/lody/virtual/client/stub/ResolverActivity.java"
+            line="319"
+            column="25"/>
+    </issue>
+
+    <issue
+        id="ObsoleteSdkInt"
+        message="Unnecessary; `SDK_INT` is always >= 21"
+        errorLine1="@TargetApi(Build.VERSION_CODES.LOLLIPOP)"
+        errorLine2="~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/lody/virtual/client/hook/proxies/restriction/RestrictionStub.java"
+            line="15"
+            column="1"/>
+    </issue>
+
+    <issue
+        id="ObsoleteSdkInt"
+        message="Unnecessary; `SDK_INT` is always >= 17"
+        errorLine1="@TargetApi(Build.VERSION_CODES.JELLY_BEAN_MR1)"
+        errorLine2="~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/lody/virtual/client/hook/proxies/search/SearchManagerStub.java"
+            line="21"
+            column="1"/>
+    </issue>
+
+    <issue
+        id="ObsoleteSdkInt"
+        message="Unnecessary; `SDK_INT` is always >= 21"
+        errorLine1="@TargetApi(Build.VERSION_CODES.LOLLIPOP)"
+        errorLine2="~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/lody/virtual/client/hook/proxies/media/session/SessionManagerStub.java"
+            line="15"
+            column="1"/>
+    </issue>
+
+    <issue
+        id="ObsoleteSdkInt"
+        message="Unnecessary; `SDK_INT` is always >= 21"
+        errorLine1="@TargetApi(Build.VERSION_CODES.LOLLIPOP)"
+        errorLine2="~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/lody/virtual/server/pm/installer/SessionParams.java"
+            line="17"
+            column="1"/>
+    </issue>
+
+    <issue
+        id="ObsoleteSdkInt"
+        message="Unnecessary; `SDK_INT` is always >= 17"
+        errorLine1="    @TargetApi(Build.VERSION_CODES.JELLY_BEAN_MR1)"
+        errorLine2="    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/mirror/android/providers/Settings.java"
+            line="18"
+            column="5"/>
+    </issue>
+
+    <issue
+        id="ObsoleteSdkInt"
+        message="Unnecessary; `SDK_INT` is always >= 21"
+        errorLine1="        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.ICE_CREAM_SANDWICH_MR1) {"
+        errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/lody/virtual/client/stub/ShortcutHandleActivity.java"
+            line="61"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="ObsoleteSdkInt"
+        message="Unnecessary; `SDK_INT` is always >= 21"
+        errorLine1="        @TargetApi(Build.VERSION_CODES.LOLLIPOP)"
+        errorLine2="        ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/lody/virtual/client/hook/proxies/shortcut/ShortcutServiceStub.java"
+            line="222"
+            column="9"/>
+    </issue>
+
+    <issue
+        id="ObsoleteSdkInt"
+        message="Unnecessary; `SDK_INT` is always >= 21"
+        errorLine1="@TargetApi(Build.VERSION_CODES.LOLLIPOP)"
+        errorLine2="~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/lody/virtual/client/stub/StubJob.java"
+            line="35"
+            column="1"/>
+    </issue>
+
+    <issue
+        id="ObsoleteSdkInt"
+        message="Unnecessary; `SDK_INT` is always >= 19"
+        errorLine1="@TargetApi(Build.VERSION_CODES.KITKAT)"
+        errorLine2="~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/mirror/android/content/SyncRequest.java"
+            line="14"
+            column="1"/>
+    </issue>
+
+    <issue
+        id="ObsoleteSdkInt"
+        message="Unnecessary; `SDK_INT` is always >= 21"
+        errorLine1="    if (android.os.Build.VERSION.SDK_INT >= 17) {"
+        errorLine2="        ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/lody/virtual/client/hook/proxies/telephony/TelephonyRegistryStub.java"
+            line="27"
+            column="9"/>
+    </issue>
+
+    <issue
+        id="ObsoleteSdkInt"
+        message="Unnecessary; `SDK_INT` is always >= 17"
+        errorLine1="@TargetApi(Build.VERSION_CODES.JELLY_BEAN_MR1)"
+        errorLine2="~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/mirror/android/os/UserHandle.java"
+            line="15"
+            column="1"/>
+    </issue>
+
+    <issue
+        id="ObsoleteSdkInt"
+        message="Unnecessary; `SDK_INT` is always >= 17"
+        errorLine1="@TargetApi(Build.VERSION_CODES.JELLY_BEAN_MR1)"
+        errorLine2="~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/lody/virtual/client/hook/proxies/user/UserManagerStub.java"
+            line="21"
+            column="1"/>
+    </issue>
+
+    <issue
+        id="ObsoleteSdkInt"
+        message="Unnecessary; `SDK_INT` is always >= 21"
+        errorLine1="            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {"
+        errorLine2="                ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/lody/virtual/server/pm/VAppManagerService.java"
+            line="563"
+            column="17"/>
+    </issue>
+
+    <issue
+        id="ObsoleteSdkInt"
+        message="Unnecessary; `SDK_INT` is always >= 21"
+        errorLine1="        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP &amp;&amp; targetSdkVersion &lt; Build.VERSION_CODES.LOLLIPOP) {"
+        errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/lody/virtual/client/VClientImpl.java"
+            line="352"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="ObsoleteSdkInt"
+        message="Unnecessary; `Build.VERSION.SDK_INT >= Build.VERSION_CODES.JELLY_BEAN` is always true here (`SDK_INT` ≥ 21 and &lt; 23)"
+        errorLine1="        } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.JELLY_BEAN) {"
+        errorLine2="                   ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/lody/virtual/client/VClientImpl.java"
+            line="400"
+            column="20"/>
+    </issue>
+
+    <issue
+        id="ObsoleteSdkInt"
+        message="Unnecessary; `SDK_INT` is always >= 21"
+        errorLine1="        if (Build.VERSION.SDK_INT >= 19) {"
+        errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/lody/virtual/client/VClientImpl.java"
+            line="611"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="ObsoleteSdkInt"
+        message="Unnecessary; `SDK_INT` is always >= 21"
+        errorLine1="            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.JELLY_BEAN) {"
+        errorLine2="                ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/lody/virtual/client/VClientImpl.java"
+            line="728"
+            column="17"/>
+    </issue>
+
+    <issue
+        id="ObsoleteSdkInt"
+        message="Unnecessary; `Build.VERSION.SDK_INT >= Build.VERSION_CODES.JELLY_BEAN` is always true here (`SDK_INT` ≥ 21 and &lt; 26)"
+        errorLine1="            } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.JELLY_BEAN) {"
+        errorLine2="                       ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/lody/virtual/client/VClientImpl.java"
+            line="759"
+            column="24"/>
+    </issue>
+
+    <issue
+        id="ObsoleteSdkInt"
+        message="Unnecessary; `SDK_INT` is always >= 21"
+        errorLine1="        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.JELLY_BEAN_MR1 &amp;&amp; Settings.Global.TYPE != null) {"
+        errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/lody/virtual/client/VClientImpl.java"
+            line="793"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="ObsoleteSdkInt"
+        message="Unnecessary; `SDK_INT` is always >= 21"
+        errorLine1="        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {"
+        errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/lody/virtual/os/VEnvironment.java"
+            line="44"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="ObsoleteSdkInt"
+        message="Unnecessary; `SDK_INT` is always >= 21"
+        errorLine1="@TargetApi(Build.VERSION_CODES.LOLLIPOP)"
+        errorLine2="~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/lody/virtual/server/job/VJobSchedulerService.java"
+            line="37"
+            column="1"/>
+    </issue>
+
+    <issue
+        id="ObsoleteSdkInt"
+        message="Unnecessary; `SDK_INT` is always >= 21"
+        errorLine1="        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.JELLY_BEAN_MR1) {"
+        errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/lody/virtual/remote/vloc/VLocation.java"
+            line="92"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="ObsoleteSdkInt"
+        message="Unnecessary; `SDK_INT` is always >= 21"
+        errorLine1="            if (Build.VERSION.SDK_INT > Build.VERSION_CODES.KITKAT) {"
+        errorLine2="                ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/lody/virtual/server/pm/parser/VPackage.java"
+            line="336"
+            column="17"/>
+    </issue>
+
+    <issue
+        id="ObsoleteSdkInt"
+        message="Unnecessary; `SDK_INT` is always >= 21"
+        errorLine1="@TargetApi(Build.VERSION_CODES.LOLLIPOP)"
+        errorLine2="~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/lody/virtual/server/pm/installer/VPackageInstallerService.java"
+            line="45"
+            column="1"/>
+    </issue>
+
+    <issue
+        id="ObsoleteSdkInt"
+        message="Unnecessary; `SDK_INT` is always >= 21"
+        errorLine1="    private final ProviderIntentResolver mProviders = Build.VERSION.SDK_INT >= Build.VERSION_CODES.KITKAT ? new ProviderIntentResolver() : null;"
+        errorLine2="                                                      ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/lody/virtual/server/pm/VPackageManagerService.java"
+            line="88"
+            column="55"/>
+    </issue>
+
+    <issue
+        id="ObsoleteSdkInt"
+        message="Unnecessary; `SDK_INT` is always >= 21"
+        errorLine1="            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.KITKAT) {"
+        errorLine2="                ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/lody/virtual/server/pm/VPackageManagerService.java"
+            line="148"
+            column="17"/>
+    </issue>
+
+    <issue
+        id="ObsoleteSdkInt"
+        message="Unnecessary; `SDK_INT` is always >= 21"
+        errorLine1="            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.KITKAT) {"
+        errorLine2="                ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/lody/virtual/server/pm/VPackageManagerService.java"
+            line="196"
+            column="17"/>
+    </issue>
+
+    <issue
+        id="ObsoleteSdkInt"
+        message="Unnecessary; `SDK_INT` is always >= 21"
+        errorLine1="            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.ICE_CREAM_SANDWICH_MR1) {"
+        errorLine2="                ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/lody/virtual/server/pm/VPackageManagerService.java"
+            line="437"
+            column="17"/>
+    </issue>
+
+    <issue
+        id="ObsoleteSdkInt"
+        message="Unnecessary; `SDK_INT` is always >= 21"
+        errorLine1="            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.ICE_CREAM_SANDWICH_MR1) {"
+        errorLine2="                ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/lody/virtual/server/pm/VPackageManagerService.java"
+            line="475"
+            column="17"/>
+    </issue>
+
+    <issue
+        id="ObsoleteSdkInt"
+        message="Unnecessary; `SDK_INT` is always >= 21"
+        errorLine1="            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.ICE_CREAM_SANDWICH_MR1) {"
+        errorLine2="                ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/lody/virtual/server/pm/VPackageManagerService.java"
+            line="528"
+            column="17"/>
+    </issue>
+
+    <issue
+        id="ObsoleteSdkInt"
+        message="Unnecessary; `SDK_INT` is always >= 19"
+        errorLine1="    @TargetApi(Build.VERSION_CODES.KITKAT)"
+        errorLine2="    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/lody/virtual/server/pm/VPackageManagerService.java"
+            line="560"
+            column="5"/>
+    </issue>
+
+    <issue
+        id="ObsoleteSdkInt"
+        message="Unnecessary; `SDK_INT` is always >= 21"
+        errorLine1="            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.ICE_CREAM_SANDWICH_MR1) {"
+        errorLine2="                ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/lody/virtual/server/pm/VPackageManagerService.java"
+            line="567"
+            column="17"/>
+    </issue>
+
+    <issue
+        id="ObsoleteSdkInt"
+        message="Unnecessary; `SDK_INT` is always >= 21"
+        errorLine1="        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.JELLY_BEAN_MR1) {"
+        errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/lody/virtual/client/env/VirtualRuntime.java"
+            line="48"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="ObsoleteSdkInt"
+        message="Unnecessary; `SDK_INT` is always >= 21"
+        errorLine1="            if (Build.VERSION.SDK_INT >= 21) {"
+        errorLine2="                ~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/lody/virtual/server/notification/WidthCompat.java"
+            line="32"
+            column="17"/>
+    </issue>
+
+    <issue
+        id="ObsoleteSdkInt"
+        message="Unnecessary; `SDK_INT` is always >= 21"
+        errorLine1="        if (Build.VERSION.SDK_INT >= 21)"
+        errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/lody/virtual/server/notification/WidthCompat.java"
+            line="47"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="ObsoleteSdkInt"
+        message="Unnecessary; `SDK_INT` is always >= 21"
+        errorLine1="        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.KITKAT) {"
+        errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/lody/virtual/client/hook/proxies/wifi/WifiManagerStub.java"
+            line="121"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="ObsoleteSdkInt"
+        message="Unnecessary; `SDK_INT` is always >= 21"
+        errorLine1="        if (Build.VERSION.SDK_INT >= 21) {"
+        errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/lody/virtual/client/hook/proxies/wifi/WifiManagerStub.java"
+            line="254"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="ObsoleteSdkInt"
+        message="Unnecessary; `SDK_INT` is always >= 19"
+        errorLine1="@TargetApi(Build.VERSION_CODES.KITKAT)"
+        errorLine2="~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/mirror/android/net/wifi/WifiSsid.java"
+            line="13"
+            column="1"/>
+    </issue>
+
+    <issue
+        id="ObsoleteSdkInt"
+        message="Unnecessary; `SDK_INT` is always >= 21"
+        errorLine1="        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.JELLY_BEAN_MR1) {"
+        errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/lody/virtual/client/hook/proxies/window/WindowManagerStub.java"
+            line="28"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="StaticFieldLeak"
+        message="Do not place Android context classes in static fields (static reference to `AttributeCache` which has field `mContext` pointing to `Context`); this is a memory leak"
+        errorLine1=" private static AttributeCache sInstance = null;"
+        errorLine2="         ~~~~~~">
+        <location
+            file="src/main/java/com/lody/virtual/server/am/AttributeCache.java"
+            line="36"
+            column="10"/>
+    </issue>
+
+    <issue
+        id="StaticFieldLeak"
+        message="Do not place Android context classes in static fields (static reference to `BroadcastSystem` which has field `mContext` pointing to `Context`); this is a memory leak"
+        errorLine1="    private static BroadcastSystem gDefault;"
+        errorLine2="            ~~~~~~">
+        <location
+            file="src/main/java/com/lody/virtual/server/am/BroadcastSystem.java"
+            line="49"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="StaticFieldLeak"
+        message="This `AsyncTask` class should be static or leaks might occur (com.lody.virtual.client.stub.ResolverActivity.LoadIconTask)"
+        errorLine1="    class LoadIconTask extends AsyncTask&lt;DisplayResolveInfo, Void, DisplayResolveInfo> {"
+        errorLine2="          ~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/lody/virtual/client/stub/ResolverActivity.java"
+            line="734"
+            column="11"/>
+    </issue>
+
+    <issue
+        id="UseCompoundDrawables"
+        message="This tag and its children can be replaced by one `&lt;TextView/>` and a compound drawable"
+        errorLine1="&lt;LinearLayout xmlns:android=&quot;http://schemas.android.com/apk/res/android&quot;"
+        errorLine2=" ~~~~~~~~~~~~">
+        <location
+            file="src/main/res/layout/choose_account_row.xml"
+            line="3"
+            column="2"/>
+    </issue>
+
+    <issue
+        id="HandlerLeak"
+        message="This `Handler` class should be static or leaks might occur (com.lody.virtual.server.am.BroadcastSystem.TimeoutHandler)"
+        errorLine1="    private final class TimeoutHandler extends Handler {"
+        errorLine2="                        ~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/lody/virtual/server/am/BroadcastSystem.java"
+            line="214"
+            column="25"/>
+    </issue>
+
+    <issue
+        id="HandlerLeak"
+        message="This `Handler` class should be static or leaks might occur (com.lody.virtual.client.VClientImpl.H)"
+        errorLine1="    private class H extends Handler {"
+        errorLine2="                  ~">
+        <location
+            file="src/main/java/com/lody/virtual/client/VClientImpl.java"
+            line="912"
+            column="19"/>
+    </issue>
+
+    <issue
+        id="InefficientWeight"
+        message="Use a `layout_height` of `0dp` instead of `wrap_content` for better performance"
+        errorLine1="        android:layout_height=&quot;wrap_content&quot;"
+        errorLine2="        ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/layout/choose_type_and_account.xml"
+            line="24"
+            column="9"/>
+    </issue>
+
+    <issue
+        id="RedundantNamespace"
+        message="This namespace declaration is redundant"
+        errorLine1="    &lt;TextView xmlns:android=&quot;http://schemas.android.com/apk/res/android&quot;"
+        errorLine2="              ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/layout/choose_account_row.xml"
+            line="18"
+            column="15"/>
+    </issue>
+
+    <issue
+        id="RedundantNamespace"
+        message="This namespace declaration is redundant"
+        errorLine1="    &lt;LinearLayout xmlns:android=&quot;http://schemas.android.com/apk/res/android&quot;"
+        errorLine2="                  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/layout/resolve_list_item.xml"
+            line="39"
+            column="19"/>
+    </issue>
+
+    <issue
+        id="UnusedNamespace"
+        message="Unused namespace declaration xmlns:android; already declared on the root element"
+        errorLine1="    &lt;TextView xmlns:android=&quot;http://schemas.android.com/apk/res/android&quot;"
+        errorLine2="              ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/layout/choose_account_row.xml"
+            line="18"
+            column="15"/>
+    </issue>
+
+    <issue
+        id="UnusedNamespace"
+        message="Unused namespace declaration xmlns:android; already declared on the root element"
+        errorLine1="    &lt;LinearLayout xmlns:android=&quot;http://schemas.android.com/apk/res/android&quot;"
+        errorLine2="                  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/layout/resolve_list_item.xml"
+            line="39"
+            column="19"/>
+    </issue>
+
+    <issue
+        id="ButtonCase"
+        message="@android:string/yes actually returns &quot;OK&quot;, not &quot;Yes&quot;; use @android:string/ok instead or create a local string resource for Yes"
+        errorLine1="            android:text=&quot;@android:string/yes&quot;"
+        errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/layout/app_not_authorized.xml"
+            line="53"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="ButtonCase"
+        message="@android:string/no actually returns &quot;Cancel&quot;, not &quot;No&quot;; use @android:string/cancel instead or create a local string resource for No"
+        errorLine1="            android:text=&quot;@android:string/no&quot; />"
+        errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/layout/choose_type_and_account.xml"
+            line="51"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="ButtonCase"
+        message="@android:string/yes actually returns &quot;OK&quot;, not &quot;Yes&quot;; use @android:string/ok instead or create a local string resource for Yes"
+        errorLine1="            android:text=&quot;@android:string/yes&quot; />"
+        errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/layout/choose_type_and_account.xml"
+            line="60"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="ContentDescription"
+        message="Missing `contentDescription` attribute on image"
+        errorLine1="   &lt;ImageView android:id=&quot;@+id/account_row_icon&quot;"
+        errorLine2="    ~~~~~~~~~">
+        <location
+            file="src/main/res/layout/choose_account_row.xml"
+            line="12"
+            column="5"/>
+    </issue>
+
+    <issue
+        id="ContentDescription"
+        message="Missing `contentDescription` attribute on image"
+        errorLine1="    &lt;ImageView"
+        errorLine2="     ~~~~~~~~~">
+        <location
+            file="src/main/res/layout/custom_notification.xml"
+            line="6"
+            column="6"/>
+    </issue>
+
+    <issue
+        id="ContentDescription"
+        message="Missing `contentDescription` attribute on image"
+        errorLine1="            &lt;ImageView"
+        errorLine2="             ~~~~~~~~~">
+        <location
+            file="src/main/res/layout/custom_notification.xml"
+            line="20"
+            column="14"/>
+    </issue>
+
+    <issue
+        id="ContentDescription"
+        message="Missing `contentDescription` attribute on image"
+        errorLine1="            &lt;ImageView"
+        errorLine2="             ~~~~~~~~~">
+        <location
+            file="src/main/res/layout/custom_notification.xml"
+            line="24"
+            column="14"/>
+    </issue>
+
+    <issue
+        id="ContentDescription"
+        message="Missing `contentDescription` attribute on image"
+        errorLine1="            &lt;ImageView"
+        errorLine2="             ~~~~~~~~~">
+        <location
+            file="src/main/res/layout/custom_notification.xml"
+            line="28"
+            column="14"/>
+    </issue>
+
+    <issue
+        id="ContentDescription"
+        message="Missing `contentDescription` attribute on image"
+        errorLine1="            &lt;ImageView"
+        errorLine2="             ~~~~~~~~~">
+        <location
+            file="src/main/res/layout/custom_notification.xml"
+            line="32"
+            column="14"/>
+    </issue>
+
+    <issue
+        id="ContentDescription"
+        message="Missing `contentDescription` attribute on image"
+        errorLine1="            &lt;ImageView"
+        errorLine2="             ~~~~~~~~~">
+        <location
+            file="src/main/res/layout/custom_notification.xml"
+            line="36"
+            column="14"/>
+    </issue>
+
+    <issue
+        id="ContentDescription"
+        message="Missing `contentDescription` attribute on image"
+        errorLine1="            &lt;ImageView"
+        errorLine2="             ~~~~~~~~~">
+        <location
+            file="src/main/res/layout/custom_notification.xml"
+            line="40"
+            column="14"/>
+    </issue>
+
+    <issue
+        id="ContentDescription"
+        message="Missing `contentDescription` attribute on image"
+        errorLine1="            &lt;ImageView"
+        errorLine2="             ~~~~~~~~~">
+        <location
+            file="src/main/res/layout/custom_notification.xml"
+            line="44"
+            column="14"/>
+    </issue>
+
+    <issue
+        id="ContentDescription"
+        message="Missing `contentDescription` attribute on image"
+        errorLine1="            &lt;ImageView"
+        errorLine2="             ~~~~~~~~~">
+        <location
+            file="src/main/res/layout/custom_notification.xml"
+            line="48"
+            column="14"/>
+    </issue>
+
+    <issue
+        id="ContentDescription"
+        message="Missing `contentDescription` attribute on image"
+        errorLine1="            &lt;ImageView"
+        errorLine2="             ~~~~~~~~~">
+        <location
+            file="src/main/res/layout/custom_notification.xml"
+            line="58"
+            column="14"/>
+    </issue>
+
+    <issue
+        id="ContentDescription"
+        message="Missing `contentDescription` attribute on image"
+        errorLine1="            &lt;ImageView"
+        errorLine2="             ~~~~~~~~~">
+        <location
+            file="src/main/res/layout/custom_notification.xml"
+            line="62"
+            column="14"/>
+    </issue>
+
+    <issue
+        id="ContentDescription"
+        message="Missing `contentDescription` attribute on image"
+        errorLine1="            &lt;ImageView"
+        errorLine2="             ~~~~~~~~~">
+        <location
+            file="src/main/res/layout/custom_notification.xml"
+            line="66"
+            column="14"/>
+    </issue>
+
+    <issue
+        id="ContentDescription"
+        message="Missing `contentDescription` attribute on image"
+        errorLine1="            &lt;ImageView"
+        errorLine2="             ~~~~~~~~~">
+        <location
+            file="src/main/res/layout/custom_notification.xml"
+            line="70"
+            column="14"/>
+    </issue>
+
+    <issue
+        id="ContentDescription"
+        message="Missing `contentDescription` attribute on image"
+        errorLine1="            &lt;ImageView"
+        errorLine2="             ~~~~~~~~~">
+        <location
+            file="src/main/res/layout/custom_notification.xml"
+            line="74"
+            column="14"/>
+    </issue>
+
+    <issue
+        id="ContentDescription"
+        message="Missing `contentDescription` attribute on image"
+        errorLine1="            &lt;ImageView"
+        errorLine2="             ~~~~~~~~~">
+        <location
+            file="src/main/res/layout/custom_notification.xml"
+            line="78"
+            column="14"/>
+    </issue>
+
+    <issue
+        id="ContentDescription"
+        message="Missing `contentDescription` attribute on image"
+        errorLine1="            &lt;ImageView"
+        errorLine2="             ~~~~~~~~~">
+        <location
+            file="src/main/res/layout/custom_notification.xml"
+            line="82"
+            column="14"/>
+    </issue>
+
+    <issue
+        id="ContentDescription"
+        message="Missing `contentDescription` attribute on image"
+        errorLine1="            &lt;ImageView"
+        errorLine2="             ~~~~~~~~~">
+        <location
+            file="src/main/res/layout/custom_notification.xml"
+            line="86"
+            column="14"/>
+    </issue>
+
+    <issue
+        id="ContentDescription"
+        message="Missing `contentDescription` attribute on image"
+        errorLine1="            &lt;ImageView"
+        errorLine2="             ~~~~~~~~~">
+        <location
+            file="src/main/res/layout/custom_notification.xml"
+            line="96"
+            column="14"/>
+    </issue>
+
+    <issue
+        id="ContentDescription"
+        message="Missing `contentDescription` attribute on image"
+        errorLine1="            &lt;ImageView"
+        errorLine2="             ~~~~~~~~~">
+        <location
+            file="src/main/res/layout/custom_notification.xml"
+            line="100"
+            column="14"/>
+    </issue>
+
+    <issue
+        id="ContentDescription"
+        message="Missing `contentDescription` attribute on image"
+        errorLine1="            &lt;ImageView"
+        errorLine2="             ~~~~~~~~~">
+        <location
+            file="src/main/res/layout/custom_notification.xml"
+            line="104"
+            column="14"/>
+    </issue>
+
+    <issue
+        id="ContentDescription"
+        message="Missing `contentDescription` attribute on image"
+        errorLine1="            &lt;ImageView"
+        errorLine2="             ~~~~~~~~~">
+        <location
+            file="src/main/res/layout/custom_notification.xml"
+            line="108"
+            column="14"/>
+    </issue>
+
+    <issue
+        id="ContentDescription"
+        message="Missing `contentDescription` attribute on image"
+        errorLine1="            &lt;ImageView"
+        errorLine2="             ~~~~~~~~~">
+        <location
+            file="src/main/res/layout/custom_notification.xml"
+            line="112"
+            column="14"/>
+    </issue>
+
+    <issue
+        id="ContentDescription"
+        message="Missing `contentDescription` attribute on image"
+        errorLine1="            &lt;ImageView"
+        errorLine2="             ~~~~~~~~~">
+        <location
+            file="src/main/res/layout/custom_notification.xml"
+            line="116"
+            column="14"/>
+    </issue>
+
+    <issue
+        id="ContentDescription"
+        message="Missing `contentDescription` attribute on image"
+        errorLine1="            &lt;ImageView"
+        errorLine2="             ~~~~~~~~~">
+        <location
+            file="src/main/res/layout/custom_notification.xml"
+            line="120"
+            column="14"/>
+    </issue>
+
+    <issue
+        id="ContentDescription"
+        message="Missing `contentDescription` attribute on image"
+        errorLine1="            &lt;ImageView"
+        errorLine2="             ~~~~~~~~~">
+        <location
+            file="src/main/res/layout/custom_notification.xml"
+            line="124"
+            column="14"/>
+    </issue>
+
+    <issue
+        id="ContentDescription"
+        message="Missing `contentDescription` attribute on image"
+        errorLine1="            &lt;ImageView"
+        errorLine2="             ~~~~~~~~~">
+        <location
+            file="src/main/res/layout/custom_notification.xml"
+            line="134"
+            column="14"/>
+    </issue>
+
+    <issue
+        id="ContentDescription"
+        message="Missing `contentDescription` attribute on image"
+        errorLine1="            &lt;ImageView"
+        errorLine2="             ~~~~~~~~~">
+        <location
+            file="src/main/res/layout/custom_notification.xml"
+            line="138"
+            column="14"/>
+    </issue>
+
+    <issue
+        id="ContentDescription"
+        message="Missing `contentDescription` attribute on image"
+        errorLine1="            &lt;ImageView"
+        errorLine2="             ~~~~~~~~~">
+        <location
+            file="src/main/res/layout/custom_notification.xml"
+            line="142"
+            column="14"/>
+    </issue>
+
+    <issue
+        id="ContentDescription"
+        message="Missing `contentDescription` attribute on image"
+        errorLine1="            &lt;ImageView"
+        errorLine2="             ~~~~~~~~~">
+        <location
+            file="src/main/res/layout/custom_notification.xml"
+            line="146"
+            column="14"/>
+    </issue>
+
+    <issue
+        id="ContentDescription"
+        message="Missing `contentDescription` attribute on image"
+        errorLine1="            &lt;ImageView"
+        errorLine2="             ~~~~~~~~~">
+        <location
+            file="src/main/res/layout/custom_notification.xml"
+            line="150"
+            column="14"/>
+    </issue>
+
+    <issue
+        id="ContentDescription"
+        message="Missing `contentDescription` attribute on image"
+        errorLine1="            &lt;ImageView"
+        errorLine2="             ~~~~~~~~~">
+        <location
+            file="src/main/res/layout/custom_notification.xml"
+            line="154"
+            column="14"/>
+    </issue>
+
+    <issue
+        id="ContentDescription"
+        message="Missing `contentDescription` attribute on image"
+        errorLine1="            &lt;ImageView"
+        errorLine2="             ~~~~~~~~~">
+        <location
+            file="src/main/res/layout/custom_notification.xml"
+            line="158"
+            column="14"/>
+    </issue>
+
+    <issue
+        id="ContentDescription"
+        message="Missing `contentDescription` attribute on image"
+        errorLine1="            &lt;ImageView"
+        errorLine2="             ~~~~~~~~~">
+        <location
+            file="src/main/res/layout/custom_notification.xml"
+            line="162"
+            column="14"/>
+    </issue>
+
+    <issue
+        id="ContentDescription"
+        message="Missing `contentDescription` attribute on image"
+        errorLine1="    &lt;ImageView"
+        errorLine2="     ~~~~~~~~~">
+        <location
+            file="src/main/res/layout/custom_notification_lite.xml"
+            line="6"
+            column="6"/>
+    </issue>
+
+    <issue
+        id="ContentDescription"
+        message="Missing `contentDescription` attribute on image"
+        errorLine1="    &lt;ImageView"
+        errorLine2="     ~~~~~~~~~">
+        <location
+            file="src/main/res/layout/resolve_list_item.xml"
+            line="29"
+            column="6"/>
+    </issue>
+
+    <issue
+        id="HardcodedText"
+        message="Hardcoded string &quot;Change not allowed&quot;, should use `@string` resource"
+        errorLine1="        android:text=&quot;Change not allowed&quot;"
+        errorLine2="        ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/layout/app_not_authorized.xml"
+            line="35"
+            column="9"/>
+    </issue>
+
+    <issue
+        id="RtlSymmetry"
+        message="When you define `paddingRight` you should probably also define `paddingLeft` for right-to-left symmetry"
+        errorLine1="        android:paddingRight=&quot;8dip&quot;"
+        errorLine2="        ~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/layout/choose_account_row.xml"
+            line="15"
+            column="9"/>
+    </issue>
+
+    <issue
+        id="RtlSymmetry"
+        message="When you define `paddingEnd` you should probably also define `paddingStart` for right-to-left symmetry"
+        errorLine1="        android:paddingEnd=&quot;8dip&quot; />"
+        errorLine2="        ~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/layout/choose_account_row.xml"
+            line="16"
+            column="9"/>
+    </issue>
+
+    <issue
+        id="RtlHardcoded"
+        message="Redundant attribute `paddingRight`; already defining `paddingEnd` with `targetSdkVersion` 23"
+        errorLine1="        android:paddingRight=&quot;8dip&quot;"
+        errorLine2="        ~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/layout/choose_account_row.xml"
+            line="15"
+            column="9"/>
+    </issue>
+
+    <issue
+        id="RtlHardcoded"
+        message="Consider replacing `android:layout_marginLeft` with `android:layout_marginStart=&quot;8dp&quot;` to better support right-to-left layouts"
+        errorLine1="        android:layout_marginLeft=&quot;8dp&quot;"
+        errorLine2="        ~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/layout/resolve_list_item.xml"
+            line="33"
+            column="9"/>
+    </issue>
+
+    <issue
+        id="RtlHardcoded"
+        message="Consider replacing `android:layout_marginLeft` with `android:layout_marginStart=&quot;8dp&quot;` to better support right-to-left layouts"
+        errorLine1="                  android:layout_marginLeft=&quot;8dp&quot;"
+        errorLine2="                  ~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/layout/resolve_list_item.xml"
+            line="42"
+            column="19"/>
+    </issue>
+
+    <issue
+        id="RtlEnabled"
+        message="The project references RTL attributes, but does not explicitly enable or disable RTL support with `android:supportsRtl` in the manifest">
+        <location
+            file="src/main/AndroidManifest.xml"/>
+    </issue>
+
+</issues>

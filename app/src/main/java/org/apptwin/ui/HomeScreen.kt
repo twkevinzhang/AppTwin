@@ -46,6 +46,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -74,34 +75,49 @@ fun HomeScreen(
     onUninstallApp: (GroupAppItem) -> Unit,
     onCreateGroup: () -> Unit,
 ) {
-    var renameTarget by remember { mutableStateOf<GroupItem?>(null) }
-    var deleteTarget by remember { mutableStateOf<GroupItem?>(null) }
-    var uninstallTarget by remember { mutableStateOf<GroupAppItem?>(null) }
+    var renameTargetId by rememberSaveable { mutableStateOf<String?>(null) }
+    var deleteTargetId by rememberSaveable { mutableStateOf<String?>(null) }
+    var uninstallTargetKey by rememberSaveable { mutableStateOf<String?>(null) }
+    val renameTarget = state.groups.firstOrNull { it.groupId == renameTargetId }
+    val deleteTarget = state.groups.firstOrNull { it.groupId == deleteTargetId }
+    val uninstallTarget = state.groups.asSequence()
+        .flatMap { it.apps.asSequence() }
+        .firstOrNull { it.launchKey == uninstallTargetKey }
 
-    if (state.groups.isEmpty() && !state.isRefreshing) {
-        EmptyGroups(onCreateGroup)
-    } else {
-        LazyColumn(
-            modifier = Modifier.fillMaxSize(),
-            contentPadding = PaddingValues(16.dp, 12.dp, 16.dp, 104.dp),
-            verticalArrangement = Arrangement.spacedBy(18.dp),
-        ) {
-            item { HomeSummary(groupCount = state.groups.size) }
-            items(state.groups, key = GroupItem::groupId) { item ->
-                GroupCard(
-                    item = item,
-                    launchingAppKey = state.launchingAppKey,
-                    uninstallingAppKey = state.uninstallingAppKey,
-                    isAnyLaunchBusy = state.launchingAppKey != null ||
-                        state.uninstallingAppKey != null,
-                    isBusy = state.busyGroupId == item.groupId ||
-                        state.uninstallingAppKey?.startsWith("${item.groupId}:") == true,
-                    onLaunch = onLaunch,
-                    onAddApp = { onAddApp(item.groupId) },
-                    onRename = { renameTarget = item },
-                    onDelete = { deleteTarget = item },
-                    onUninstallApp = { uninstallTarget = it },
-                )
+    Column(modifier = Modifier.fillMaxSize()) {
+        if (state.dataWarnings.isNotEmpty()) {
+            DataIntegrityWarning(
+                count = state.dataWarnings.size,
+                modifier = Modifier.padding(start = 16.dp, top = 12.dp, end = 16.dp),
+            )
+        }
+        Box(modifier = Modifier.weight(1f)) {
+            if (state.groups.isEmpty() && !state.isRefreshing) {
+                EmptyGroups(onCreateGroup)
+            } else {
+                LazyColumn(
+                    modifier = Modifier.fillMaxSize(),
+                    contentPadding = PaddingValues(16.dp, 12.dp, 16.dp, 104.dp),
+                    verticalArrangement = Arrangement.spacedBy(18.dp),
+                ) {
+                    item { HomeSummary(groupCount = state.groups.size) }
+                    items(state.groups, key = GroupItem::groupId) { item ->
+                        GroupCard(
+                            item = item,
+                            launchingAppKey = state.launchingAppKey,
+                            uninstallingAppKey = state.uninstallingAppKey,
+                            isAnyLaunchBusy = state.launchingAppKey != null ||
+                                state.uninstallingAppKey != null,
+                            isBusy = state.busyGroupId == item.groupId ||
+                                state.uninstallingAppKey?.startsWith("${item.groupId}:") == true,
+                            onLaunch = onLaunch,
+                            onAddApp = { onAddApp(item.groupId) },
+                            onRename = { renameTargetId = item.groupId },
+                            onDelete = { deleteTargetId = item.groupId },
+                            onUninstallApp = { uninstallTargetKey = it.launchKey },
+                        )
+                    }
+                }
             }
         }
     }
@@ -109,17 +125,17 @@ fun HomeScreen(
     renameTarget?.let { group ->
         RenameGroupDialog(
             group = group,
-            onDismiss = { renameTarget = null },
+            onDismiss = { renameTargetId = null },
             onConfirm = { name ->
                 onRenameGroup(group.groupId, name)
-                renameTarget = null
+                renameTargetId = null
             },
         )
     }
 
     deleteTarget?.let { group ->
         AlertDialog(
-            onDismissRequest = { deleteTarget = null },
+            onDismissRequest = { deleteTargetId = null },
             icon = { Icon(Icons.Default.Delete, contentDescription = null) },
             title = { Text("刪除「${group.name}」？") },
             text = {
@@ -129,12 +145,12 @@ fun HomeScreen(
                 Button(
                     onClick = {
                         onDeleteGroup(group.groupId)
-                        deleteTarget = null
+                        deleteTargetId = null
                     },
                 ) { Text("永久刪除") }
             },
             dismissButton = {
-                TextButton(onClick = { deleteTarget = null }) { Text("取消") }
+                TextButton(onClick = { deleteTargetId = null }) { Text("取消") }
             },
         )
     }
@@ -142,7 +158,7 @@ fun HomeScreen(
     uninstallTarget?.let { app ->
         AlertDialog(
             modifier = Modifier.testTag("uninstall-app-dialog"),
-            onDismissRequest = { uninstallTarget = null },
+            onDismissRequest = { uninstallTargetKey = null },
             icon = {
                 Icon(
                     Icons.Default.Delete,
@@ -161,17 +177,42 @@ fun HomeScreen(
                     modifier = Modifier.testTag("confirm-uninstall-app"),
                     onClick = {
                         onUninstallApp(app)
-                        uninstallTarget = null
+                        uninstallTargetKey = null
                     },
                 ) { Text("解除安裝") }
             },
             dismissButton = {
                 TextButton(
                     modifier = Modifier.testTag("cancel-uninstall-app"),
-                    onClick = { uninstallTarget = null },
+                    onClick = { uninstallTargetKey = null },
                 ) { Text("取消") }
             },
         )
+    }
+}
+
+@Composable
+private fun DataIntegrityWarning(count: Int, modifier: Modifier = Modifier) {
+    Card(
+        modifier = modifier
+            .fillMaxWidth()
+            .testTag("data-integrity-warning"),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.errorContainer,
+            contentColor = MaterialTheme.colorScheme.onErrorContainer,
+        ),
+    ) {
+        Row(
+            modifier = Modifier.padding(16.dp),
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Icon(Icons.Default.Error, contentDescription = null)
+            Column {
+                Text("偵測到 $count 筆資料完整性問題", fontWeight = FontWeight.Bold)
+                Text("無法讀取的原始資料已保留，請勿重建同名群組或覆寫 revision。")
+            }
+        }
     }
 }
 
@@ -578,7 +619,7 @@ private fun RenameGroupDialog(
     onDismiss: () -> Unit,
     onConfirm: (String) -> Unit,
 ) {
-    var name by remember(group.groupId) { mutableStateOf(group.name) }
+    var name by rememberSaveable(group.groupId) { mutableStateOf(group.name) }
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("重新命名群組") },

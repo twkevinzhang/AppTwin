@@ -28,7 +28,9 @@ class FileGroupStore internal constructor(private val filesRoot: File) : GroupSt
             environmentBinding = environmentBinding,
             health = GroupHealth.HEALTHY,
         )
-        check(listAll().none { it.environmentBinding == environmentBinding }) {
+        val snapshot = loadSnapshot()
+        snapshot.issues.firstOrNull()?.let { throw GroupStoreLoadException(it) }
+        check(snapshot.groups.none { it.environmentBinding == environmentBinding }) {
             "Environment binding already belongs to another Group"
         }
         ensureRoot()
@@ -47,16 +49,43 @@ class FileGroupStore internal constructor(private val filesRoot: File) : GroupSt
     }
 
     @Synchronized
-    override fun listAll(): List<Group> = root.listFiles()
-        .orEmpty()
-        .asSequence()
-        .filter { it.isDirectory && !it.name.startsWith(".staging-") }
-        .mapNotNull(::readGroup)
-        .sortedWith(GROUP_ORDER)
-        .toList()
+    override fun listAll(): List<Group> = loadSnapshot().groups
 
     @Synchronized
-    override fun find(groupId: String): Group? = resolveGroupDirectory(groupId)?.let(::readGroup)
+    override fun loadSnapshot(): GroupStoreSnapshot {
+        val groups = mutableListOf<Group>()
+        val issues = mutableListOf<GroupStoreLoadIssue>()
+        root.listFiles()
+            .orEmpty()
+            .asSequence()
+            .filter { it.isDirectory && !it.name.startsWith(".staging-") }
+            .map(::readGroup)
+            .forEach { result ->
+                when (result) {
+                    is GroupLookupResult.Found -> groups += result.group
+                    is GroupLookupResult.Failed -> issues += result.issue
+                    GroupLookupResult.NotFound -> Unit
+                }
+            }
+        return GroupStoreSnapshot(
+            groups = groups.sortedWith(GROUP_ORDER),
+            issues = issues.sortedWith(
+                compareBy(GroupStoreLoadIssue::groupId, GroupStoreLoadIssue::metadataName),
+            ),
+        )
+    }
+
+    @Synchronized
+    override fun lookup(groupId: String): GroupLookupResult = resolveGroupDirectory(groupId)
+        ?.let(::readGroup)
+        ?: GroupLookupResult.NotFound
+
+    @Synchronized
+    override fun find(groupId: String): Group? = when (val result = lookup(groupId)) {
+        is GroupLookupResult.Found -> result.group
+        is GroupLookupResult.Failed -> throw GroupStoreLoadException(result.issue)
+        GroupLookupResult.NotFound -> null
+    }
 
     @Synchronized
     override fun rename(groupId: String, name: String): Group? = updateGroup(groupId) { group ->
@@ -70,22 +99,22 @@ class FileGroupStore internal constructor(private val filesRoot: File) : GroupSt
         addedAtEpochMillis: Long,
     ): Group? {
         val directory = resolveGroupDirectory(groupId) ?: return null
-        val current = requireNotNull(readGroup(directory)) { "Unable to read Group" }
+        val current = readGroupOrThrow(directory)
         require(current.health == GroupHealth.HEALTHY) { "Group is not available" }
         require(!current.contains(packageName)) { "$packageName already exists in this Group" }
         val app = GroupApp(packageName, addedAtEpochMillis)
         writeAppAtomically(directory, app)
-        return readGroup(directory)
+        return readGroupOrThrow(directory)
     }
 
     @Synchronized
     override fun removeApp(groupId: String, packageName: String): Group? {
         val directory = resolveGroupDirectory(groupId) ?: return null
-        val current = requireNotNull(readGroup(directory)) { "Unable to read Group" }
+        val current = readGroupOrThrow(directory)
         if (!current.contains(packageName)) return current
         val appFile = File(File(directory, APPS_DIRECTORY), "$packageName.properties")
         check(appFile.delete()) { "Unable to remove GroupApp metadata" }
-        return readGroup(directory)
+        return readGroupOrThrow(directory)
     }
 
     @Synchronized
@@ -95,10 +124,10 @@ class FileGroupStore internal constructor(private val filesRoot: File) : GroupSt
         state: GroupAppState,
     ): Group? {
         val directory = resolveGroupDirectory(groupId) ?: return null
-        val current = requireNotNull(readGroup(directory)) { "Unable to read Group" }
+        val current = readGroupOrThrow(directory)
         val app = current.apps.firstOrNull { it.packageName == packageName } ?: return current
         writeAppAtomically(directory, app.copy(state = state))
-        return readGroup(directory)
+        return readGroupOrThrow(directory)
     }
 
     @Synchronized
@@ -115,7 +144,7 @@ class FileGroupStore internal constructor(private val filesRoot: File) : GroupSt
     private fun updateGroup(groupId: String, transform: (Group) -> Group): Group? {
         val directory = resolveGroupDirectory(groupId) ?: return null
         val metadata = File(directory, GROUP_METADATA)
-        val current = readGroup(directory) ?: return null
+        val current = readGroupOrThrow(directory)
         val updated = transform(current)
         val replacement = File(directory, ".$GROUP_METADATA-${UUID.randomUUID()}.tmp")
         return try {
@@ -127,32 +156,65 @@ class FileGroupStore internal constructor(private val filesRoot: File) : GroupSt
         }
     }
 
-    private fun readGroup(directory: File): Group? = runCatching {
-        val properties = readProperties(File(directory, GROUP_METADATA)) ?: return null
-        val schemaVersion = requireNotNull(
-            properties.getProperty("schemaVersion")?.toIntOrNull(),
-        )
-        require(schemaVersion == CURRENT_GROUP_SCHEMA_VERSION) { "Unsupported Group schema" }
-        val bindingId = properties.getProperty("environmentBindingId")?.toIntOrNull()
-        val apps = File(directory, APPS_DIRECTORY).listFiles()
-            .orEmpty()
-            .asSequence()
-            .filter(File::isFile)
-            .mapNotNull(::readAppMetadata)
-            .sortedWith(compareBy(GroupApp::addedAtEpochMillis, GroupApp::packageName))
-            .toList()
-        Group(
-            id = requireNotNull(properties.getProperty("id")),
-            name = requireNotNull(properties.getProperty("name")),
-            createdAtEpochMillis = requireNotNull(
-                properties.getProperty("createdAtEpochMillis")?.toLongOrNull(),
-            ),
-            environmentBinding = bindingId?.let(::EnvironmentBinding),
-            health = GroupHealth.valueOf(requireNotNull(properties.getProperty("health"))),
-            apps = apps,
-            schemaVersion = schemaVersion,
-        )
-    }.getOrNull()
+    private fun readGroup(directory: File): GroupLookupResult = try {
+        GroupLookupResult.Found(readGroupMetadata(directory))
+    } catch (error: MetadataLoadFailure) {
+        GroupLookupResult.Failed(error.issue)
+    }
+
+    private fun readGroupOrThrow(directory: File): Group = when (val result = readGroup(directory)) {
+        is GroupLookupResult.Found -> result.group
+        is GroupLookupResult.Failed -> throw GroupStoreLoadException(result.issue)
+        GroupLookupResult.NotFound -> error("Group directory does not exist")
+    }
+
+    private fun readGroupMetadata(directory: File): Group {
+        val groupId = directory.name
+        val metadata = File(directory, GROUP_METADATA)
+        val properties = readPropertiesOrFail(groupId, GroupMetadataKind.GROUP, metadata)
+        val schemaVersion = properties.getProperty("schemaVersion")?.toIntOrNull()
+            ?: corrupt(groupId, GroupMetadataKind.GROUP, metadata, "Missing or invalid schemaVersion")
+        if (schemaVersion != CURRENT_GROUP_SCHEMA_VERSION) {
+            throw MetadataLoadFailure(
+                GroupStoreLoadIssue.UnsupportedSchema(
+                    groupId = groupId,
+                    metadataKind = GroupMetadataKind.GROUP,
+                    metadataName = metadata.name,
+                    actualVersion = schemaVersion,
+                    supportedVersion = CURRENT_GROUP_SCHEMA_VERSION,
+                ),
+            )
+        }
+        return try {
+            val persistedId = requireNotNull(properties.getProperty("id"))
+            require(persistedId == groupId) { "Group id does not match its directory" }
+            val bindingId = properties.getProperty("environmentBindingId")?.toIntOrNull()
+            val appsDirectory = File(directory, APPS_DIRECTORY)
+            require(appsDirectory.isDirectory) { "Group apps directory is missing" }
+            val appFiles = requireNotNull(appsDirectory.listFiles()) { "Unable to list Group apps directory" }
+            val apps = appFiles
+                .asSequence()
+                .filter { it.isFile && !it.name.startsWith(".") && it.extension == "properties" }
+                .map { readAppMetadata(groupId, it) }
+                .sortedWith(compareBy(GroupApp::addedAtEpochMillis, GroupApp::packageName))
+                .toList()
+            Group(
+                id = persistedId,
+                name = requireNotNull(properties.getProperty("name")),
+                createdAtEpochMillis = requireNotNull(
+                    properties.getProperty("createdAtEpochMillis")?.toLongOrNull(),
+                ),
+                environmentBinding = bindingId?.let(::EnvironmentBinding),
+                health = GroupHealth.valueOf(requireNotNull(properties.getProperty("health"))),
+                apps = apps,
+                schemaVersion = schemaVersion,
+            )
+        } catch (error: MetadataLoadFailure) {
+            throw error
+        } catch (error: Exception) {
+            corrupt(groupId, GroupMetadataKind.GROUP, metadata, error.message ?: error.javaClass.simpleName)
+        }
+    }
 
     private fun writeGroupMetadata(file: File, group: Group) {
         val properties = Properties().apply {
@@ -188,18 +250,26 @@ class FileGroupStore internal constructor(private val filesRoot: File) : GroupSt
         writeProperties(file, properties, "AppTwin GroupApp")
     }
 
-    private fun readAppMetadata(file: File): GroupApp? = runCatching {
-        val properties = readProperties(file) ?: return null
-        GroupApp(
-            packageName = requireNotNull(properties.getProperty("packageName")),
-            addedAtEpochMillis = requireNotNull(
-                properties.getProperty("addedAtEpochMillis")?.toLongOrNull(),
-            ),
-            state = properties.getProperty("state")
-                ?.let(GroupAppState::valueOf)
-                ?: GroupAppState.ADDED,
-        )
-    }.getOrNull()
+    private fun readAppMetadata(groupId: String, file: File): GroupApp {
+        val properties = readPropertiesOrFail(groupId, GroupMetadataKind.APP, file)
+        return try {
+            val packageName = requireNotNull(properties.getProperty("packageName"))
+            require(file.name == "$packageName.properties") {
+                "Package name does not match metadata file"
+            }
+            GroupApp(
+                packageName = packageName,
+                addedAtEpochMillis = requireNotNull(
+                    properties.getProperty("addedAtEpochMillis")?.toLongOrNull(),
+                ),
+                state = properties.getProperty("state")
+                    ?.let(GroupAppState::valueOf)
+                    ?: GroupAppState.ADDED,
+            )
+        } catch (error: Exception) {
+            corrupt(groupId, GroupMetadataKind.APP, file, error.message ?: error.javaClass.simpleName)
+        }
+    }
 
     private fun resolveGroupDirectory(groupId: String): File? {
         val canonicalId = runCatching { UUID.fromString(groupId).toString() }
@@ -209,7 +279,7 @@ class FileGroupStore internal constructor(private val filesRoot: File) : GroupSt
         val canonicalRoot = root.canonicalFile
         val directory = File(root, canonicalId).canonicalFile
         return directory.takeIf {
-            it.isDirectory && it.parentFile == canonicalRoot && readGroup(it)?.id == canonicalId
+            it.isDirectory && it.parentFile == canonicalRoot
         }
     }
 
@@ -217,9 +287,33 @@ class FileGroupStore internal constructor(private val filesRoot: File) : GroupSt
         check(root.isDirectory || root.mkdirs()) { "Unable to create Groups root" }
     }
 
-    private fun readProperties(file: File): Properties? {
-        if (!file.isFile) return null
-        return Properties().apply { FileInputStream(file).use(::load) }
+    private fun readPropertiesOrFail(
+        groupId: String,
+        metadataKind: GroupMetadataKind,
+        file: File,
+    ): Properties {
+        if (!file.isFile) corrupt(groupId, metadataKind, file, "Metadata file is missing")
+        return try {
+            Properties().apply { FileInputStream(file).use(::load) }
+        } catch (error: Exception) {
+            corrupt(groupId, metadataKind, file, error.message ?: error.javaClass.simpleName)
+        }
+    }
+
+    private fun corrupt(
+        groupId: String,
+        metadataKind: GroupMetadataKind,
+        file: File,
+        reason: String,
+    ): Nothing {
+        throw MetadataLoadFailure(
+            GroupStoreLoadIssue.CorruptMetadata(
+                groupId = groupId,
+                metadataKind = metadataKind,
+                metadataName = file.name,
+                reason = reason,
+            ),
+        )
     }
 
     private fun writeProperties(file: File, properties: Properties, comment: String) {
@@ -245,4 +339,6 @@ class FileGroupStore internal constructor(private val filesRoot: File) : GroupSt
         private const val APPS_DIRECTORY = "apps"
         private val GROUP_ORDER = compareBy(Group::createdAtEpochMillis, Group::id)
     }
+
+    private class MetadataLoadFailure(val issue: GroupStoreLoadIssue) : IllegalStateException()
 }

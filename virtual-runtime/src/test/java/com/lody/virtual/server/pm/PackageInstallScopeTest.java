@@ -27,8 +27,14 @@ public class PackageInstallScopeTest {
 
     @Test
     public void equalRevisionUserBindingDoesNotSnapshotOrReplaceSharedCode() {
-        assertFalse(PackageInstallScope.requiresCodeSnapshot(42, 42));
-        assertTrue(PackageInstallScope.requiresCodeSnapshot(42, 43));
-        assertTrue(PackageInstallScope.requiresCodeSnapshot(43, 42));
+        assertFalse(PackageInstallScope.requiresCodeSnapshot(42, 42, 7));
+        assertTrue(PackageInstallScope.requiresCodeSnapshot(42, 43, 7));
+        assertTrue(PackageInstallScope.requiresCodeSnapshot(43, 42, 7));
+    }
+
+    @Test
+    public void globalSameVersionHotfixSnapshotsSharedCode() {
+        assertTrue(PackageInstallScope.requiresCodeSnapshot(
+                42, 42, PackageInstallScope.GLOBAL_USER_ID));
     }
 }
