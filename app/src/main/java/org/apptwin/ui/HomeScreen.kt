@@ -437,32 +437,45 @@ private fun GmsCompatibilityCard(
                     modifier = Modifier.testTag("gms-friendly-error"),
                 )
             }
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    if (profile?.desiredState == GmsDesiredState.ENABLED) {
-                        OutlinedButton(
-                            onClick = onDisable,
-                            enabled = !isBusy && state?.hasDataWarning != true,
-                        ) {
-                            Text("停用")
-                        }
-                    } else {
-                        Button(
-                            onClick = onEnable,
-                            enabled = !isBusy && state?.hasDataWarning != true,
-                        ) {
-                            Text("啟用")
-                        }
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .testTag("gms-actions-row"),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                if (profile?.desiredState == GmsDesiredState.ENABLED) {
+                    OutlinedButton(
+                        modifier = Modifier.testTag("gms-toggle-button"),
+                        onClick = onDisable,
+                        enabled = !isBusy && state?.hasDataWarning != true,
+                    ) {
+                        Text("停用")
                     }
-                    if (isBusy) {
-                        CircularProgressIndicator(modifier = Modifier.size(24.dp), strokeWidth = 2.dp)
+                } else {
+                    Button(
+                        modifier = Modifier.testTag("gms-toggle-button"),
+                        onClick = onEnable,
+                        enabled = !isBusy && state?.hasDataWarning != true,
+                    ) {
+                        Text("啟用")
                     }
                 }
                 OutlinedButton(
+                    modifier = Modifier.testTag("gms-reset-button"),
                     onClick = onReset,
                     enabled = !isBusy && state?.hasDataWarning != true,
                 ) {
                     Text("重設資料")
+                }
+                if (isBusy) {
+                    Spacer(modifier = Modifier.weight(1f))
+                    CircularProgressIndicator(
+                        modifier = Modifier
+                            .size(24.dp)
+                            .testTag("gms-busy-indicator"),
+                        strokeWidth = 2.dp,
+                    )
                 }
             }
         }
