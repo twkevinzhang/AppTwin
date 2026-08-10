@@ -32,6 +32,55 @@ bool iu_loaded = false;
 static std::atomic<int> uid_override(-1);
 static bool uid_hook_installed = false;
 static std::string proc_maps_host_package;
+static std::string proc_guest_process_name;
+
+static bool is_proc_cmdline_path(const char *pathname) {
+    if (pathname == nullptr) {
+        return false;
+    }
+    if (strcmp(pathname, "/proc/self/cmdline") == 0 ||
+        strcmp(pathname, "/proc/thread-self/cmdline") == 0) {
+        return true;
+    }
+    char process_cmdline[64];
+    snprintf(process_cmdline, sizeof(process_cmdline), "/proc/%d/cmdline", getpid());
+    return strcmp(pathname, process_cmdline) == 0;
+}
+
+static int open_guest_proc_cmdline(int requested_flags) {
+    if (proc_guest_process_name.empty()) {
+        errno = ENOENT;
+        return -1;
+    }
+#if defined(__NR_memfd_create)
+    int staging = static_cast<int>(syscall(__NR_memfd_create, "cmdline", MFD_CLOEXEC));
+#else
+    int staging = -1;
+    errno = ENOSYS;
+#endif
+    if (staging < 0) {
+        return -1;
+    }
+    std::string contents(proc_guest_process_name);
+    contents.push_back('\0');
+    size_t written = 0;
+    while (written < contents.size()) {
+        ssize_t count = static_cast<ssize_t>(syscall(
+                __NR_write, staging, contents.data() + written, contents.size() - written));
+        if (count <= 0) {
+            int saved_errno = errno;
+            syscall(__NR_close, staging);
+            errno = saved_errno;
+            return -1;
+        }
+        written += static_cast<size_t>(count);
+    }
+    syscall(__NR_lseek, staging, 0, SEEK_SET);
+    if ((requested_flags & O_CLOEXEC) == 0) {
+        syscall(__NR_fcntl, staging, F_SETFD, 0);
+    }
+    return staging;
+}
 
 static bool is_proc_maps_path(const char *pathname) {
     if (pathname == nullptr) {
@@ -167,8 +216,8 @@ void IOUniformer::init_env_before_all() {
             add_replace_item(item_src, item_dst);
             i++;
         }
-        startUniformer(getenv("V_SO_PATH"), getenv("V_HOST_PACKAGE"), api_level,
-                       preview_api_level);
+        startUniformer(getenv("V_SO_PATH"), getenv("V_HOST_PACKAGE"),
+                       getenv("V_GUEST_PROCESS"), api_level, preview_api_level);
         char *uid_override_chars = getenv("V_REPORTED_UID");
         if (uid_override_chars) {
             configureUidOverride(atoi(uid_override_chars));
@@ -270,6 +319,12 @@ HOOK_DEF(int, open, const char *pathname, int flags, ...) {
         mode = static_cast<mode_t>(va_arg(args, int));
         va_end(args);
     }
+    if ((flags & O_ACCMODE) == O_RDONLY && is_proc_cmdline_path(pathname)) {
+        int guest_cmdline = open_guest_proc_cmdline(flags);
+        if (guest_cmdline >= 0) {
+            return guest_cmdline;
+        }
+    }
     if ((flags & O_ACCMODE) == O_RDONLY && is_proc_maps_path(pathname)) {
         int sanitized = open_sanitized_proc_maps(flags);
         if (sanitized >= 0) {
@@ -293,6 +348,12 @@ HOOK_DEF(int, openat, int dirfd, const char *pathname, int flags, ...) {
         mode = static_cast<mode_t>(va_arg(args, int));
         va_end(args);
     }
+    if ((flags & O_ACCMODE) == O_RDONLY && is_proc_cmdline_path(pathname)) {
+        int guest_cmdline = open_guest_proc_cmdline(flags);
+        if (guest_cmdline >= 0) {
+            return guest_cmdline;
+        }
+    }
     if ((flags & O_ACCMODE) == O_RDONLY && is_proc_maps_path(pathname)) {
         int sanitized = open_sanitized_proc_maps(flags);
         if (sanitized >= 0) {
@@ -309,6 +370,18 @@ HOOK_DEF(int, openat, int dirfd, const char *pathname, int flags, ...) {
 
 
 HOOK_DEF(FILE *, fopen, const char *pathname, const char *mode) {
+    if (mode != nullptr && mode[0] == 'r' && is_proc_cmdline_path(pathname)) {
+        int guest_cmdline = open_guest_proc_cmdline(O_CLOEXEC);
+        if (guest_cmdline >= 0) {
+            FILE *stream = fdopen(guest_cmdline, mode);
+            if (stream != nullptr) {
+                return stream;
+            }
+            int saved_errno = errno;
+            syscall(__NR_close, guest_cmdline);
+            errno = saved_errno;
+        }
+    }
     if (mode != nullptr && mode[0] == 'r' && is_proc_maps_path(pathname)) {
         int sanitized = open_sanitized_proc_maps(O_CLOEXEC);
         if (sanitized >= 0) {
@@ -803,13 +876,18 @@ void hook_dlopen(int api_level) {
 }
 
 
-void IOUniformer::startUniformer(const char *so_path, const char *host_package, int api_level,
+void IOUniformer::startUniformer(const char *so_path, const char *host_package,
+                                 const char *guest_process_name, int api_level,
                                  int preview_api_level) {
     char api_level_chars[5];
     setenv("V_SO_PATH", so_path, 1);
     if (host_package != nullptr) {
         proc_maps_host_package.assign(host_package);
         setenv("V_HOST_PACKAGE", host_package, 1);
+    }
+    if (guest_process_name != nullptr) {
+        proc_guest_process_name.assign(guest_process_name);
+        setenv("V_GUEST_PROCESS", guest_process_name, 1);
     }
     sprintf(api_level_chars, "%i", api_level);
     setenv("V_API_LEVEL", api_level_chars, 1);

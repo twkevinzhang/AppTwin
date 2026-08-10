@@ -29,8 +29,8 @@ namespace IOUniformer {
 
     void init_env_before_all();
 
-    void startUniformer(const char *so_path, const char *host_package, int api_level,
-                        int preview_api_level);
+    void startUniformer(const char *so_path, const char *host_package,
+                        const char *guest_process_name, int api_level, int preview_api_level);
 
     void redirect(const char *orig_path, const char *new_path);
 

@@ -6,13 +6,13 @@ import static org.junit.Assert.assertTrue;
 import org.junit.Test;
 
 public class HCallbackStubTest {
-
     @Test
-    public void hostKeepAliveServiceDoesNotBindAsVirtualGuest() {
-        assertFalse(GuestServiceBindingPolicy.shouldBindGuestApplication(
-                "org.apptwin", "org.apptwin"));
-        assertFalse(GuestServiceBindingPolicy.shouldBindGuestApplication("org.apptwin", null));
-        assertTrue(GuestServiceBindingPolicy.shouldBindGuestApplication(
-                "org.apptwin", "com.example.guest"));
+    public void rejectedTaskAttachmentIsConsumedWithoutGuestRewriteOrRetry() {
+        assertTrue(HCallbackLaunchPolicy.shouldConsume(
+                HCallbackLaunchHandling.ABORT_CONSUMED));
+        assertTrue(HCallbackLaunchPolicy.shouldConsume(
+                HCallbackLaunchHandling.RETRY_QUEUED));
+        assertFalse(HCallbackLaunchPolicy.shouldConsume(
+                HCallbackLaunchHandling.DELEGATE));
     }
 }

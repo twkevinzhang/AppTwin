@@ -21,11 +21,13 @@ static void jni_disableJit(alias_ref<jclass> clazz, jint apiLevel) {
 }
 
 static void jni_nativeEnableIORedirect(alias_ref<jclass>, jstring selfSoPath, jstring hostPackage,
-                                       jint apiLevel, jint preview_api_level) {
+                                       jstring guestProcessName, jint apiLevel,
+                                       jint preview_api_level) {
     ScopeUtfString so_path(selfSoPath);
     ScopeUtfString host_package(hostPackage);
-    IOUniformer::startUniformer(so_path.c_str(), host_package.c_str(), apiLevel,
-                               preview_api_level);
+    ScopeUtfString guest_process_name(guestProcessName);
+    IOUniformer::startUniformer(so_path.c_str(), host_package.c_str(),
+                                guest_process_name.c_str(), apiLevel, preview_api_level);
 }
 
 static void jni_nativeConfigureUidOverride(alias_ref<jclass>, jint uidOverride) {

@@ -13,12 +13,12 @@ public class IsolatedProcessUidPolicyTest {
     @Test
     public void regularProcessDoesNotOverrideKernelOwnedNativeUid() {
         assertEquals(IsolatedProcessUidPolicy.NO_OVERRIDE,
-                IsolatedProcessUidPolicy.reportedUidOverride(110005, false));
+                IsolatedProcessUidPolicy.reportedUidOverride(110005, false, 10311));
     }
 
     @Test
     public void isolatedProcessUsesAndroidIsolatedUidRange() {
-        int uid = IsolatedProcessUidPolicy.reportedUidOverride(110005, true);
+        int uid = IsolatedProcessUidPolicy.reportedUidOverride(110005, true, 10311);
 
         assertTrue(uid >= VUserHandle.FIRST_ISOLATED_UID);
         assertTrue(uid <= VUserHandle.LAST_ISOLATED_UID);
@@ -26,9 +26,9 @@ public class IsolatedProcessUidPolicyTest {
 
     @Test
     public void separateVirtualAccountsReceiveDistinctStableIsolatedUids() {
-        int first = IsolatedProcessUidPolicy.reportedUidOverride(110005, true);
-        int firstRetry = IsolatedProcessUidPolicy.reportedUidOverride(110005, true);
-        int second = IsolatedProcessUidPolicy.reportedUidOverride(210005, true);
+        int first = IsolatedProcessUidPolicy.reportedUidOverride(110005, true, 10311);
+        int firstRetry = IsolatedProcessUidPolicy.reportedUidOverride(110005, true, 10311);
+        int second = IsolatedProcessUidPolicy.reportedUidOverride(210005, true, 10311);
 
         assertEquals(first, firstRetry);
         assertNotEquals(first, second);

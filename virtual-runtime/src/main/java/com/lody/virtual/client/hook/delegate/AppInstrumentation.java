@@ -142,8 +142,8 @@ public final class AppInstrumentation extends InstrumentationDelegate implements
     @Override
     public void callActivityOnResume(Activity activity) {
         VirtualCore.get().getComponentDelegate().beforeActivityResume(activity);
-        VActivityManager.get().onActivityResumed(activity);
         super.callActivityOnResume(activity);
+        VActivityManager.get().onActivityResumed(activity);
         VirtualCore.get().getComponentDelegate().afterActivityResume(activity);
         Intent intent = activity.getIntent();
 

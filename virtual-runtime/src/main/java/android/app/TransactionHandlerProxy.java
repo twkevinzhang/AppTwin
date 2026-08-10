@@ -20,6 +20,7 @@ import android.window.SplashScreenView$SplashScreenViewParcelable;
 import android.window.WindowContextInfo;
 
 import com.lody.virtual.client.VClientImpl;
+import com.lody.virtual.client.GuestPackageIdentity;
 import com.lody.virtual.client.core.VirtualCore;
 import com.lody.virtual.client.ipc.VActivityManager;
 import com.lody.virtual.helper.utils.ComponentUtils;
@@ -316,7 +317,13 @@ public class TransactionHandlerProxy extends ClientTransactionHandler {
 
         mirror.android.app.ActivityThread.ActivityClientRecord.packageInfo.set(r, null);
 
-        VActivityManager.get().onActivityCreate(ComponentUtils.toComponentName(info), caller, token, info, intent, ComponentUtils.getTaskAffinity(info), taskId, info.launchMode, info.flags);
+        if (VActivityManager.get().onActivityCreate(ComponentUtils.toComponentName(info), caller,
+                token, info, intent, ComponentUtils.getTaskAffinity(info), taskId,
+                info.launchMode, info.flags, saveInstance.preparedLaunchId) == null) {
+            Log.i(TAG, "activity launch attachment rejected");
+            return LaunchPreparation.ABORT;
+        }
+        GuestPackageIdentity.exposeHostUid(info.applicationInfo, VirtualCore.get().myUid());
         ClassLoader appClassLoader = VClientImpl.get().getClassLoader(info.applicationInfo);
         intent.setExtrasClassLoader(appClassLoader);
         mirror.android.app.ActivityThread.ActivityClientRecord.intent.set(r, intent);

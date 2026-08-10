@@ -6,6 +6,7 @@ import com.lody.virtual.remote.AppTaskInfo;
 import com.lody.virtual.remote.PendingIntentData;
 import com.lody.virtual.remote.PendingResultData;
 import com.lody.virtual.remote.BadgerInfo;
+import com.lody.virtual.remote.PreparedActivityLaunch;
 import android.content.Intent;
 import android.content.pm.ActivityInfo;
 import android.app.Notification;
@@ -56,7 +57,7 @@ interface IActivityManager {
 
     int startActivity(in Intent intent, in ActivityInfo info, in IBinder resultTo, in Bundle options, String resultWho, int requestCode, int userId);
 
-    void onActivityCreated(in ComponentName component, in ComponentName caller, in IBinder token, in Intent intent, in String affinity, int taskId, int launchMode, int flags);
+    boolean onActivityCreated(in ComponentName component, in ComponentName caller, in IBinder token, in Intent intent, in String affinity, int taskId, int launchMode, int flags, String preparedLaunchId);
 
     void onActivityResumed(int userId, in IBinder token);
 
@@ -115,4 +116,10 @@ interface IActivityManager {
     void broadcastFinish(in PendingResultData res);
 
     void notifyBadgerChange(in BadgerInfo info);
+
+    PreparedActivityLaunch prepareActivityLaunch(in Intent intent, String expectedPackage, int userId);
+
+    boolean awaitPreparedActivityLaunch(String launchId, long timeoutMs);
+
+    void cancelPreparedActivityLaunch(String launchId);
 }

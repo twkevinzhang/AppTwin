@@ -20,12 +20,14 @@ import com.lody.virtual.helper.utils.ArrayUtils;
 import com.lody.virtual.helper.utils.ClassUtils;
 import com.lody.virtual.helper.utils.ComponentUtils;
 import com.lody.virtual.remote.AppTaskInfo;
+import com.lody.virtual.remote.PreparedActivityLaunch;
 import com.lody.virtual.remote.StubActivityRecord;
 import com.lody.virtual.os.VUserHandle;
 
 import java.util.ArrayList;
 import java.util.Iterator;
 import java.util.ListIterator;
+import java.util.UUID;
 
 import mirror.android.app.ActivityManagerNative;
 import mirror.android.app.ActivityThread;
@@ -288,6 +290,20 @@ import static android.content.pm.ActivityInfo.LAUNCH_SINGLE_TOP;
 
     int startActivityLocked(int userId, Intent intent, ActivityInfo info, IBinder resultTo, Bundle options,
                             String resultWho, int requestCode) {
+        startActivityPolicyLocked(userId, intent, info, resultTo, options,
+                resultWho, requestCode, false);
+        return 0;
+    }
+
+    PreparedActivityLaunch prepareActivityLaunchLocked(
+            int userId, Intent intent, ActivityInfo info) {
+        return startActivityPolicyLocked(userId, intent, info, null, null,
+                null, 0, true);
+    }
+
+    private PreparedActivityLaunch startActivityPolicyLocked(
+            int userId, Intent intent, ActivityInfo info, IBinder resultTo, Bundle options,
+            String resultWho, int requestCode, boolean prepareHostLaunch) {
         optimizeTasksLocked();
 
         Intent destIntent;
@@ -387,13 +403,34 @@ import static android.content.pm.ActivityInfo.LAUNCH_SINGLE_TOP;
 
         boolean taskMarked = false;
         if (reuseTask == null) {
+            if (prepareHostLaunch) {
+                return prepareActivityInNewTaskLocked(userId, intent, info);
+            }
             startActivityInNewTaskLocked(userId, intent, info, options);
         } else {
             boolean delivered = false;
             boolean successorStarted = false;
-            mAM.moveTaskToFront(reuseTask.taskId, 0);
+            boolean successorFailed = false;
             boolean startTaskToFront = !clearTask && !clearTop && ComponentUtils.isSameIntent(intent, reuseTask.taskRoot);
             ActivityRecord topBeforeMarking = topActivityInTask(reuseTask);
+            if (prepareHostLaunch) {
+                boolean requiresIntentDelivery = clearTarget.deliverIntent || singleTop;
+                if (!canPrepareReusedTask(reuseTask.taskId, userId, reuseTask.userId,
+                        startTaskToFront,
+                        topBeforeMarking != null && topBeforeMarking.token != null,
+                        requiresIntentDelivery)) {
+                    return PreparedActivityLaunch.failure(
+                            "Prepared reuse requires the exact same-user task without successor work");
+                }
+                String launchId = UUID.randomUUID().toString();
+                if (!mService.registerPreparedActivityLaunch(
+                        launchId, userId, topBeforeMarking.token)) {
+                    return PreparedActivityLaunch.failure(
+                            "Activity already has a pending prepared launch");
+                }
+                return PreparedActivityLaunch.reused(reuseTask.taskId, launchId);
+            }
+            mAM.moveTaskToFront(reuseTask.taskId, 0);
             ArrayList<ActivityRecord> newlyMarked = new ArrayList<>();
 
             if (clearTarget.deliverIntent || singleTop) {
@@ -419,6 +456,8 @@ import static android.content.pm.ActivityInfo.LAUNCH_SINGLE_TOP;
                                 sourceInReuseTask, topActivityInTask(reuseTask), topBeforeMarking);
                         successorStarted = startActivityFromSourceTask(launchAnchor, destIntent,
                                 resultWho, requestCode, options);
+                    } else {
+                        successorFailed = true;
                     }
                 }
             }
@@ -427,23 +466,24 @@ import static android.content.pm.ActivityInfo.LAUNCH_SINGLE_TOP;
             } else if (taskMarked) {
                 rollbackMarkedActivities(newlyMarked);
             }
+            if (successorFailed || (!startTaskToFront && !delivered && !successorStarted)) {
+                return PreparedActivityLaunch.failure("Unable to start activity in reused task");
+            }
         }
-        return 0;
+        return PreparedActivityLaunch.failure("Legacy activity launch has no prepared result");
+    }
+
+    static boolean canPrepareReusedTask(
+            int taskId, int requestedUserId, int taskUserId, boolean startTaskToFront,
+            boolean hasExpectedActivityToken, boolean requiresIntentDelivery) {
+        return taskId >= 0 && requestedUserId == taskUserId && startTaskToFront
+                && hasExpectedActivityToken && !requiresIntentDelivery;
     }
 
     private void startActivityInNewTaskLocked(int userId, Intent intent, ActivityInfo info, Bundle options) {
-        Intent destIntent = startActivityProcess(userId, null, intent, info);
+        Intent destIntent = startActivityProcess(userId, null, intent, info, null);
         if (destIntent != null) {
-            destIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
-            destIntent.addFlags(Intent.FLAG_ACTIVITY_MULTIPLE_TASK);
-            destIntent.addFlags(Intent.FLAG_ACTIVITY_RESET_TASK_IF_NEEDED);
-
-            if (Build.VERSION.SDK_INT < Build.VERSION_CODES.LOLLIPOP) {
-                // noinspection deprecation
-                destIntent.addFlags(Intent.FLAG_ACTIVITY_CLEAR_WHEN_TASK_RESET);
-            } else {
-                destIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_DOCUMENT);
-            }
+            applyPreparedHostFlags(destIntent, Build.VERSION.SDK_INT);
 
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.JELLY_BEAN) {
                 VirtualCore.get().getContext().startActivity(destIntent, options);
@@ -451,6 +491,39 @@ import static android.content.pm.ActivityInfo.LAUNCH_SINGLE_TOP;
                 VirtualCore.get().getContext().startActivity(destIntent);
             }
         }
+    }
+
+    private PreparedActivityLaunch prepareActivityInNewTaskLocked(
+            int userId, Intent intent, ActivityInfo info) {
+        Intent guestIntent = new Intent(intent);
+        if (guestIntent.getComponent() == null) {
+            guestIntent.setComponent(new ComponentName(info.packageName, info.name));
+        }
+        String launchId = UUID.randomUUID().toString();
+        Intent prepared = startActivityProcess(userId, null, guestIntent, info, launchId);
+        if (prepared == null) {
+            return PreparedActivityLaunch.failure("Unable to prepare guest process");
+        }
+        applyPreparedHostFlags(prepared, Build.VERSION.SDK_INT);
+        return PreparedActivityLaunch.hostStartRequired(prepared, launchId);
+    }
+
+    static void applyPreparedHostFlags(Intent hostStub, int sdkInt) {
+        hostStub.setFlags(preparedHostActivityFlags(hostStub.getFlags(), sdkInt));
+    }
+
+    static int preparedHostActivityFlags(int originalFlags, int sdkInt) {
+        int flags = originalFlags
+                | Intent.FLAG_ACTIVITY_NEW_TASK
+                | Intent.FLAG_ACTIVITY_MULTIPLE_TASK
+                | Intent.FLAG_ACTIVITY_RESET_TASK_IF_NEEDED;
+        if (sdkInt < Build.VERSION_CODES.LOLLIPOP) {
+            // noinspection deprecation
+            flags |= Intent.FLAG_ACTIVITY_CLEAR_WHEN_TASK_RESET;
+        } else {
+            flags |= Intent.FLAG_ACTIVITY_NEW_DOCUMENT;
+        }
+        return flags;
     }
 
     private void scheduleFinishMarkedActivityLocked(ArrayList<ActivityRecord> newlyMarked) {
@@ -579,6 +652,11 @@ import static android.content.pm.ActivityInfo.LAUNCH_SINGLE_TOP;
     }
 
     private Intent startActivityProcess(int userId, ActivityRecord sourceRecord, Intent intent, ActivityInfo info) {
+        return startActivityProcess(userId, sourceRecord, intent, info, null);
+    }
+
+    private Intent startActivityProcess(int userId, ActivityRecord sourceRecord, Intent intent,
+                                        ActivityInfo info, String preparedLaunchId) {
         intent = new Intent(intent);
         ProcessRecord targetApp = mService.startProcessIfNeedLocked(info.processName, userId, info.packageName);
         if (targetApp == null) {
@@ -592,16 +670,25 @@ import static android.content.pm.ActivityInfo.LAUNCH_SINGLE_TOP;
         }
         targetIntent.setType(component.flattenToString());
         StubActivityRecord saveInstance = new StubActivityRecord(intent, info,
-                sourceRecord != null ? sourceRecord.component : null, userId);
+                sourceRecord != null ? sourceRecord.component : null, userId,
+                preparedLaunchId);
         saveInstance.saveToIntent(targetIntent);
         return targetIntent;
     }
 
-    void onActivityCreated(ProcessRecord targetApp, ComponentName component, ComponentName caller, IBinder token,
-                           Intent taskRoot, String affinity, int taskId, int launchMode, int flags) {
+    boolean onActivityCreated(ProcessRecord targetApp, ComponentName component, ComponentName caller,
+                              IBinder token, Intent taskRoot, String affinity, int taskId,
+                              int launchMode, int flags) {
         synchronized (mHistory) {
+            if (targetApp == null || token == null || taskId < 0) {
+                return false;
+            }
             optimizeTasksLocked();
             TaskRecord task = mHistory.get(taskId);
+            if (!canAttachActivityToTask(targetApp.userId,
+                    task == null ? VUserHandle.USER_NULL : task.userId)) {
+                return false;
+            }
             if (task == null) {
                 task = new TaskRecord(taskId, targetApp.userId, affinity, taskRoot);
                 mHistory.put(taskId, task);
@@ -611,10 +698,16 @@ import static android.content.pm.ActivityInfo.LAUNCH_SINGLE_TOP;
             synchronized (task.activities) {
                 task.activities.add(record);
             }
+            return true;
         }
     }
 
-    void onActivityResumed(int userId, IBinder token) {
+    static boolean canAttachActivityToTask(int activityUserId, int existingTaskUserId) {
+        return existingTaskUserId == VUserHandle.USER_NULL
+                || existingTaskUserId == activityUserId;
+    }
+
+    boolean onActivityResumed(int userId, IBinder token) {
         synchronized (mHistory) {
             optimizeTasksLocked();
             ActivityRecord r = findActivityByToken(userId, token);
@@ -623,7 +716,9 @@ import static android.content.pm.ActivityInfo.LAUNCH_SINGLE_TOP;
                     r.task.activities.remove(r);
                     r.task.activities.add(r);
                 }
+                return true;
             }
+            return false;
         }
     }
 

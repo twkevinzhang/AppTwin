@@ -166,8 +166,8 @@ public final class VClientImpl extends IVClient.Stub {
         return VUserHandle.getAppId(vuid);
     }
 
-    public int getBaseReportedUid() {
-        return GuestUidPolicy.guestFacingUid(getBaseVUid(), reportedUidOverride);
+    public int getBaseReportedUid(int kernelUid) {
+        return GuestUidPolicy.guestFacingUid(getBaseVUid(), reportedUidOverride, kernelUid);
     }
 
     public ClassLoader getClassLoader(ApplicationInfo appInfo) {
@@ -338,9 +338,11 @@ public final class VClientImpl extends IVClient.Stub {
             System.exit(0);
         }
         data.appInfo = VPackageManager.get().getApplicationInfo(packageName, 0, getUserId(vuid));
+        GuestPackageIdentity.exposeHostUid(data.appInfo, VirtualCore.get().myUid());
         data.processName = processName;
         data.appInfo.processName = processName;
         data.providers = VPackageManager.get().queryContentProviders(processName, getVUid(), PackageManager.GET_META_DATA);
+        GuestCodePathMapper.apply(data.appInfo, info);
         VLog.i(TAG, String.format("Binding application %s, (%s)", data.appInfo.packageName, data.processName));
         mBoundApplication = data;
         VirtualRuntime.setupRuntime(data.processName, data.appInfo);
@@ -412,6 +414,7 @@ public final class VClientImpl extends IVClient.Stub {
         }
 
         ApplicationInfo applicationInfo = LoadedApk.mApplicationInfo.get(data.info);
+        GuestCodePathMapper.apply(applicationInfo, info);
         if (Build.VERSION.SDK_INT >= 26 && applicationInfo.splitNames == null) {
             applicationInfo.splitNames = new String[1];
         }
@@ -566,7 +569,7 @@ public final class VClientImpl extends IVClient.Stub {
 
         setupVirtualStorage(info, userId);
 
-        NativeEngine.enableIORedirect();
+        NativeEngine.enableIORedirect(mBoundApplication.processName);
     }
 
     private void setupVirtualStorage(ApplicationInfo info, int userId) {

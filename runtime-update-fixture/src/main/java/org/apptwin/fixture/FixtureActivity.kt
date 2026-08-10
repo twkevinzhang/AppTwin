@@ -8,6 +8,8 @@ import android.app.NotificationManager
 import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
+import android.util.Log
+import android.widget.ScrollView
 import android.widget.TextView
 import java.io.File
 
@@ -38,11 +40,25 @@ class FixtureActivity : Activity() {
         )
         postFixtureNotification()
 
+        val probeJson = EnvironmentProbe.collect(this).toJson()
+        runCatching { File(filesDir, ENVIRONMENT_PROBE_FILE).writeText(probeJson) }
+        Log.i(ENVIRONMENT_PROBE_LOG_TAG, probeJson)
+
         setContentView(
-            TextView(this).apply {
-                text = "AppTwin fixture revision ${BuildConfig.FIXTURE_REVISION}\nlaunch $launchCount"
-                textSize = 22f
-                setPadding(48, 48, 48, 48)
+            ScrollView(this).apply {
+                addView(
+                    TextView(this@FixtureActivity).apply {
+                        text = buildString {
+                            append("AppTwin fixture revision ${BuildConfig.FIXTURE_REVISION}\n")
+                            append("launch $launchCount\n\n")
+                            append(probeJson)
+                            append("\n\nadb logcat -s $ENVIRONMENT_PROBE_LOG_TAG:I")
+                        }
+                        textSize = 15f
+                        setTextIsSelectable(true)
+                        setPadding(48, 48, 48, 48)
+                    },
+                )
             },
         )
     }
@@ -81,6 +97,8 @@ class FixtureActivity : Activity() {
         const val LAUNCH_COUNT_FILE = "launch-count.txt"
         const val SENTINEL_FILE = "revision-sentinel.txt"
         const val PERMISSION_STATE_FILE = "permission-state.txt"
+        const val ENVIRONMENT_PROBE_FILE = "environment-probe.json"
+        const val ENVIRONMENT_PROBE_LOG_TAG = "AppTwinEnvProbe"
         const val NOTIFICATION_CHANNEL = "fixture"
         const val NOTIFICATION_ID = 7
     }

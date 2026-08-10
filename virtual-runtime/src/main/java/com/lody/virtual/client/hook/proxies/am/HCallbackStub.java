@@ -9,6 +9,7 @@ import android.os.IBinder;
 import android.os.Message;
 
 import com.lody.virtual.client.VClientImpl;
+import com.lody.virtual.client.GuestPackageIdentity;
 import com.lody.virtual.client.core.VirtualCore;
 import com.lody.virtual.client.interfaces.IInjector;
 import com.lody.virtual.client.ipc.VActivityManager;
@@ -21,6 +22,20 @@ import com.lody.virtual.remote.StubActivityRecord;
 import mirror.android.app.ActivityManagerNative;
 import mirror.android.app.ActivityThread;
 import mirror.android.app.IActivityManager;
+
+enum HCallbackLaunchHandling {
+    DELEGATE,
+    RETRY_QUEUED,
+    ABORT_CONSUMED
+}
+
+final class HCallbackLaunchPolicy {
+    private HCallbackLaunchPolicy() { }
+
+    static boolean shouldConsume(HCallbackLaunchHandling handling) {
+        return handling != HCallbackLaunchHandling.DELEGATE;
+    }
+}
 
 /**
      * @author Lody
@@ -74,7 +89,7 @@ import mirror.android.app.IActivityManager;
                 mCalling = true;
                 try {
                     if (LAUNCH_ACTIVITY == msg.what) {
-                        if (!handleLaunchActivity(msg)) {
+                        if (HCallbackLaunchPolicy.shouldConsume(handleLaunchActivity(msg))) {
                             return true;
                         }
                     } else if (CREATE_SERVICE == msg.what) {
@@ -103,12 +118,12 @@ import mirror.android.app.IActivityManager;
             return false;
         }
 
-        private boolean handleLaunchActivity(Message msg) {
+        private HCallbackLaunchHandling handleLaunchActivity(Message msg) {
             Object r = msg.obj;
             Intent stubIntent = ActivityThread.ActivityClientRecord.intent.get(r);
             StubActivityRecord saveInstance = new StubActivityRecord(stubIntent);
             if (saveInstance.intent == null) {
-                return true;
+                return HCallbackLaunchHandling.DELEGATE;
             }
             Intent intent = saveInstance.intent;
             ComponentName caller = saveInstance.caller;
@@ -117,28 +132,33 @@ import mirror.android.app.IActivityManager;
             if (VClientImpl.get().getToken() == null) {
                 InstalledAppInfo installedAppInfo = VirtualCore.get().getInstalledAppInfo(info.packageName, 0);
                 if(installedAppInfo == null){
-                    return true;
+                    return HCallbackLaunchHandling.DELEGATE;
                 }
                 VActivityManager.get().processRestarted(info.packageName, info.processName, saveInstance.userId);
                 getH().sendMessageAtFrontOfQueue(Message.obtain(msg));
-                return false;
+                return HCallbackLaunchHandling.RETRY_QUEUED;
             }
             if (!VClientImpl.get().isBound()) {
                 VClientImpl.get().bindApplicationForActivity(info.packageName, info.processName, intent);
                 getH().sendMessageAtFrontOfQueue(Message.obtain(msg));
-                return false;
+                return HCallbackLaunchHandling.RETRY_QUEUED;
             }
             int taskId = IActivityManager.getTaskForActivity.call(
                     ActivityManagerNative.getDefault.call(),
                     token,
                     false
             );
-            VActivityManager.get().onActivityCreate(ComponentUtils.toComponentName(info), caller, token, info, intent, ComponentUtils.getTaskAffinity(info), taskId, info.launchMode, info.flags);
+            if (VActivityManager.get().onActivityCreate(ComponentUtils.toComponentName(info), caller,
+                    token, info, intent, ComponentUtils.getTaskAffinity(info), taskId,
+                    info.launchMode, info.flags, saveInstance.preparedLaunchId) == null) {
+                return HCallbackLaunchHandling.ABORT_CONSUMED;
+            }
+            GuestPackageIdentity.exposeHostUid(info.applicationInfo, VirtualCore.get().myUid());
             ClassLoader appClassLoader = VClientImpl.get().getClassLoader(info.applicationInfo);
             intent.setExtrasClassLoader(appClassLoader);
             ActivityThread.ActivityClientRecord.intent.set(r, intent);
             ActivityThread.ActivityClientRecord.activityInfo.set(r, info);
-            return true;
+            return HCallbackLaunchHandling.DELEGATE;
         }
 
         @Override

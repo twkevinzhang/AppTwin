@@ -51,6 +51,7 @@ import com.lody.virtual.remote.AppTaskInfo;
 import com.lody.virtual.remote.BadgerInfo;
 import com.lody.virtual.remote.PendingIntentData;
 import com.lody.virtual.remote.PendingResultData;
+import com.lody.virtual.remote.PreparedActivityLaunch;
 import com.lody.virtual.remote.VParceledListSlice;
 import com.lody.virtual.server.IActivityManager;
 import com.lody.virtual.server.interfaces.IProcessObserver;
@@ -58,6 +59,7 @@ import com.lody.virtual.server.pm.PackageCacheManager;
 import com.lody.virtual.server.pm.PackageSetting;
 import com.lody.virtual.server.pm.VAppManagerService;
 import com.lody.virtual.server.pm.VPackageManagerService;
+import com.lody.virtual.server.pm.VUserManagerService;
 import com.lody.virtual.server.secondary.BinderDelegateService;
 
 import java.util.ArrayList;
@@ -81,6 +83,7 @@ public class VActivityManagerService extends IActivityManager.Stub
 
     private static final boolean BROADCAST_NOT_STARTED_PKG = false;
     private static final long SERVICE_STARTUP_TIMEOUT_MS = 15_000L;
+    private static final long PREPARED_LAUNCH_ACK_TIMEOUT_MS = 5_000L;
     private static final int STUB_INIT_MAX_ATTEMPTS = 4;
     private static final long STUB_INIT_RETRY_DELAY_MS = 100L;
 
@@ -98,6 +101,8 @@ public class VActivityManagerService extends IActivityManager.Stub
     private final Map<IsolatedGuestClient, ProcessRecord> mIsolatedClients =
             new IdentityHashMap<>();
     private final PendingIntents mPendingIntents = new PendingIntents();
+    private final PreparedActivityLaunchRegistry mPreparedActivityLaunches =
+            new PreparedActivityLaunchRegistry();
     private Handler mServiceHandler;
     private ActivityManager am = (ActivityManager) VirtualCore.get().getContext()
             .getSystemService(Context.ACTIVITY_SERVICE);
@@ -168,6 +173,95 @@ public class VActivityManagerService extends IActivityManager.Stub
     }
 
     @Override
+    public PreparedActivityLaunch prepareActivityLaunch(
+            Intent intent, String expectedPackage, int userId) {
+        com.lody.virtual.server.VirtualUserAccessPolicy.enforceHost();
+        if (!VUserManagerService.get().exists(userId)) {
+            return PreparedActivityLaunch.failure("Invalid virtual user");
+        }
+        if (!isPreparedLaunchIntentScopedToPackage(
+                expectedPackage,
+                intent == null ? null : intent.getPackage(),
+                intent == null || intent.getComponent() == null
+                        ? null : intent.getComponent().getPackageName())) {
+            return PreparedActivityLaunch.failure("Intent is not scoped to the expected package");
+        }
+        if (!VAppManagerService.get().isAppInstalledAsUser(userId, expectedPackage)) {
+            return PreparedActivityLaunch.failure("Expected package is not installed for user");
+        }
+
+        Intent request = new Intent(intent);
+        ActivityInfo resolved = VirtualCore.get().resolveActivityInfo(request, userId);
+        ComponentName resolvedComponent = request.getComponent();
+        if (!isPreparedLaunchResolutionValid(
+                expectedPackage,
+                resolved == null ? null : resolved.packageName,
+                resolved == null ? null : resolved.name,
+                resolvedComponent == null ? null : resolvedComponent.getPackageName(),
+                resolvedComponent == null ? null : resolvedComponent.getClassName())) {
+            return PreparedActivityLaunch.failure(
+                    "Resolved activity does not match the expected package");
+        }
+
+        synchronized (this) {
+            PreparedActivityLaunch prepared = mMainStack.prepareActivityLaunchLocked(
+                    userId, request, resolved);
+            if (prepared.isHostStartRequired()
+                    && !registerPreparedActivityLaunch(prepared.getLaunchId(), userId, null)) {
+                return PreparedActivityLaunch.failure("Unable to register prepared launch");
+            }
+            return prepared;
+        }
+    }
+
+    boolean registerPreparedActivityLaunch(String launchId, int userId, IBinder expectedToken) {
+        try {
+            mPreparedActivityLaunches.register(launchId, userId, expectedToken);
+        } catch (IllegalArgumentException invalidLaunch) {
+            return false;
+        }
+        mServiceHandler.postDelayed(
+                () -> mPreparedActivityLaunches.cancel(launchId),
+                PREPARED_LAUNCH_ACK_TIMEOUT_MS);
+        return true;
+    }
+
+    @Override
+    public boolean awaitPreparedActivityLaunch(String launchId, long timeoutMs) {
+        com.lody.virtual.server.VirtualUserAccessPolicy.enforceHost();
+        long boundedTimeout = Math.max(0L,
+                Math.min(timeoutMs, PREPARED_LAUNCH_ACK_TIMEOUT_MS));
+        return mPreparedActivityLaunches.await(launchId, boundedTimeout);
+    }
+
+    @Override
+    public void cancelPreparedActivityLaunch(String launchId) {
+        com.lody.virtual.server.VirtualUserAccessPolicy.enforceHost();
+        mPreparedActivityLaunches.cancel(launchId);
+    }
+
+    static boolean isPreparedLaunchIntentScopedToPackage(
+            String expectedPackage, String intentPackage, String componentPackage) {
+        if (expectedPackage == null || expectedPackage.isEmpty()
+                || (intentPackage == null && componentPackage == null)) {
+            return false;
+        }
+        return (intentPackage == null || expectedPackage.equals(intentPackage))
+                && (componentPackage == null || expectedPackage.equals(componentPackage));
+    }
+
+    static boolean isPreparedLaunchResolutionValid(
+            String expectedPackage, String activityPackage, String activityName,
+            String componentPackage, String componentName) {
+        return expectedPackage != null
+                && expectedPackage.equals(activityPackage)
+                && activityName != null
+                && ((componentPackage == null && componentName == null)
+                || (expectedPackage.equals(componentPackage)
+                && activityName.equals(componentName)));
+    }
+
+    @Override
     public String getPackageForIntentSender(IBinder binder) {
         PendingIntentData data = mPendingIntents.getPendingIntent(binder);
         if (data != null) {
@@ -205,6 +299,7 @@ public class VActivityManagerService extends IActivityManager.Stub
     public boolean clearUserRuntimeState(int userId) {
         retireUserProcesses(userId, "user-cleanup");
         mPendingIntents.clearUser(userId);
+        mPreparedActivityLaunches.cancelUser(userId);
         return !hasUserRuntimeState(userId);
     }
 
@@ -249,24 +344,43 @@ public class VActivityManagerService extends IActivityManager.Stub
     }
 
     @Override
-    public void onActivityCreated(ComponentName component, ComponentName caller, IBinder token, Intent intent, String affinity, int taskId, int launchMode, int flags) {
+    public boolean onActivityCreated(ComponentName component, ComponentName caller, IBinder token,
+            Intent intent, String affinity, int taskId, int launchMode, int flags,
+            String preparedLaunchId) {
         int pid = Binder.getCallingPid();
         ProcessRecord targetApp = findProcessLocked(pid);
-        if (targetApp != null) {
-            mMainStack.onActivityCreated(targetApp, component, caller, token, intent, affinity, taskId, launchMode, flags);
+        if (targetApp == null) {
+            return false;
         }
+        boolean accepted = mMainStack.onActivityCreated(targetApp, component, caller, token,
+                intent, affinity, taskId, launchMode, flags);
+        if (!accepted) {
+            mPreparedActivityLaunches.cancelForUser(preparedLaunchId, targetApp.userId);
+            return false;
+        }
+        if (preparedLaunchId != null
+                && !mPreparedActivityLaunches.attachActivity(
+                preparedLaunchId, targetApp.userId, token)) {
+            mMainStack.onActivityDestroyed(targetApp.userId, token);
+            mPreparedActivityLaunches.cancelForUser(preparedLaunchId, targetApp.userId);
+            return false;
+        }
+        return true;
     }
 
     @Override
     public void onActivityResumed(int userId, IBinder token) {
         enforceCallerUserOrHost(userId);
-        mMainStack.onActivityResumed(userId, token);
+        if (mMainStack.onActivityResumed(userId, token)) {
+            mPreparedActivityLaunches.acknowledge(userId, token);
+        }
     }
 
     @Override
     public boolean onActivityDestroyed(int userId, IBinder token) {
         enforceCallerUserOrHost(userId);
         ActivityRecord r = mMainStack.onActivityDestroyed(userId, token);
+        mPreparedActivityLaunches.cancelActivity(userId, token);
         return r != null;
     }
 
@@ -1465,7 +1579,7 @@ public class VActivityManagerService extends IActivityManager.Stub
         }
         int vpid = reserved.reservation().slot();
         int reportedUidOverride = IsolatedProcessUidPolicy.reportedUidOverride(
-                uid, isolatedProcess);
+                uid, isolatedProcess, Process.myUid());
         if (isolatedProcess) {
             VLog.i(TAG, "starting isolated guest process=" + processName
                     + " package=" + packageName + " user=" + userId
@@ -1514,7 +1628,7 @@ public class VActivityManagerService extends IActivityManager.Stub
     private ProcessRecord performStartProcessLocked(int vuid, int vpid, ApplicationInfo info,
             String processName, LogicalProcessOwnerRegistry.Reservation reservation) {
         return performStartProcessLocked(vuid, vpid, info, processName,
-                IsolatedProcessUidPolicy.reportedUidOverride(vuid, false), reservation);
+                IsolatedProcessUidPolicy.reportedUidOverride(vuid, false, Process.myUid()), reservation);
     }
 
     private ProcessRecord performStartProcessLocked(int vuid, int vpid, ApplicationInfo info,

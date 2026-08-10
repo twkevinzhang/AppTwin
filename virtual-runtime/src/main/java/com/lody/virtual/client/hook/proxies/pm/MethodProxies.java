@@ -24,6 +24,7 @@ import android.os.IInterface;
 import android.os.Process;
 
 import com.lody.virtual.client.VClientImpl;
+import com.lody.virtual.client.GuestPackageIdentity;
 import com.lody.virtual.client.core.VirtualCore;
 import com.lody.virtual.client.hook.base.MethodProxy;
 import com.lody.virtual.client.hook.utils.MethodParameterUtils;
@@ -120,9 +121,10 @@ class MethodProxies {
 
         @Override
         public Object call(Object who, Method method, Object... args) throws Throwable {
-            // AppTwin does not claim Play Billing/install provenance. In particular, never expose
-            // a physical Play Store installation as the installer of a virtual package.
-            return null;
+            // A virtual package is sourced from the matching app already installed on the host.
+            // Preserve that package's read-only install provenance instead of manufacturing a
+            // second, provenance-less install. Billing and signature checks remain unchanged.
+            return method.invoke(who, args);
         }
 
         @Override
@@ -131,7 +133,7 @@ class MethodProxies {
         }
     }
 
-    /** API 30+ replacement for getInstallerPackageName; never leak physical Play provenance. */
+    /** API 30+ replacement for getInstallerPackageName. */
     static class GetInstallSourceInfo extends MethodProxy {
 
         @Override
@@ -140,8 +142,8 @@ class MethodProxies {
         }
 
         @Override
-        public Object call(Object who, Method method, Object... args) {
-            return null;
+        public Object call(Object who, Method method, Object... args) throws Throwable {
+            return method.invoke(who, args);
         }
 
         @Override
@@ -264,7 +266,7 @@ class MethodProxies {
                 return -1;
             }
             int uid = VPackageManager.get().getPackageUid(pkgName, userId);
-            return VUserHandle.getAppId(uid);
+            return uid < 0 ? uid : VirtualCore.get().myUid();
         }
 
         @Override
@@ -729,7 +731,8 @@ class MethodProxies {
             int userId = VUserHandle.myUserId();
             PackageInfo packageInfo = VPackageManager.get().getPackageInfo(pkg, flags, userId);
             if (packageInfo != null) {
-                return packageInfo;
+                return GuestPackageIdentity.exposeHostUid(
+                        packageInfo, VirtualCore.get().myUid());
             }
             packageInfo = (PackageInfo) method.invoke(who, args);
             if (packageInfo != null) {
@@ -880,6 +883,9 @@ class MethodProxies {
             }
             if (selfPkgs != null && selfPkgs.length > 0) {
                 pkgList.addAll(Arrays.asList(selfPkgs));
+            }
+            if (requestedUid == VirtualCore.get().myUid()) {
+                pkgList.add(getHostPkg());
             }
             ApplicationInfo currentApplication = VClientImpl.get().getCurrentApplicationInfo();
             String currentPackage = currentApplication == null
@@ -1175,7 +1181,8 @@ class MethodProxies {
             int userId = VUserHandle.myUserId();
             ApplicationInfo info = VPackageManager.get().getApplicationInfo(pkg, flags, userId);
             if (info != null) {
-                return info;
+                return GuestPackageIdentity.exposeHostUid(
+                        info, VirtualCore.get().myUid());
             }
             info = (ApplicationInfo) method.invoke(who, args);
             if (info == null || !isVisiblePackage(info)) {
