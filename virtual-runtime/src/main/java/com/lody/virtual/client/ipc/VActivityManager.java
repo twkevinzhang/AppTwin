@@ -24,6 +24,7 @@ import com.lody.virtual.remote.AppTaskInfo;
 import com.lody.virtual.remote.BadgerInfo;
 import com.lody.virtual.remote.PendingIntentData;
 import com.lody.virtual.remote.PendingResultData;
+import com.lody.virtual.remote.PreparedActivityLaunch;
 import com.lody.virtual.remote.VParceledListSlice;
 import com.lody.virtual.server.IActivityManager;
 import com.lody.virtual.server.interfaces.IProcessObserver;
@@ -93,16 +94,64 @@ public class VActivityManager {
         return startActivity(intent, info, null, null, null, 0, userId);
     }
 
-    public ActivityClientRecord onActivityCreate(ComponentName component, ComponentName caller, IBinder token, ActivityInfo info, Intent intent, String affinity, int taskId, int launchMode, int flags) {
-        ActivityClientRecord r = new ActivityClientRecord();
-        r.info = info;
-        synchronized (mActivities) {
-            mActivities.put(token, r);
+    public PreparedActivityLaunch prepareActivityLaunch(
+            Intent intent, String expectedPackage, int userId) {
+        if (!isPreparedActivityLaunchClientAllowed(VirtualCore.get().isMainProcess())) {
+            throw new SecurityException("Prepared activity launch requires the host main process");
+        }
+        Intent request = intent == null ? null : new Intent(intent);
+        try {
+            PreparedActivityLaunch prepared = getService().prepareActivityLaunch(
+                    request, expectedPackage, userId);
+            return prepared == null
+                    ? PreparedActivityLaunch.failure("Engine returned no prepared launch")
+                    : prepared.copy();
+        } catch (RemoteException e) {
+            return VirtualRuntime.crash(e);
+        }
+    }
+
+    public boolean awaitPreparedActivityLaunch(String launchId, long timeoutMs) {
+        if (!isPreparedActivityLaunchClientAllowed(VirtualCore.get().isMainProcess())) {
+            throw new SecurityException("Prepared activity launch requires the host main process");
         }
         try {
-            getService().onActivityCreated(component, caller, token, intent, affinity, taskId, launchMode, flags);
+            return getService().awaitPreparedActivityLaunch(launchId, timeoutMs);
+        } catch (RemoteException e) {
+            return VirtualRuntime.crash(e);
+        }
+    }
+
+    public void cancelPreparedActivityLaunch(String launchId) {
+        if (!isPreparedActivityLaunchClientAllowed(VirtualCore.get().isMainProcess())) {
+            throw new SecurityException("Prepared activity launch requires the host main process");
+        }
+        try {
+            getService().cancelPreparedActivityLaunch(launchId);
+        } catch (RemoteException e) {
+            VirtualRuntime.crash(e);
+        }
+    }
+
+    static boolean isPreparedActivityLaunchClientAllowed(boolean mainProcess) {
+        return mainProcess;
+    }
+
+    public ActivityClientRecord onActivityCreate(ComponentName component, ComponentName caller,
+            IBinder token, ActivityInfo info, Intent intent, String affinity, int taskId,
+            int launchMode, int flags, String preparedLaunchId) {
+        ActivityClientRecord r = new ActivityClientRecord();
+        r.info = info;
+        try {
+            boolean accepted = getService().onActivityCreated(component, caller, token, intent,
+                    affinity, taskId, launchMode, flags, preparedLaunchId);
+            if (!accepted) return null;
+            synchronized (mActivities) {
+                mActivities.put(token, r);
+            }
         } catch (RemoteException e) {
             e.printStackTrace();
+            return null;
         }
         return r;
     }

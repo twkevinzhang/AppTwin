@@ -102,10 +102,14 @@ public class MethodProxies {
     }
 
     /** Android 12+ renamed the listener Binder entry point while keeping the same semantics. */
-    static class RegisterLocationListener extends ReplaceLastPkgMethodProxy {
+    static class RegisterLocationListener extends MethodProxy {
 
         RegisterLocationListener() {
-            super("registerLocationListener");
+        }
+
+        @Override
+        public String getMethodName() {
+            return "registerLocationListener";
         }
 
         @Override
@@ -113,6 +117,7 @@ public class MethodProxies {
             if (!LocationAccessPolicy.hasLocationPermission()) {
                 return LocationAccessPolicy.deniedResult(method.getReturnType());
             }
+            LocationPackageIdentity.replaceGuestPackage(args, getAppPkg(), getHostPkg());
             return super.call(who, method, args);
         }
     }

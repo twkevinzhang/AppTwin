@@ -1,10 +1,13 @@
 package org.apptwin.runtime
 
+import android.app.ActivityManager
 import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageInfo
 import android.os.Build
+import android.os.Handler
+import android.os.Looper
 import android.util.Log
 import com.lody.virtual.client.core.InstallStrategy
 import com.lody.virtual.client.core.VirtualCore
@@ -12,10 +15,15 @@ import com.lody.virtual.client.ipc.VActivityManager
 import com.lody.virtual.client.ipc.VPackageManager
 import com.lody.virtual.os.VEnvironment
 import com.lody.virtual.os.VUserManager
+import com.lody.virtual.remote.PreparedActivityLaunch
 import java.io.BufferedInputStream
 import java.io.File
 import java.io.FileInputStream
 import java.security.MessageDigest
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicBoolean
+import org.apptwin.MainActivity
 import org.apptwin.groups.EnvironmentBinding
 import org.apptwin.groups.Group
 import org.apptwin.groups.GroupApp
@@ -54,6 +62,27 @@ class VirtualRuntimeController internal constructor(
     private val launchRecorder = RuntimeLaunchRecorder(diagnosticsSink) { error ->
         Log.w(TAG, "Unable to persist runtime diagnostics", error)
     }
+    private val mainHandler = Handler(Looper.getMainLooper())
+    private val activityLauncher = HostActivityLaunchAdapter(
+        prepareActivity = { intent, expectedPackage, userId ->
+            VActivityManager.get().prepareActivityLaunch(intent, expectedPackage, userId)
+        },
+        resumedHost = mainActivityLaunchHosts::current,
+        startActivity = { activity, intent -> activity.startActivity(intent) },
+        moveTaskToFront = { activity, taskId ->
+            val activityManager =
+                activity.getSystemService(Context.ACTIVITY_SERVICE) as ActivityManager
+            activityManager.moveTaskToFront(taskId, 0)
+        },
+        dispatchToMain = { runnable -> mainHandler.post(runnable) },
+        isMainThread = { Looper.myLooper() == Looper.getMainLooper() },
+        awaitAcknowledgement = { launchId, timeoutMs ->
+            VActivityManager.get().awaitPreparedActivityLaunch(launchId, timeoutMs)
+        },
+        cancelAcknowledgement = { launchId ->
+            VActivityManager.get().cancelPreparedActivityLaunch(launchId)
+        },
+    )
 
     override fun createEnvironment(groupId: String, groupName: String): EnvironmentBinding {
         val core = VirtualCore.get()
@@ -189,8 +218,8 @@ class VirtualRuntimeController internal constructor(
                 .setComponent(component)
                 .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
         }
-        val resultCode = VActivityManager.get().startActivity(launchIntent, environmentId)
-        check(resultCode >= 0) { "群組 App 啟動失敗：$resultCode" }
+        val launch = activityLauncher.launch(launchIntent, packageName, environmentId)
+        check(launch.isSuccess) { "群組 App 啟動失敗：${launch.failureReason}" }
         val dataDirectory = VEnvironment.getDataUserPackageDirectory(environmentId, packageName)
         Log.i(
             TAG,
@@ -237,8 +266,8 @@ class VirtualRuntimeController internal constructor(
         val routedIntent = Intent(intent)
             .setPackage(packageName)
             .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-        val resultCode = VActivityManager.get().startActivity(routedIntent, environmentId)
-        check(resultCode >= 0) { "分身 App 無法開啟此連結：$resultCode" }
+        val launch = activityLauncher.launch(routedIntent, packageName, environmentId)
+        check(launch.isSuccess) { "分身 App 無法開啟此連結：${launch.failureReason}" }
         val dataDirectory = VEnvironment.getDataUserPackageDirectory(environmentId, packageName)
         RuntimeLaunchResult.Started(packageName, "p$environmentId", dataDirectory.absolutePath)
     }.getOrElse { error ->
@@ -338,6 +367,137 @@ class VirtualRuntimeController internal constructor(
             }
             return digest.digest().joinToString("") { "%02x".format(it) }
         }
+    }
+}
+
+internal class ResumedHostRegistry<Host : Any> {
+    @Volatile
+    private var resumedHost: Host? = null
+
+    fun onResumed(host: Host) {
+        resumedHost = host
+    }
+
+    fun onPaused(host: Host) {
+        if (resumedHost === host) resumedHost = null
+    }
+
+    fun current(): Host? = resumedHost
+}
+
+internal val mainActivityLaunchHosts = ResumedHostRegistry<MainActivity>()
+
+/**
+ * Executes only Android task operations on the visible host's main thread. Virtual task policy
+ * and acknowledgement stay in the engine call made by the serialized IO dispatcher.
+ */
+internal class HostActivityLaunchAdapter<Host : Any>(
+    private val prepareActivity: (Intent, String, Int) -> PreparedActivityLaunch,
+    private val resumedHost: () -> Host?,
+    private val startActivity: (Host, Intent) -> Unit,
+    private val moveTaskToFront: (Host, Int) -> Unit,
+    private val dispatchToMain: (Runnable) -> Boolean,
+    private val isMainThread: () -> Boolean,
+    private val awaitAcknowledgement: (String, Long) -> Boolean,
+    private val cancelAcknowledgement: (String) -> Unit,
+    private val acknowledgementTimeoutMs: Long = 5_000L,
+    private val mainDispatchTimeoutMs: Long = 5_000L,
+) {
+    fun launch(intent: Intent, expectedPackage: String, userId: Int): PreparedActivityLaunch {
+        if (isMainThread()) {
+            return PreparedActivityLaunch.failure("Guest launch must run off the main thread")
+        }
+
+        val host = callOnMain(resumedHost).getOrElse { error ->
+            return PreparedActivityLaunch.failure(
+                error.message ?: "Unable to obtain the resumed AppTwin activity",
+            )
+        } ?: return PreparedActivityLaunch.failure(
+            "AppTwin must be resumed to launch a guest activity",
+        )
+
+        val prepared = prepareActivity(Intent(intent), expectedPackage, userId)
+        if (!prepared.isSuccess) return prepared
+
+        val launchId = requireNotNull(prepared.launchId)
+        var acknowledged = false
+        val result = try {
+            val startError = callOnMain {
+                check(resumedHost() === host) {
+                    "AppTwin activity is no longer resumed"
+                }
+                if (prepared.isReused) {
+                    moveTaskToFront(host, prepared.taskId)
+                } else {
+                    startActivity(host, Intent(requireNotNull(prepared.intent)))
+                }
+            }.exceptionOrNull()
+            if (startError != null) {
+                PreparedActivityLaunch.failure(
+                    startError.message ?: "Unable to start guest activity",
+                )
+            } else {
+                acknowledged = awaitAcknowledgement(launchId, acknowledgementTimeoutMs)
+                if (acknowledged) {
+                    prepared
+                } else {
+                    PreparedActivityLaunch.failure(
+                        "Expected Group activity did not resume",
+                    )
+                }
+            }
+        } catch (error: Throwable) {
+            PreparedActivityLaunch.failure(
+                error.message ?: "Unable to start guest activity",
+            )
+        }
+        if (!acknowledged) {
+            try {
+                cancelAcknowledgement(launchId)
+            } catch (_: Throwable) {
+                // Cleanup must not replace the launch failure.
+            }
+        }
+        return result
+    }
+
+    private fun <T> callOnMain(block: () -> T): Result<T> {
+        if (isMainThread()) return runCatching(block)
+
+        val pending = AtomicBoolean(true)
+        val completed = CountDownLatch(1)
+        var outcome: Result<T>? = null
+        val accepted = runCatching {
+            dispatchToMain(
+                Runnable {
+                    if (!pending.compareAndSet(true, false)) return@Runnable
+                    try {
+                        outcome = runCatching(block)
+                    } finally {
+                        completed.countDown()
+                    }
+                },
+            )
+        }.getOrElse { error ->
+            pending.set(false)
+            return Result.failure(error)
+        }
+        if (!accepted) {
+            pending.set(false)
+            return Result.failure(IllegalStateException("Unable to dispatch to the main thread"))
+        }
+
+        try {
+            if (!completed.await(mainDispatchTimeoutMs, TimeUnit.MILLISECONDS)) {
+                pending.compareAndSet(true, false)
+                return Result.failure(IllegalStateException("Timed out waiting for the main thread"))
+            }
+        } catch (error: InterruptedException) {
+            pending.compareAndSet(true, false)
+            Thread.currentThread().interrupt()
+            return Result.failure(error)
+        }
+        return checkNotNull(outcome)
     }
 }
 

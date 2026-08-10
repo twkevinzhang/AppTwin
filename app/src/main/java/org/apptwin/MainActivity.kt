@@ -14,6 +14,7 @@ import androidx.activity.enableEdgeToEdge
 import androidx.lifecycle.ViewModelProvider
 import com.lody.virtual.client.isolated.IsolatedWorkerProbe
 import org.apptwin.runtime.GroupAppRuntimeSupport
+import org.apptwin.runtime.mainActivityLaunchHosts
 import org.apptwin.ui.AppTwinApp
 
 class MainActivity : ComponentActivity() {
@@ -88,7 +89,13 @@ class MainActivity : ComponentActivity() {
 
     override fun onResume() {
         super.onResume()
+        mainActivityLaunchHosts.onResumed(this)
         if (::mainViewModel.isInitialized) mainViewModel.refresh()
+    }
+
+    override fun onPause() {
+        mainActivityLaunchHosts.onPaused(this)
+        super.onPause()
     }
 
     override fun onStop() {
@@ -97,6 +104,11 @@ class MainActivity : ComponentActivity() {
             packageReceiverRegistered = false
         }
         super.onStop()
+    }
+
+    override fun onDestroy() {
+        mainActivityLaunchHosts.onPaused(this)
+        super.onDestroy()
     }
 
     private fun openAllFilesAccessSettings() {

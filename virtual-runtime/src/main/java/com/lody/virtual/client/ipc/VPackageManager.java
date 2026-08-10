@@ -14,6 +14,7 @@ import android.os.IBinder;
 import android.os.RemoteException;
 
 import com.lody.virtual.client.core.VirtualCore;
+import com.lody.virtual.client.GuestPackageIdentity;
 import com.lody.virtual.client.env.VirtualRuntime;
 import com.lody.virtual.helper.compat.BuildCompat;
 import com.lody.virtual.server.IPackageInstaller;
@@ -29,6 +30,10 @@ public class VPackageManager {
 
     private static final VPackageManager sMgr = new VPackageManager();
     private IPackageManager mRemote;
+
+    private int guestProcessUid() {
+        return VirtualCore.get().isVAppProcess() ? VirtualCore.get().myUid() : -1;
+    }
 
     public static VPackageManager get() {
         return sMgr;
@@ -80,7 +85,9 @@ public class VPackageManager {
 
     public ResolveInfo resolveService(Intent intent, String resolvedType, int flags, int userId) {
         try {
-            return getInterface().resolveService(intent, resolvedType, flags, userId);
+            return GuestPackageIdentity.exposeHostUid(
+                    getInterface().resolveService(intent, resolvedType, flags, userId),
+                    guestProcessUid());
         } catch (RemoteException e) {
             return VirtualRuntime.crash(e);
         }
@@ -105,7 +112,9 @@ public class VPackageManager {
 
     public PackageInfo getPackageInfo(String packageName, int flags, int userId) {
         try {
-            return getInterface().getPackageInfo(packageName, flags, userId);
+            return GuestPackageIdentity.exposeHostUid(
+                    getInterface().getPackageInfo(packageName, flags, userId),
+                    guestProcessUid());
         } catch (RemoteException e) {
             return VirtualRuntime.crash(e);
         }
@@ -113,7 +122,9 @@ public class VPackageManager {
 
     public ResolveInfo resolveIntent(Intent intent, String resolvedType, int flags, int userId) {
         try {
-            return getInterface().resolveIntent(intent, resolvedType, flags, userId);
+            return GuestPackageIdentity.exposeHostUid(
+                    getInterface().resolveIntent(intent, resolvedType, flags, userId),
+                    guestProcessUid());
         } catch (RemoteException e) {
             return VirtualRuntime.crash(e);
         }
@@ -129,7 +140,9 @@ public class VPackageManager {
 
     public ActivityInfo getReceiverInfo(ComponentName componentName, int flags, int userId) {
         try {
-            return getInterface().getReceiverInfo(componentName, flags, userId);
+            return GuestPackageIdentity.exposeHostUid(
+                    getInterface().getReceiverInfo(componentName, flags, userId),
+                    guestProcessUid());
         } catch (RemoteException e) {
             return VirtualRuntime.crash(e);
         }
@@ -161,7 +174,9 @@ public class VPackageManager {
 
     public ActivityInfo getActivityInfo(ComponentName componentName, int flags, int userId) {
         try {
-            return getInterface().getActivityInfo(componentName, flags, userId);
+            return GuestPackageIdentity.exposeHostUid(
+                    getInterface().getActivityInfo(componentName, flags, userId),
+                    guestProcessUid());
         } catch (RemoteException e) {
             return VirtualRuntime.crash(e);
         }
@@ -240,7 +255,7 @@ public class VPackageManager {
                 }
                 info.sharedLibraryFiles = newSharedLibraryFiles;
             }
-            return info;
+            return GuestPackageIdentity.exposeHostUid(info, guestProcessUid());
         } catch (RemoteException e) {
             return VirtualRuntime.crash(e);
         }
@@ -248,7 +263,9 @@ public class VPackageManager {
 
     public ProviderInfo resolveContentProvider(String name, int flags, int userId) {
         try {
-            return getInterface().resolveContentProvider(name, flags, userId);
+            return GuestPackageIdentity.exposeHostUid(
+                    getInterface().resolveContentProvider(name, flags, userId),
+                    guestProcessUid());
         } catch (RemoteException e) {
             return VirtualRuntime.crash(e);
         }
@@ -256,7 +273,9 @@ public class VPackageManager {
 
     public ServiceInfo getServiceInfo(ComponentName componentName, int flags, int userId) {
         try {
-            return getInterface().getServiceInfo(componentName, flags, userId);
+            return GuestPackageIdentity.exposeHostUid(
+                    getInterface().getServiceInfo(componentName, flags, userId),
+                    guestProcessUid());
         } catch (RemoteException e) {
             return VirtualRuntime.crash(e);
         }
@@ -264,7 +283,9 @@ public class VPackageManager {
 
     public ProviderInfo getProviderInfo(ComponentName componentName, int flags, int userId) {
         try {
-            return getInterface().getProviderInfo(componentName, flags, userId);
+            return GuestPackageIdentity.exposeHostUid(
+                    getInterface().getProviderInfo(componentName, flags, userId),
+                    guestProcessUid());
         } catch (RemoteException e) {
             return VirtualRuntime.crash(e);
         }

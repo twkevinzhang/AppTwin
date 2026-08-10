@@ -13,11 +13,10 @@ final class IsolatedProcessUidPolicy {
     private IsolatedProcessUidPolicy() {
     }
 
-    static int reportedUidOverride(int vuid, boolean isolatedProcess) {
+    static int reportedUidOverride(int vuid, boolean isolatedProcess, int hostProcessUid) {
         if (!isolatedProcess) {
-            // A regular guest still receives its logical UID through the Java/libcore hooks.
-            // Replacing libc getuid() process-wide makes Android's Binder/Looper identity disagree
-            // with the kernel-owned host process and can leave apps stuck during initialization.
+            // Regular guests already execute with the host process's real kernel UID. Do not
+            // activate the native override: Binder/Looper must continue seeing the kernel value.
             return NO_OVERRIDE;
         }
         int userId = VUserHandle.getUserId(vuid);
