@@ -1,6 +1,9 @@
 package org.apptwin.ui
 
 import android.Manifest
+import android.app.Activity
+import android.content.Context
+import android.content.ContextWrapper
 import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
@@ -55,6 +58,7 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.unit.dp
 import org.apptwin.MainDestination
 import org.apptwin.MainViewModel
+import org.apptwin.permissions.ClonePermissionAction
 import org.apptwin.ui.theme.AppTwinTheme
 
 private data class DestinationItem(
@@ -73,6 +77,7 @@ private val destinations = listOf(
 fun AppTwinApp(
     viewModel: MainViewModel,
     onOpenStorageSettings: () -> Unit,
+    onOpenPermissionSettings: (String) -> Unit,
     onShareDiagnostics: (String) -> Unit,
 ) {
     val state = viewModel.uiState
@@ -80,6 +85,10 @@ fun AppTwinApp(
     var showCreateGroup by rememberSaveable { mutableStateOf(false) }
     var pendingPermissionAppKey by rememberSaveable { mutableStateOf<String?>(null) }
     var pendingPermissionName by rememberSaveable { mutableStateOf<String?>(null) }
+    var pendingSettingsPermission by rememberSaveable { mutableStateOf<String?>(null) }
+    var settingsPermissionsDeniedPermanently by rememberSaveable {
+        mutableStateOf(emptySet<String>())
+    }
     val context = LocalContext.current
     var notificationsGranted by remember {
         mutableStateOf(
@@ -104,6 +113,19 @@ fun AppTwinApp(
         }
         pendingPermissionAppKey = null
         pendingPermissionName = null
+    }
+    val settingsPermissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission(),
+    ) { granted ->
+        val permission = pendingSettingsPermission
+        if (
+            !granted && permission != null &&
+            context.findActivity()?.shouldShowRequestPermissionRationale(permission) == false
+        ) {
+            settingsPermissionsDeniedPermanently += permission
+        }
+        pendingSettingsPermission = null
+        viewModel.refresh()
     }
     val onSetClonePermission: (org.apptwin.GroupAppItem, String, Boolean) -> Unit =
         { app, permission, granted ->
@@ -269,6 +291,27 @@ fun AppTwinApp(
                                             )
                                         }
                                     },
+                                    onPermissionAction = { permission ->
+                                        when (permission.action) {
+                                            ClonePermissionAction.REQUEST_RUNTIME -> {
+                                                if (
+                                                    permission.permission in
+                                                    settingsPermissionsDeniedPermanently
+                                                ) {
+                                                    onOpenPermissionSettings(permission.permission)
+                                                } else {
+                                                    pendingSettingsPermission = permission.permission
+                                                    settingsPermissionLauncher.launch(
+                                                        permission.permission,
+                                                    )
+                                                }
+                                            }
+                                            ClonePermissionAction.OPEN_APP_DETAILS,
+                                            ClonePermissionAction.OPEN_SPECIAL_SETTINGS,
+                                            -> onOpenPermissionSettings(permission.permission)
+                                            ClonePermissionAction.NONE -> Unit
+                                        }
+                                    },
                                 )
                             }
                         }
@@ -297,6 +340,12 @@ fun AppTwinApp(
             }
         }
     }
+}
+
+private tailrec fun Context.findActivity(): Activity? = when (this) {
+    is Activity -> this
+    is ContextWrapper -> baseContext.findActivity()
+    else -> null
 }
 
 @Composable

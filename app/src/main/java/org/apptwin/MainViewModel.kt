@@ -24,6 +24,7 @@ import org.apptwin.gms.GmsGroupProductState
 import org.apptwin.gms.GmsStartupResult
 import org.apptwin.gms.usecases.GmsLifecycleResult
 import org.apptwin.operations.OperationRecord
+import org.apptwin.permissions.ClonePermissionSummary
 import org.apptwin.repair.RepairExecutionResult
 import org.apptwin.revision.ActiveRevisionSummary
 import org.apptwin.revision.InstalledAppEntry
@@ -90,6 +91,7 @@ data class MainUiState(
     val allFilesGranted: Boolean = false,
     val downloadCount: Int = 0,
     val photoCount: Int = 0,
+    val clonePermissions: List<ClonePermissionSummary> = emptyList(),
     val dataWarnings: List<String> = emptyList(),
     val diagnosticsReport: String? = null,
     val diagnosticsReportId: Long = 0,
@@ -114,6 +116,7 @@ internal data class MainRefreshSnapshot(
     val dataWarnings: List<String>,
     val operations: List<OperationRecord> = emptyList(),
     val permissions: Map<String, ClonePermissionState> = emptyMap(),
+    val clonePermissions: List<ClonePermissionSummary> = emptyList(),
     val gmsCompatibility: Map<String, GmsGroupProductState> = emptyMap(),
 )
 
@@ -383,6 +386,7 @@ class MainViewModel internal constructor(
                 allFilesGranted = snapshot.storage.granted,
                 downloadCount = snapshot.storage.downloadCount,
                 photoCount = snapshot.storage.photoCount,
+                clonePermissions = snapshot.clonePermissions,
                 dataWarnings = snapshot.dataWarnings,
             )
             presentResolvedDeepLink(groupItems, waitForRefresh = false)

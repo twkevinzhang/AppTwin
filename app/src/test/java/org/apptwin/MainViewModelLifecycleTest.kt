@@ -24,6 +24,11 @@ import org.apptwin.groups.GroupReconciliationResult
 import org.apptwin.groups.GroupStoreLoadIssue
 import org.apptwin.revision.InstalledAppEntry
 import org.apptwin.repair.RepairExecutionResult
+import org.apptwin.permissions.ClonePermissionAction
+import org.apptwin.permissions.ClonePermissionCategory
+import org.apptwin.permissions.ClonePermissionSummary
+import org.apptwin.permissions.ClonePermissionTarget
+import org.apptwin.permissions.ClonePermissionVirtualScope
 import org.apptwin.runtime.RuntimeLaunchResult
 import org.apptwin.gms.GmsStartupResult
 import org.apptwin.gms.usecases.GmsLifecycleResult
@@ -289,6 +294,32 @@ class MainViewModelLifecycleTest {
         assertTrue(viewModel.uiState.message.orEmpty().contains("資料完整性問題"))
     }
 
+    @Test
+    fun `refresh exposes aggregated clone permissions in settings state`() = runTest {
+        val dispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(dispatcher)
+        val permission = ClonePermissionSummary(
+            permission = "android.permission.CAMERA",
+            label = "相機",
+            category = ClonePermissionCategory.RUNTIME,
+            virtualScope = ClonePermissionVirtualScope.CAMERA_MIC_PER_SPACE,
+            granted = false,
+            action = ClonePermissionAction.REQUEST_RUNTIME,
+            affectedClones = listOf(
+                ClonePermissionTarget(GROUP_ID, "工作", "com.example.camera", "相機 App"),
+            ),
+        )
+        val viewModel = viewModel(
+            SavedStateHandle(),
+            FakeOperations(clonePermissions = listOf(permission)),
+            dispatcher,
+        )
+
+        advanceUntilIdle()
+
+        assertEquals(listOf(permission), viewModel.uiState.clonePermissions)
+    }
+
     private fun viewModel(
         savedState: SavedStateHandle,
         operations: MainOperations,
@@ -305,6 +336,7 @@ class MainViewModelLifecycleTest {
         private val deepLinkCandidates: List<Pair<String, String>>? = null,
         private val gmsReconcileError: Throwable? = null,
         private val refreshWarnings: List<String> = emptyList(),
+        private val clonePermissions: List<ClonePermissionSummary> = emptyList(),
     ) : MainOperations {
         var reconcileStarted = false
         var refreshCalls = 0
@@ -324,6 +356,7 @@ class MainViewModelLifecycleTest {
                 groups = groups,
                 activeRevisions = emptyMap(),
                 dataWarnings = loadIssues.map { "corrupt metadata" } + refreshWarnings,
+                clonePermissions = clonePermissions,
             )
         }
 

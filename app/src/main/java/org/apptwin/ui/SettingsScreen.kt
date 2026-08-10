@@ -4,13 +4,17 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.OpenInNew
 import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.ExpandLess
+import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Security
@@ -18,15 +22,26 @@ import androidx.compose.material.icons.filled.Share
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.FilledTonalButton
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import org.apptwin.MainUiState
+import org.apptwin.permissions.ClonePermissionAction
+import org.apptwin.permissions.ClonePermissionCategory
+import org.apptwin.permissions.ClonePermissionSummary
+import org.apptwin.permissions.ClonePermissionVirtualScope
 
 @Composable
 fun SettingsScreen(
@@ -35,12 +50,19 @@ fun SettingsScreen(
     onExportDiagnostics: () -> Unit,
     notificationsGranted: Boolean,
     onRequestNotifications: () -> Unit,
+    onPermissionAction: (ClonePermissionSummary) -> Unit,
 ) {
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
         contentPadding = PaddingValues(20.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
+        item {
+            ClonePermissionSettingsCard(
+                permissions = state.clonePermissions,
+                onPermissionAction = onPermissionAction,
+            )
+        }
         item {
             SettingsCard(
                 icon = {
@@ -117,39 +139,179 @@ fun SettingsScreen(
                 }
             }
         }
-        item {
-            SettingsCard(
-                icon = { Icon(Icons.Default.Security, contentDescription = null) },
-                title = "執行環境",
-            ) {
+    }
+}
+
+@Composable
+private fun ClonePermissionSettingsCard(
+    permissions: List<ClonePermissionSummary>,
+    onPermissionAction: (ClonePermissionSummary) -> Unit,
+) {
+    val actionable = permissions.filter {
+        it.category == ClonePermissionCategory.RUNTIME ||
+            it.category == ClonePermissionCategory.SPECIAL
+    }
+    val automatic = permissions.filter { it.category == ClonePermissionCategory.AUTOMATIC }
+    val unsupported = permissions.filter { it.category == ClonePermissionCategory.UNSUPPORTED }
+    SettingsCard(
+        modifier = Modifier.testTag("clone-permission-card"),
+        icon = { Icon(Icons.Default.Security, contentDescription = null) },
+        title = "分身 App 權限",
+    ) {
+        if (permissions.isEmpty()) {
+            Text(
+                "尚未加入分身 App；加入後會在這裡彙整其宣告的權限。",
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            return@SettingsCard
+        }
+        val readyCount = actionable.count(ClonePermissionSummary::granted)
+        Text(
+            if (actionable.isEmpty()) {
+                "目前沒有需要使用者額外授權的項目。"
+            } else {
+                "$readyCount / ${actionable.size} 項已就緒"
+            },
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        actionable.forEachIndexed { index, permission ->
+            if (index == 0) Spacer(Modifier.height(8.dp))
+            PermissionRow(permission, onPermissionAction)
+        }
+        PermissionGroup(
+            title = "系統自動授權",
+            permissions = automatic,
+            testTag = "permission-auto-section",
+            onPermissionAction = onPermissionAction,
+        )
+        PermissionGroup(
+            title = "無法授權或尚未支援",
+            permissions = unsupported,
+            testTag = "permission-unsupported-section",
+            onPermissionAction = onPermissionAction,
+        )
+    }
+}
+
+@Composable
+private fun PermissionGroup(
+    title: String,
+    permissions: List<ClonePermissionSummary>,
+    testTag: String,
+    onPermissionAction: (ClonePermissionSummary) -> Unit,
+) {
+    if (permissions.isEmpty()) return
+    var expanded by rememberSaveable(title) { mutableStateOf(false) }
+    TextButton(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(top = 4.dp)
+            .testTag(testTag),
+        onClick = { expanded = !expanded },
+    ) {
+        Text("$title（${permissions.size}）", modifier = Modifier.weight(1f))
+        Icon(
+            if (expanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
+            contentDescription = if (expanded) "收合$title" else "展開$title",
+        )
+    }
+    if (expanded) {
+        permissions.forEach { PermissionRow(it, onPermissionAction) }
+    }
+}
+
+@Composable
+private fun PermissionRow(
+    permission: ClonePermissionSummary,
+    onPermissionAction: (ClonePermissionSummary) -> Unit,
+) {
+    var affectedExpanded by rememberSaveable(permission.permission) { mutableStateOf(false) }
+    HorizontalDivider(modifier = Modifier.padding(top = 8.dp))
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(top = 12.dp)
+            .testTag("permission-row-${permission.permission}"),
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(permission.label, fontWeight = FontWeight.SemiBold)
                 Text(
-                    "僅特定 LINE／蝦皮版本曾在 Android 12 實機啟動；版本或裝置不同時會重新標示為未驗證。其他 App 可嘗試加入，但登入、通知或系統功能可能不相容。",
+                    permissionStatus(permission),
+                    color = if (permission.granted) {
+                        MaterialTheme.colorScheme.primary
+                    } else {
+                        MaterialTheme.colorScheme.onSurfaceVariant
+                    },
+                    style = MaterialTheme.typography.bodySmall,
+                )
+                Text(
+                    permissionScopeLabel(permission.virtualScope),
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    style = MaterialTheme.typography.bodySmall,
                 )
             }
+            if (permission.action != ClonePermissionAction.NONE) {
+                FilledTonalButton(
+                    modifier = Modifier.testTag("permission-action-${permission.permission}"),
+                    onClick = { onPermissionAction(permission) },
+                ) {
+                    Text(
+                        if (permission.action == ClonePermissionAction.REQUEST_RUNTIME) {
+                            "允許使用"
+                        } else {
+                            "開啟設定"
+                        },
+                    )
+                }
+            }
         }
-        item {
-            SettingsCard(
-                icon = { Icon(Icons.Default.Info, contentDescription = null) },
-                title = "分身空間的隔離範圍",
-            ) {
+        TextButton(onClick = { affectedExpanded = !affectedExpanded }) {
+            Text("影響 ${permission.affectedClones.size} 個分身")
+            Icon(
+                if (affectedExpanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
+                contentDescription = null,
+            )
+        }
+        if (affectedExpanded) {
+            permission.affectedClones.forEach { target ->
                 Text(
-                    "同一空間內的 App 使用同一套身分環境；不同空間的 App 資料、登入狀態、安裝狀態與 App 所見權限決策彼此隔離。相機／麥克風硬體能力仍可能因 App 與裝置而異。刪除空間時，其中的登入與資料也會永久刪除。",
+                    "${target.groupName} · ${target.appLabel}",
+                    modifier = Modifier.padding(start = 12.dp, bottom = 4.dp),
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    style = MaterialTheme.typography.bodySmall,
                 )
             }
         }
     }
 }
 
+private fun permissionStatus(permission: ClonePermissionSummary): String = when {
+    permission.category == ClonePermissionCategory.AUTOMATIC -> "系統自動授權"
+    permission.category == ClonePermissionCategory.UNSUPPORTED -> "無法授權或尚未支援"
+    permission.granted -> "已就緒"
+    else -> "尚未授權"
+}
+
+private fun permissionScopeLabel(scope: ClonePermissionVirtualScope): String = when (scope) {
+    ClonePermissionVirtualScope.CAMERA_MIC_PER_SPACE -> "宿主授權；各分身可另行調整"
+    ClonePermissionVirtualScope.HOST_SHARED -> "所有分身共用宿主系統授權"
+    ClonePermissionVirtualScope.NOT_SUPPORTED -> "AppTwin 尚未支援此宿主授權"
+}
+
 @Composable
 private fun SettingsCard(
+    modifier: Modifier = Modifier,
     icon: @Composable () -> Unit,
     title: String,
     content: @Composable () -> Unit,
 ) {
     Card(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(
             containerColor = MaterialTheme.colorScheme.surfaceContainer,
         ),
