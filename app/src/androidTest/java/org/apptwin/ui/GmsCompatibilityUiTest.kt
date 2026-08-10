@@ -21,9 +21,11 @@ import org.apptwin.gms.model.GmsProfile
 import org.apptwin.groups.GroupHealth
 import org.apptwin.ui.theme.AppTwinTheme
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
+import kotlin.math.abs
 
 @RunWith(AndroidJUnit4::class)
 class GmsCompatibilityUiTest {
@@ -76,6 +78,39 @@ class GmsCompatibilityUiTest {
     }
 
     @Test
+    fun disabledStateActionsAreHorizontalAndOrderedFromLeftToRight() {
+        setContent()
+
+        assertActionsAreHorizontalAndOrdered()
+        composeRule.onNodeWithText("啟用").assertIsDisplayed()
+    }
+
+    @Test
+    fun enabledStateActionsAreHorizontalAndOrderedFromLeftToRight() {
+        setContent(spaceOverride = enabledSpace)
+
+        assertActionsAreHorizontalAndOrdered()
+        composeRule.onNodeWithText("停用").assertIsDisplayed()
+    }
+
+    @Test
+    fun busyIndicatorStaysCenteredAtTheEndOfTheActionsRow() {
+        setContent(isGmsBusy = true)
+
+        assertActionsAreHorizontalAndOrdered()
+        val resetBounds = composeRule.onNodeWithTag("gms-reset-button")
+            .fetchSemanticsNode().boundsInRoot
+        val busyBounds = composeRule.onNodeWithTag("gms-busy-indicator")
+            .fetchSemanticsNode().boundsInRoot
+
+        assertTrue("Busy indicator should be after the reset button", resetBounds.right < busyBounds.left)
+        assertTrue(
+            "Busy indicator should be vertically centered with the action buttons",
+            abs(resetBounds.center.y - busyBounds.center.y) <= 1f,
+        )
+    }
+
+    @Test
     fun resetRequiresDestructiveConfirmation() {
         var reset: Pair<String, Boolean>? = null
         setContent(onReset = { id, reenable -> reset = id to reenable })
@@ -91,8 +126,13 @@ class GmsCompatibilityUiTest {
         onEnable: (String, Boolean) -> Unit = { _, _ -> },
         onReset: (String, Boolean) -> Unit = { _, _ -> },
         spaceOverride: GroupItem = space,
+        isGmsBusy: Boolean = false,
     ) {
-        val state = MainUiState(isRefreshing = false, groups = listOf(spaceOverride))
+        val state = MainUiState(
+            isRefreshing = false,
+            groups = listOf(spaceOverride),
+            gmsBusyGroupId = groupId.takeIf { isGmsBusy },
+        )
         composeRule.setContent {
             AppTwinTheme {
                 SpaceDetailScreen(
@@ -111,6 +151,19 @@ class GmsCompatibilityUiTest {
                 )
             }
         }
+    }
+
+    private fun assertActionsAreHorizontalAndOrdered() {
+        val toggleBounds = composeRule.onNodeWithTag("gms-toggle-button")
+            .fetchSemanticsNode().boundsInRoot
+        val resetBounds = composeRule.onNodeWithTag("gms-reset-button")
+            .fetchSemanticsNode().boundsInRoot
+
+        assertTrue("Toggle button should be before the reset button", toggleBounds.right < resetBounds.left)
+        assertTrue(
+            "Action buttons should share the same vertical center",
+            abs(toggleBounds.center.y - resetBounds.center.y) <= 1f,
+        )
     }
 
     private companion object {
