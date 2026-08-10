@@ -1,12 +1,19 @@
 package org.apptwin
 
 import android.app.Application
+import android.app.AlarmManager
+import android.app.AppOpsManager
 import android.Manifest
+import android.annotation.SuppressLint
 import android.content.pm.PackageManager
+import android.content.pm.PackageInfo
+import android.content.pm.PermissionInfo
 import android.content.Intent
 import android.net.Uri
 import android.os.Build
 import android.os.Environment
+import android.os.Process
+import android.provider.Settings
 import java.security.SecureRandom
 import org.apptwin.compatibility.CompatibilityAssessmentPolicy
 import org.apptwin.compatibility.CompatibilityLimitation
@@ -45,6 +52,11 @@ import org.apptwin.operations.OperationRecoveryDecision
 import org.apptwin.operations.OperationRecoveryHandler
 import org.apptwin.operations.OperationTracker
 import org.apptwin.operations.OperationTarget
+import org.apptwin.permissions.ClonePermissionCategory
+import org.apptwin.permissions.ClonePermissionPolicy
+import org.apptwin.permissions.ClonePermissionRequirement
+import org.apptwin.permissions.ClonePermissionTarget
+import org.apptwin.permissions.ClonePermissionVirtualScope
 import org.apptwin.revision.ActiveRevisionSummary
 import org.apptwin.revision.AndroidPackageRevisionImporter
 import org.apptwin.revision.RevisionImportResult
@@ -191,6 +203,9 @@ internal class AndroidMainOperations(private val application: Application) : Mai
                 }
             }
         }
+        val clonePermissions = ClonePermissionPolicy.aggregate(
+            readClonePermissionRequirements(groupSnapshot.groups, entries, warnings),
+        )
         return MainRefreshSnapshot(
             storage = storage,
             entries = entries,
@@ -199,6 +214,7 @@ internal class AndroidMainOperations(private val application: Application) : Mai
             dataWarnings = warnings,
             operations = operationStore.listPending(),
             permissions = permissions,
+            clonePermissions = clonePermissions,
             gmsCompatibility = gmsCompatibility,
         )
     }
@@ -556,10 +572,182 @@ internal class AndroidMainOperations(private val application: Application) : Mai
         Environment.getExternalStoragePublicDirectory(directoryType).listFiles()?.size ?: 0
     }.getOrDefault(0)
 
+    private fun readClonePermissionRequirements(
+        groups: List<Group>,
+        entries: List<org.apptwin.revision.InstalledAppEntry>,
+        warnings: MutableList<String>,
+    ): List<ClonePermissionRequirement> {
+        val labels = entries.associate { it.packageName to it.label }
+        val hostPermissions = hostRequestedPermissions()
+        return buildList {
+            groups.forEach groupLoop@ { group ->
+                val userId = group.environmentBinding?.internalId ?: return@groupLoop
+                group.apps.forEach appLoop@ { app ->
+                    val packageInfo = runCatching {
+                        VPackageManager.get().getPackageInfo(
+                            app.packageName,
+                            PackageManager.GET_PERMISSIONS,
+                            userId,
+                        )
+                    }.getOrNull() ?: sourcePermissionPackageInfo(app.packageName)
+                    if (packageInfo == null) {
+                        addPermissionWarning(warnings, group, app, "虛擬 package 不存在")
+                        return@appLoop
+                    }
+                    val target = ClonePermissionTarget(
+                        groupId = group.id,
+                        groupName = group.name,
+                        packageName = app.packageName,
+                        appLabel = labels[app.packageName] ?: app.packageName,
+                    )
+                    packageInfo.requestedPermissions.orEmpty().distinct().forEach { permission ->
+                        add(permissionRequirement(permission, target, hostPermissions))
+                    }
+                }
+            }
+        }
+    }
+
+    private fun permissionRequirement(
+        permission: String,
+        target: ClonePermissionTarget,
+        hostPermissions: Set<String>,
+    ): ClonePermissionRequirement {
+        val hostDeclared = permission in hostPermissions
+        val hostGranted = application.checkSelfPermission(permission) ==
+            PackageManager.PERMISSION_GRANTED
+        val permissionInfo = runCatching {
+            application.packageManager.getPermissionInfo(permission, 0)
+        }.getOrNull()
+        val label = permissionInfo?.loadLabel(application.packageManager)?.toString()
+            ?.takeIf(String::isNotBlank)
+            ?: permission.substringAfterLast('.')
+        val special = permission in SPECIAL_PERMISSIONS
+        val baseProtection = permissionInfo?.protectionLevel
+            ?.and(PermissionInfo.PROTECTION_MASK_BASE)
+        val category = when {
+            !hostDeclared && !hostGranted -> ClonePermissionCategory.UNSUPPORTED
+            special -> ClonePermissionCategory.SPECIAL
+            baseProtection == PermissionInfo.PROTECTION_DANGEROUS ->
+                ClonePermissionCategory.RUNTIME
+            baseProtection == PermissionInfo.PROTECTION_NORMAL ->
+                ClonePermissionCategory.AUTOMATIC
+            hostGranted -> ClonePermissionCategory.AUTOMATIC
+            else -> ClonePermissionCategory.UNSUPPORTED
+        }
+        val effectiveGranted = when (category) {
+            ClonePermissionCategory.SPECIAL -> specialPermissionGranted(permission)
+            ClonePermissionCategory.AUTOMATIC -> true
+            ClonePermissionCategory.RUNTIME -> hostGranted
+            ClonePermissionCategory.UNSUPPORTED -> false
+        }
+        val virtualScope = when {
+            category == ClonePermissionCategory.UNSUPPORTED ->
+                ClonePermissionVirtualScope.NOT_SUPPORTED
+            permission == Manifest.permission.CAMERA ||
+                permission == Manifest.permission.RECORD_AUDIO ->
+                ClonePermissionVirtualScope.CAMERA_MIC_PER_SPACE
+            else -> ClonePermissionVirtualScope.HOST_SHARED
+        }
+        return ClonePermissionRequirement(
+            permission = permission,
+            target = target,
+            label = label,
+            category = category,
+            virtualScope = virtualScope,
+            hostGranted = effectiveGranted,
+            canRequestRuntime = category == ClonePermissionCategory.RUNTIME && hostDeclared,
+        )
+    }
+
+    private fun hostRequestedPermissions(): Set<String> = runCatching {
+        val info = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            application.packageManager.getPackageInfo(
+                application.packageName,
+                PackageManager.PackageInfoFlags.of(PackageManager.GET_PERMISSIONS.toLong()),
+            )
+        } else {
+            @Suppress("DEPRECATION")
+            application.packageManager.getPackageInfo(
+                application.packageName,
+                PackageManager.GET_PERMISSIONS,
+            )
+        }
+        info.requestedPermissions.orEmpty().toSet()
+    }.getOrDefault(emptySet())
+
+    private fun sourcePermissionPackageInfo(packageName: String): PackageInfo? = runCatching {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            application.packageManager.getPackageInfo(
+                packageName,
+                PackageManager.PackageInfoFlags.of(PackageManager.GET_PERMISSIONS.toLong()),
+            )
+        } else {
+            @Suppress("DEPRECATION")
+            application.packageManager.getPackageInfo(
+                packageName,
+                PackageManager.GET_PERMISSIONS,
+            )
+        }
+    }.getOrNull()
+
+    @SuppressLint("InlinedApi")
+    private fun specialPermissionGranted(permission: String): Boolean = when (permission) {
+        Manifest.permission.MANAGE_EXTERNAL_STORAGE ->
+            Build.VERSION.SDK_INT >= Build.VERSION_CODES.R && Environment.isExternalStorageManager()
+        Manifest.permission.SYSTEM_ALERT_WINDOW -> Settings.canDrawOverlays(application)
+        Manifest.permission.WRITE_SETTINGS -> Settings.System.canWrite(application)
+        Manifest.permission.REQUEST_INSTALL_PACKAGES ->
+            application.packageManager.canRequestPackageInstalls()
+        Manifest.permission.SCHEDULE_EXACT_ALARM,
+        Manifest.permission.USE_EXACT_ALARM,
+        -> Build.VERSION.SDK_INT >= Build.VERSION_CODES.S &&
+            application.getSystemService(AlarmManager::class.java).canScheduleExactAlarms()
+        Manifest.permission.PACKAGE_USAGE_STATS -> {
+            val appOps = application.getSystemService(AppOpsManager::class.java)
+            val mode = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                appOps.unsafeCheckOpNoThrow(
+                    AppOpsManager.OPSTR_GET_USAGE_STATS,
+                    Process.myUid(),
+                    application.packageName,
+                )
+            } else {
+                @Suppress("DEPRECATION")
+                appOps.checkOpNoThrow(
+                    AppOpsManager.OPSTR_GET_USAGE_STATS,
+                    Process.myUid(),
+                    application.packageName,
+                )
+            }
+            mode == AppOpsManager.MODE_ALLOWED
+        }
+        else -> false
+    }
+
+    private fun addPermissionWarning(
+        warnings: MutableList<String>,
+        group: Group,
+        app: GroupApp,
+        reason: String,
+    ) {
+        val warning = "Group ${group.id}/${app.packageName} 權限無法讀取：$reason"
+        if (warning !in warnings) warnings += warning
+    }
+
+    @SuppressLint("InlinedApi")
     private companion object {
         val SUPPORTED_RUNTIME_PERMISSIONS = setOf(
             Manifest.permission.CAMERA,
             Manifest.permission.RECORD_AUDIO,
+        )
+        val SPECIAL_PERMISSIONS = setOf(
+            Manifest.permission.MANAGE_EXTERNAL_STORAGE,
+            Manifest.permission.SYSTEM_ALERT_WINDOW,
+            Manifest.permission.WRITE_SETTINGS,
+            Manifest.permission.REQUEST_INSTALL_PACKAGES,
+            Manifest.permission.SCHEDULE_EXACT_ALARM,
+            Manifest.permission.USE_EXACT_ALARM,
+            Manifest.permission.PACKAGE_USAGE_STATS,
         )
     }
 }

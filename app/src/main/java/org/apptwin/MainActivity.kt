@@ -13,6 +13,7 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.lifecycle.ViewModelProvider
 import com.lody.virtual.client.isolated.IsolatedWorkerProbe
+import org.apptwin.permissions.permissionSettingsDestination
 import org.apptwin.runtime.GroupAppRuntimeSupport
 import org.apptwin.runtime.mainActivityLaunchHosts
 import org.apptwin.ui.AppTwinApp
@@ -37,6 +38,7 @@ class MainActivity : ComponentActivity() {
             AppTwinApp(
                 viewModel = mainViewModel,
                 onOpenStorageSettings = ::openAllFilesAccessSettings,
+                onOpenPermissionSettings = ::openPermissionSettings,
                 onShareDiagnostics = ::shareDiagnostics,
             )
         }
@@ -113,10 +115,19 @@ class MainActivity : ComponentActivity() {
 
     private fun openAllFilesAccessSettings() {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) return
+        openPermissionSettings(android.Manifest.permission.MANAGE_EXTERNAL_STORAGE)
+    }
+
+    private fun openPermissionSettings(permission: String) {
         val packageUri = Uri.parse("package:$packageName")
-        val intent = Intent(Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION, packageUri)
-        runCatching { startActivity(intent) }
-            .onFailure { startActivity(Intent(Settings.ACTION_MANAGE_ALL_FILES_ACCESS_PERMISSION)) }
+        val destination = permissionSettingsDestination(permission)
+        val preferred = Intent(destination.action).apply {
+            if (destination.packageScoped) data = packageUri
+        }
+        val appDetails = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, packageUri)
+        runCatching { startActivity(preferred) }
+            .recoverCatching { startActivity(appDetails) }
+            .onFailure { startActivity(Intent(Settings.ACTION_APPLICATION_SETTINGS)) }
     }
 
     private fun shareDiagnostics(report: String) {
