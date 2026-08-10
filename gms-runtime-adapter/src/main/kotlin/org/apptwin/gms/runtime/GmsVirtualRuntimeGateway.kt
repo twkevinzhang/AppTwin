@@ -49,12 +49,21 @@ class VirtualCoreGmsRuntimeGateway(
         TRUSTED_PACKAGES.all { core.isAppInstalledAsUser(userId, it) }
 
     override fun installedVersionCode(userId: Int): Long? = runCatching {
-        val gmsVersion = core.getInstalledAppInfo(GMS_PACKAGE, 0)
-            ?.getPackageInfo(userId)?.versionCodeCompat()
-        val companionVersion = core.getInstalledAppInfo(COMPANION_PACKAGE, 0)
-            ?.getPackageInfo(userId)?.versionCodeCompat()
-        if (companionVersion == COMPANION_VERSION_CODE) gmsVersion else null
+        // PackageInfo returned by the virtual package manager intentionally exposes a newer
+        // guest-facing compatibility version for trusted GmsCore. Lifecycle convergence must
+        // compare the real staged artifact revision, so parse AppTwin's private APK copy instead.
+        val gmsVersion = installedArtifactVersionCode(GMS_PACKAGE, userId)
+        val companionVersion = installedArtifactVersionCode(COMPANION_PACKAGE, userId)
+        trustedBundleVersionCode(gmsVersion, companionVersion)
     }.getOrNull()
+
+    private fun installedArtifactVersionCode(packageName: String, userId: Int): Long? {
+        if (!core.isAppInstalledAsUser(userId, packageName)) return null
+        val installed = core.getInstalledAppInfo(packageName, 0) ?: return null
+        val archive = core.context.packageManager.getPackageArchiveInfo(installed.apkPath, 0)
+            ?: return null
+        return archive.versionCodeCompat()
+    }
 
     override fun hasPrivateState(userId: Int): Boolean {
         val externalRoot = core.context.getExternalFilesDir(null) ?: return true
@@ -137,6 +146,11 @@ class VirtualCoreGmsRuntimeGateway(
         val TRUSTED_PACKAGES = listOf(GMS_PACKAGE, COMPANION_PACKAGE)
     }
 }
+
+internal fun trustedBundleVersionCode(
+    gmsArtifactVersion: Long?,
+    companionArtifactVersion: Long?,
+): Long? = if (companionArtifactVersion == 84_022_630L) gmsArtifactVersion else null
 
 private fun PackageInfo.versionCodeCompat(): Long =
     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) longVersionCode else versionCode.toLong()

@@ -8,6 +8,7 @@
 #include <sys/stat.h>
 #include <sys/mman.h>
 #include <atomic>
+#include <mutex>
 #include <string>
 #include <fb/include/fb/ALog.h>
 
@@ -31,6 +32,8 @@ bool iu_loaded = false;
 
 static std::atomic<int> uid_override(-1);
 static bool uid_hook_installed = false;
+static std::mutex uniformer_start_mutex;
+static bool uniformer_started = false;
 static std::string proc_maps_host_package;
 static std::string proc_guest_process_name;
 
@@ -879,6 +882,7 @@ void hook_dlopen(int api_level) {
 void IOUniformer::startUniformer(const char *so_path, const char *host_package,
                                  const char *guest_process_name, int api_level,
                                  int preview_api_level) {
+    std::lock_guard<std::mutex> lock(uniformer_start_mutex);
     char api_level_chars[5];
     setenv("V_SO_PATH", so_path, 1);
     if (host_package != nullptr) {
@@ -893,6 +897,16 @@ void IOUniformer::startUniformer(const char *so_path, const char *host_package,
     setenv("V_API_LEVEL", api_level_chars, 1);
     sprintf(api_level_chars, "%i", preview_api_level);
     setenv("V_PREVIEW_API_LEVEL", api_level_chars, 1);
+
+    // This can run once from the library constructor (using inherited environment
+    // values) and again from NativeEngine after the guest binds. Re-hooking an
+    // already patched libc symbol may return our replacement as the trampoline;
+    // opendir would then recurse into new_opendir until the process stack overflows.
+    // Keep identity/environment refreshes above, but install the hooks only once.
+    if (uniformer_started) {
+        ALOGI("IOUniformer hooks already installed; refreshed guest identity only.");
+        return;
+    }
 
     void *handle = dlopen("libc.so", RTLD_NOW);
     if (handle) {
@@ -923,6 +937,7 @@ void IOUniformer::startUniformer(const char *so_path, const char *host_package,
         HOOK_SYMBOL(handle, execve);
         HOOK_SYMBOL(handle, statfs64);
         dlclose(handle);
+        uniformer_started = true;
     }
     // hook_dlopen(api_level);
 }

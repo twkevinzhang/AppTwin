@@ -443,6 +443,12 @@ public class TransactionHandlerProxy extends ClientTransactionHandler {
     }
 
     @Override
+    public void reportRelaunch(ActivityClientRecord r,
+                               PendingTransactionActions pendingActions) {
+        originalHandler.reportRelaunch(r, pendingActions);
+    }
+
+    @Override
     public void reportRelaunch(ActivityClientRecord r) {
         originalHandler.reportRelaunch(r);
     }

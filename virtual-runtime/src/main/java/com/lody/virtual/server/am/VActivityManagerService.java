@@ -626,6 +626,7 @@ public class VActivityManagerService extends IActivityManager.Stub
             if (r == null) {
                 return 0;
             }
+            r.clearStartedState(-1);
         }
         stopServiceCommon(r, ComponentUtils.toComponentName(serviceInfo));
         return 1;
@@ -638,7 +639,7 @@ public class VActivityManagerService extends IActivityManager.Stub
         synchronized (this) {
             r = token instanceof ServiceRecord ? (ServiceRecord) token : null;
             if (r == null || !containsServiceRecordLocked(r)
-                    || (r.startId != startId && startId != -1)) {
+                    || !r.clearStartedState(startId)) {
                 return false;
             }
         }
@@ -652,6 +653,15 @@ public class VActivityManagerService extends IActivityManager.Stub
         final List<IServiceConnection> connections = new ArrayList<>();
         synchronized (this) {
             if (!containsServiceRecordLocked(r)) {
+                return;
+            }
+            // stopSelf() only clears the started state. Android must keep a bound service alive
+            // until its final client disconnects. Gecko child services rely on this by calling
+            // stopSelf() from onBind(); retiring them here makes the content/GPU process exit
+            // before it can render its first frame.
+            if (r.hasActiveConnections()) {
+                VLog.i(TAG, "service-stop-deferred-bound " + className
+                        + " connections=" + r.getConnectionCount() + " token=" + r);
                 return;
             }
             bindings = new ArrayList<>(r.bindings);

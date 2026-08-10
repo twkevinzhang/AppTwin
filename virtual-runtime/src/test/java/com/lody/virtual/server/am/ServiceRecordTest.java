@@ -208,6 +208,33 @@ public class ServiceRecordTest {
     }
 
     @Test
+    public void stopSelfClearsStartedStateButBoundClientKeepsServiceAlive() {
+        ServiceRecord service = new ServiceRecord(37);
+        service.startId = 4;
+        IServiceConnection client = connection();
+        ServiceRecord.IntentBindRecord binding = service.addToBoundIntent(
+                new android.content.Intent("org.mozilla.gecko.BIND_CHILD"), client);
+
+        assertTrue(service.clearStartedState(-1));
+        assertEquals(0, service.startId);
+        assertTrue(service.hasActiveConnections());
+
+        assertTrue(binding.removeConnectionAndCheckIfLast(client));
+        assertFalse(service.hasActiveConnections());
+    }
+
+    @Test
+    public void staleStopSelfResultDoesNotClearNewerStartRequest() {
+        ServiceRecord service = new ServiceRecord(38);
+        service.startId = 7;
+
+        assertFalse(service.clearStartedState(6));
+        assertEquals(7, service.startId);
+        assertTrue(service.clearStartedState(7));
+        assertEquals(0, service.startId);
+    }
+
+    @Test
     public void clonedAccountsUseIndependentBindTokensAndRetirement() {
         ServiceRecord firstAccount = new ServiceRecord(41);
         ServiceRecord.IntentBindRecord firstBinding =

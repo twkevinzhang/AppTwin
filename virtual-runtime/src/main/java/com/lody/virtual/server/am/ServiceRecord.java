@@ -123,6 +123,27 @@ public class ServiceRecord extends Binder {
 		return count;
 	}
 
+	/**
+	 * Clears the service's started state when stopSelf/stopService is requested.
+	 *
+	 * <p>A bound service may clear its started state while clients remain connected. Android keeps
+	 * that service alive until the final client unbinds, so callers must check
+	 * {@link #hasActiveConnections()} before retiring this record.</p>
+	 */
+	boolean clearStartedState(int expectedStartId) {
+		synchronized (this) {
+			if (expectedStartId != -1 && startId != expectedStartId) {
+				return false;
+			}
+			startId = 0;
+			return true;
+		}
+	}
+
+	boolean hasActiveConnections() {
+		return getConnectionCount() > 0;
+	}
+
 
 	IntentBindRecord peekBinding(Intent service) {
 		synchronized (bindings) {

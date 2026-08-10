@@ -13,6 +13,55 @@ import java.lang.reflect.Method;
  */
 class MethodProxies {
 
+    static int findTargetSdkArgumentIndex(Object[] args, int targetSdkVersion) {
+        if (args == null) {
+            return -1;
+        }
+        for (int i = 0; i < args.length; i++) {
+            Object argument = args[i];
+            if (argument instanceof Integer && (int) argument == targetSdkVersion) {
+                return i;
+            }
+        }
+        return -1;
+    }
+
+    private static boolean downgradeTargetSdkArgument(Object[] args) {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) {
+            return false;
+        }
+        ApplicationInfo currentApplicationInfo = VClientImpl.get().getCurrentApplicationInfo();
+        if (currentApplicationInfo == null) {
+            return false;
+        }
+        int index = findTargetSdkArgumentIndex(
+                args, currentApplicationInfo.targetSdkVersion);
+        if (index == -1) {
+            return false;
+        }
+        args[index] = Build.VERSION_CODES.N_MR1;
+        return true;
+    }
+
+    static class RegisterContentObserver extends MethodProxy {
+
+        @Override
+        public String getMethodName() {
+            return "registerContentObserver";
+        }
+
+        @Override
+        public boolean beforeCall(Object who, Method method, Object... args) {
+            downgradeTargetSdkArgument(args);
+            return super.beforeCall(who, method, args);
+        }
+
+        @Override
+        public boolean isEnable() {
+            return isAppProcess();
+        }
+    }
+
     static class NotifyChange extends MethodProxy {
 
         @Override
@@ -31,16 +80,7 @@ class MethodProxies {
             }
             int targetSdkVersion = currentApplicationInfo.targetSdkVersion;
 
-            int length = args.length;
-            int index = -1;
-            for (int i = 0; i < length; i++) {
-                Object obj = args[length - 1];
-                if (obj != null && obj.getClass() == Integer.class) {
-                    if ((int) obj == targetSdkVersion) {
-                        index = i;
-                    }
-                }
-            }
+            int index = MethodProxies.findTargetSdkArgumentIndex(args, targetSdkVersion);
             /*
             In ContentService, it contains this code:
 
@@ -62,6 +102,10 @@ class MethodProxies {
             }
 
             return super.beforeCall(who, method, args);
+        }
+
+        static int findTargetSdkArgumentIndex(Object[] args, int targetSdkVersion) {
+            return MethodProxies.findTargetSdkArgumentIndex(args, targetSdkVersion);
         }
 
         @Override

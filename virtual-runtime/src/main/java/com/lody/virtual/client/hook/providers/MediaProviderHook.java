@@ -15,7 +15,7 @@ import java.lang.reflect.InvocationTargetException;
  * @author weishu
  * @date 2018/6/28.
  */
-class MediaProviderHook extends ProviderHook {
+class MediaProviderHook extends ExternalProviderHook {
     private static final String COLUMN_NAME = "_data";
 
     MediaProviderHook(Object base) {

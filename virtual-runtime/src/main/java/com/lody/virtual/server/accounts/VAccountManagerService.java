@@ -1602,7 +1602,20 @@ public class VAccountManagerService extends IAccountManager.Stub {
         private void unbind() {
             if (mAuthenticator != null) {
                 mAuthenticator = null;
-                mContext.unbindService(this);
+                // Authenticator callbacks arrive on a Binder thread carrying the guest's
+                // calling identity. The unbind is server-owned cleanup; forwarding that
+                // nested identity into VActivityManager makes it look like a cross-user
+                // guest operation and can abort delivery of an otherwise valid auth token.
+                long identity = Binder.clearCallingIdentity();
+                try {
+                    mContext.unbindService(this);
+                } catch (SecurityException e) {
+                    // Cleanup must never turn a successful authenticator response into
+                    // AccountManager.OperationCanceledException for the requesting app.
+                    Log.w(TAG, "Unable to unbind authenticator session", e);
+                } finally {
+                    Binder.restoreCallingIdentity(identity);
+                }
             }
         }
 

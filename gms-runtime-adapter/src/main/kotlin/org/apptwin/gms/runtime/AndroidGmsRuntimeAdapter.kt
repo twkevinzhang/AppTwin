@@ -29,12 +29,65 @@ fun interface GmsArtifactStageProvider {
 
 class GmsRuntimeObservationException : IllegalStateException("RUNTIME_OBSERVE_RETRYABLE")
 
-class AndroidGmsRuntimeAdapter(
+private data class TerminalStatePolling(
+    val timeoutMillis: Long,
+    val pollIntervalMillis: Long,
+    val monotonicTimeMillis: () -> Long,
+    val delay: (Long) -> Unit,
+) {
+    init {
+        require(timeoutMillis >= 0) { "timeoutMillis must not be negative" }
+        require(pollIntervalMillis > 0) { "pollIntervalMillis must be positive" }
+    }
+}
+
+class AndroidGmsRuntimeAdapter private constructor(
     private val bindings: GmsGroupBindingResolver,
     private val artifacts: GmsArtifactStageProvider,
     private val engine: GmsVirtualRuntimeGateway,
     private val receipts: GmsOperationReceiptStore,
+    private val terminalStatePolling: TerminalStatePolling,
 ) : GmsRuntimePort {
+    constructor(
+        bindings: GmsGroupBindingResolver,
+        artifacts: GmsArtifactStageProvider,
+        engine: GmsVirtualRuntimeGateway,
+        receipts: GmsOperationReceiptStore,
+    ) : this(
+        bindings = bindings,
+        artifacts = artifacts,
+        engine = engine,
+        receipts = receipts,
+        terminalStatePolling = TerminalStatePolling(
+            timeoutMillis = TERMINAL_STATE_TIMEOUT_MILLIS,
+            pollIntervalMillis = TERMINAL_STATE_POLL_INTERVAL_MILLIS,
+            monotonicTimeMillis = { System.nanoTime() / NANOS_PER_MILLISECOND },
+            delay = { delayMillis -> Thread.sleep(delayMillis) },
+        ),
+    )
+
+    internal constructor(
+        bindings: GmsGroupBindingResolver,
+        artifacts: GmsArtifactStageProvider,
+        engine: GmsVirtualRuntimeGateway,
+        receipts: GmsOperationReceiptStore,
+        terminalStateTimeoutMillis: Long,
+        terminalStatePollIntervalMillis: Long,
+        monotonicTimeMillis: () -> Long,
+        terminalStateDelay: (Long) -> Unit,
+    ) : this(
+        bindings = bindings,
+        artifacts = artifacts,
+        engine = engine,
+        receipts = receipts,
+        terminalStatePolling = TerminalStatePolling(
+            timeoutMillis = terminalStateTimeoutMillis,
+            pollIntervalMillis = terminalStatePollIntervalMillis,
+            monotonicTimeMillis = monotonicTimeMillis,
+            delay = terminalStateDelay,
+        ),
+    )
+
     override fun observe(groupId: GmsGroupId): GmsRuntimeObservation = try {
         val userId = bindings.virtualUserId(groupId.value)
         if (userId == null || userId <= 0 || !engine.isVirtualUserPresent(userId)) {
@@ -201,21 +254,68 @@ class AndroidGmsRuntimeAdapter(
         requireFullyAbsent: Boolean = false,
         requireBackgroundStopped: Boolean = false,
     ): GmsRuntimeMutationResult {
-        val observation = observeForMutation(groupId, userId)
-            ?: return GmsRuntimeMutationResult.RetryableFailure("RUNTIME_OBSERVE_RETRYABLE")
         val desired = if (releaseId == null) GmsDesiredState.DISABLED else GmsDesiredState.ENABLED
-        val reachedState = if (requireFullyAbsent) {
-            observation.isFullyAbsent()
+        val startedAt = terminalStatePolling.monotonicTimeMillis()
+        val maximumObservations = terminalStateMaximumObservations()
+        var observations = 0L
+        var observedRuntime = false
+        while (observations < maximumObservations) {
+            val observation = observeForMutation(groupId, userId)
+            observations += 1
+            if (observation != null) {
+                observedRuntime = true
+                val reachedState = if (requireFullyAbsent) {
+                    observation.isFullyAbsent()
+                } else {
+                    observation.satisfies(desired, releaseId)
+                }
+                val backgroundStopped = !requireBackgroundStopped ||
+                    backgroundForMutation(userId) == false
+                if (reachedState && backgroundStopped) {
+                    receipts.record(receipt)
+                    return GmsRuntimeMutationResult.Applied(observation)
+                }
+            }
+            if (observations >= maximumObservations) break
+            val elapsed = (terminalStatePolling.monotonicTimeMillis() - startedAt).coerceAtLeast(0)
+            val remaining = terminalStatePolling.timeoutMillis - elapsed
+            if (remaining <= 0) break
+            val delay = minOf(terminalStatePolling.pollIntervalMillis, remaining)
+            if (!delayTerminalStatePoll(delay)) {
+                return GmsRuntimeMutationResult.RetryableFailure(
+                    "RUNTIME_TERMINAL_STATE_RETRYABLE",
+                )
+            }
+        }
+        val code = if (observedRuntime) {
+            "RUNTIME_TERMINAL_STATE_RETRYABLE"
         } else {
-            observation.satisfies(desired, releaseId)
+            "RUNTIME_OBSERVE_RETRYABLE"
         }
-        val backgroundStopped = !requireBackgroundStopped ||
-            backgroundForMutation(userId) == false
-        if (!reachedState || !backgroundStopped) {
-            return GmsRuntimeMutationResult.RetryableFailure("RUNTIME_TERMINAL_STATE_RETRYABLE")
+        return GmsRuntimeMutationResult.RetryableFailure(code)
+    }
+
+    private fun terminalStateMaximumObservations(): Long {
+        val completeIntervals = terminalStatePolling.timeoutMillis /
+            terminalStatePolling.pollIntervalMillis
+        val partialInterval = if (
+            terminalStatePolling.timeoutMillis % terminalStatePolling.pollIntervalMillis == 0L
+        ) {
+            0L
+        } else {
+            1L
         }
-        receipts.record(receipt)
-        return GmsRuntimeMutationResult.Applied(observation)
+        return completeIntervals + partialInterval + 1L
+    }
+
+    private fun delayTerminalStatePoll(delayMillis: Long): Boolean = try {
+        terminalStatePolling.delay(delayMillis)
+        true
+    } catch (_: InterruptedException) {
+        Thread.currentThread().interrupt()
+        false
+    } catch (_: Exception) {
+        false
     }
 
     private fun observeBound(groupId: GmsGroupId, userId: Int): GmsRuntimeObservation {
@@ -391,6 +491,9 @@ class AndroidGmsRuntimeAdapter(
     private companion object {
         const val ACTION_ENABLE = "ENABLE"
         const val ACTION_DISABLE = "DISABLE"
+        const val TERMINAL_STATE_TIMEOUT_MILLIS = 45_000L
+        const val TERMINAL_STATE_POLL_INTERVAL_MILLIS = 500L
+        const val NANOS_PER_MILLISECOND = 1_000_000L
     }
 
     private sealed interface BindingResolution {

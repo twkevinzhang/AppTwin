@@ -1,6 +1,7 @@
 package com.lody.virtual.client.hook.proxies.am;
 
 import android.app.ActivityManager;
+import android.content.ComponentName;
 import android.content.Context;
 import android.content.pm.PackageManager;
 import android.os.Build;
@@ -79,7 +80,9 @@ public class ActivityManagerStub extends MethodInvocationProxy<MethodInvocationS
             addMethodProxy(new ReplaceLastUidMethodProxy("checkPermissionWithToken"));
             addMethodProxy(new isUserRunning());
             addMethodProxy(new ResultStaticMethodProxy("updateConfiguration", 0));
+            addMethodProxy(new IgnoreVirtualServiceGroupUpdate());
             addMethodProxy(new ReplaceCallingPkgMethodProxy("setAppLockedVerifying"));
+            addMethodProxy(new RewriteActivityLocusContext());
             addMethodProxy(new StaticMethodProxy("checkUriPermission") {
                 @Override
                 public Object afterCall(Object who, Method method, Object[] args, Object result) throws Throwable {
@@ -158,5 +161,42 @@ public class ActivityManagerStub extends MethodInvocationProxy<MethodInvocationS
             int userId = (int) args[0];
             return userId == 0;
         }
+    }
+
+    /**
+     * Service groups are physical-AMS scheduling metadata and cannot be applied to a virtual
+     * IServiceConnection. Letting this escape makes the system reject Firefox's Gecko child
+     * connection and leaves a fatal JNI RemoteException in the guest process.
+     */
+    static final class IgnoreVirtualServiceGroupUpdate extends ResultStaticMethodProxy {
+        IgnoreVirtualServiceGroupUpdate() {
+            super("updateServiceGroup", null);
+        }
+    }
+
+    /** Attributes physical ActivityManager locus updates to the host UID/package pair. */
+    private static final class RewriteActivityLocusContext extends StaticMethodProxy {
+        RewriteActivityLocusContext() {
+            super("setActivityLocusContext");
+        }
+
+        @Override
+        public boolean beforeCall(Object who, Method method, Object... args) {
+            if (args != null && args.length > 0 && args[0] instanceof ComponentName) {
+                ComponentName guest = (ComponentName) args[0];
+                String[] identity = locusComponentIdentity(guest.getClassName(), getHostPkg());
+                if (identity != null) {
+                    args[0] = new ComponentName(identity[0], identity[1]);
+                }
+            }
+            return super.beforeCall(who, method, args);
+        }
+    }
+
+    static String[] locusComponentIdentity(String guestClassName, String hostPackage) {
+        if (guestClassName == null || hostPackage == null || hostPackage.isEmpty()) {
+            return null;
+        }
+        return new String[]{hostPackage, guestClassName};
     }
 }

@@ -67,6 +67,42 @@ class AndroidGmsRuntimeAdapterTest {
     }
 
     @Test
+    fun `enable waits for delayed runtime visibility and reaches terminal state`() {
+        val fixture = Fixture(
+            terminalStateTimeoutMillis = 45_000,
+            terminalStatePollIntervalMillis = 500,
+        )
+        fixture.engine.delayedInstalledObservations = 62
+
+        val result = fixture.adapter.ensureEnabled(groupA, release(), operationA)
+
+        assertTrue(result is GmsRuntimeMutationResult.Applied)
+        assertEquals(31_000, fixture.elapsedMillis)
+        assertEquals(62, fixture.terminalStateDelays.size)
+        assertTrue(fixture.terminalStateDelays.all { it == 500L })
+        assertEquals(1, fixture.receipts.recordedCount)
+    }
+
+    @Test
+    fun `enable terminal polling stops at deadline and remains retryable`() {
+        val fixture = Fixture(
+            terminalStateTimeoutMillis = 1_500,
+            terminalStatePollIntervalMillis = 500,
+        )
+        fixture.engine.delayedInstalledObservations = Int.MAX_VALUE
+
+        val result = fixture.adapter.ensureEnabled(groupA, release(), operationA)
+
+        assertEquals(
+            GmsRuntimeMutationResult.RetryableFailure("RUNTIME_TERMINAL_STATE_RETRYABLE"),
+            result,
+        )
+        assertEquals(1_500, fixture.elapsedMillis)
+        assertEquals(listOf(500L, 500L, 500L), fixture.terminalStateDelays)
+        assertEquals(0, fixture.receipts.recordedCount)
+    }
+
+    @Test
     fun `disable stops only A background and preserves its private data`() {
         val fixture = Fixture()
         fixture.adapter.ensureEnabled(groupA, release(), operationA)
@@ -273,14 +309,19 @@ class AndroidGmsRuntimeAdapterTest {
         )
     }
 
-    private inner class Fixture {
+    private inner class Fixture(
+        terminalStateTimeoutMillis: Long = 45_000,
+        terminalStatePollIntervalMillis: Long = 500,
+    ) {
         val bindings = linkedMapOf("group-a" to 11, "group-b" to 12)
         val engine = FakeEngine().apply { presentUsers += listOf(11, 12) }
         val receipts = MemoryReceipts()
+        val terminalStateDelays = mutableListOf<Long>()
+        var elapsedMillis = 0L
         var artifactFailure: ArtifactSourceFailure? = null
         val adapter = AndroidGmsRuntimeAdapter(
-            GmsGroupBindingResolver { bindings[it] },
-            GmsArtifactStageProvider {
+            bindings = GmsGroupBindingResolver { bindings[it] },
+            artifacts = GmsArtifactStageProvider {
                 artifactFailure?.let {
                     throw ArtifactSourceException(it, "raw /private/path token=secret")
                 }
@@ -292,15 +333,26 @@ class AndroidGmsRuntimeAdapterTest {
                     )
                 }
             },
-            engine,
-            receipts,
+            engine = engine,
+            receipts = receipts,
+            terminalStateTimeoutMillis = terminalStateTimeoutMillis,
+            terminalStatePollIntervalMillis = terminalStatePollIntervalMillis,
+            monotonicTimeMillis = { elapsedMillis },
+            terminalStateDelay = { delayMillis ->
+                terminalStateDelays += delayMillis
+                elapsedMillis += delayMillis
+            },
         )
     }
 
     private class MemoryReceipts : GmsOperationReceiptStore {
         private val values = mutableSetOf<GmsOperationReceipt>()
+        var recordedCount = 0
+            private set
+
         override fun contains(receipt: GmsOperationReceipt): Boolean = receipt in values
         override fun record(receipt: GmsOperationReceipt) {
+            recordedCount += 1
             values += receipt
         }
     }
@@ -326,12 +378,17 @@ class AndroidGmsRuntimeAdapterTest {
         val uninstallUsers = mutableListOf<Int>()
         val provenances = mutableListOf<TrustedPackageProvenance>()
         var throwOnObservation = false
+        var delayedInstalledObservations = 0
 
         fun state(userId: Int): State = states.getOrPut(userId, ::State)
 
         override fun isVirtualUserPresent(userId: Int): Boolean = userId in presentUsers
         override fun isInstalled(userId: Int): Boolean {
             if (throwOnObservation) error("raw path and token")
+            if (state(userId).installed && delayedInstalledObservations > 0) {
+                delayedInstalledObservations -= 1
+                return false
+            }
             return state(userId).installed
         }
         override fun installedVersionCode(userId: Int): Long? = state(userId).version
