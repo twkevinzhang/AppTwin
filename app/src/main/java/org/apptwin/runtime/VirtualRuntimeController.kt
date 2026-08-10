@@ -16,6 +16,7 @@ import com.lody.virtual.client.ipc.VPackageManager
 import com.lody.virtual.os.VEnvironment
 import com.lody.virtual.os.VUserManager
 import com.lody.virtual.remote.PreparedActivityLaunch
+import com.lody.virtual.remote.StubActivityRecord
 import java.io.BufferedInputStream
 import java.io.File
 import java.io.FileInputStream
@@ -79,6 +80,7 @@ class VirtualRuntimeController internal constructor(
         awaitAcknowledgement = { launchId, timeoutMs ->
             VActivityManager.get().awaitPreparedActivityLaunch(launchId, timeoutMs)
         },
+        hasExpectedGuestActivity = ::hasExpectedGuestActivity,
         cancelAcknowledgement = { launchId ->
             VActivityManager.get().cancelPreparedActivityLaunch(launchId)
         },
@@ -307,6 +309,31 @@ class VirtualRuntimeController internal constructor(
         }
     }
 
+    private fun hasExpectedGuestActivity(
+        expectedPackage: String,
+        environmentId: Int,
+        prepared: PreparedActivityLaunch,
+    ): Boolean {
+        val activityManager =
+            appContext.getSystemService(Context.ACTIVITY_SERVICE) as ActivityManager
+        @Suppress("DEPRECATION")
+        val physicalTask = activityManager.getRunningTasks(1).firstOrNull() ?: return false
+        val taskRecord = StubActivityRecord(physicalTask.baseIntent)
+        @Suppress("DEPRECATION")
+        val taskId = physicalTask.id
+        val virtualTask = VActivityManager.get().getTaskInfo(taskId) ?: return false
+        return matchesExpectedGuestActivity(
+            expectedPackage = expectedPackage,
+            expectedEnvironmentId = environmentId,
+            taskEnvironmentId = taskRecord.userId,
+            topActivityPackage = virtualTask.topActivity?.packageName,
+            preparedTaskId = prepared.taskId,
+            preparedLaunchId = requireNotNull(prepared.launchId),
+            taskId = taskId,
+            taskPreparedLaunchId = taskRecord.preparedLaunchId,
+        )
+    }
+
     private companion object {
         const val TAG = "AppTwinRuntime"
         fun environmentPrefix(groupId: String): String = "AppTwin:group:$groupId"
@@ -399,8 +426,14 @@ internal class HostActivityLaunchAdapter<Host : Any>(
     private val dispatchToMain: (Runnable) -> Boolean,
     private val isMainThread: () -> Boolean,
     private val awaitAcknowledgement: (String, Long) -> Boolean,
+    private val hasExpectedGuestActivity:
+        (String, Int, PreparedActivityLaunch) -> Boolean = { _, _, _ -> false },
     private val cancelAcknowledgement: (String) -> Unit,
     private val acknowledgementTimeoutMs: Long = 5_000L,
+    private val activityConfirmationTimeoutMs: Long = 1_000L,
+    private val activityConfirmationPollMs: Long = 50L,
+    private val monotonicTimeMs: () -> Long = { android.os.SystemClock.elapsedRealtime() },
+    private val pause: (Long) -> Unit = Thread::sleep,
     private val mainDispatchTimeoutMs: Long = 5_000L,
 ) {
     fun launch(intent: Intent, expectedPackage: String, userId: Int): PreparedActivityLaunch {
@@ -438,7 +471,12 @@ internal class HostActivityLaunchAdapter<Host : Any>(
                 )
             } else {
                 acknowledged = awaitAcknowledgement(launchId, acknowledgementTimeoutMs)
-                if (acknowledged) {
+                val guestActivityStarted = acknowledged || awaitExpectedGuestActivity(
+                    expectedPackage,
+                    userId,
+                    prepared,
+                )
+                if (guestActivityStarted) {
                     prepared
                 } else {
                     PreparedActivityLaunch.failure(
@@ -459,6 +497,34 @@ internal class HostActivityLaunchAdapter<Host : Any>(
             }
         }
         return result
+    }
+
+    private fun awaitExpectedGuestActivity(
+        expectedPackage: String,
+        userId: Int,
+        prepared: PreparedActivityLaunch,
+    ): Boolean {
+        // A splash activity can destroy the prepared token before its successor reaches onResume.
+        // Confirm only the exact foreground task produced by this prepared launch.
+        require(activityConfirmationTimeoutMs >= 0L)
+        require(activityConfirmationPollMs > 0L)
+        val deadline = monotonicTimeMs() + activityConfirmationTimeoutMs
+        while (true) {
+            val confirmed = try {
+                hasExpectedGuestActivity(expectedPackage, userId, prepared)
+            } catch (_: Exception) {
+                return false
+            }
+            if (confirmed) return true
+            val remainingMs = deadline - monotonicTimeMs()
+            if (remainingMs <= 0L) return false
+            try {
+                pause(minOf(activityConfirmationPollMs, remainingMs))
+            } catch (_: InterruptedException) {
+                Thread.currentThread().interrupt()
+                return false
+            }
+        }
     }
 
     private fun <T> callOnMain(block: () -> T): Result<T> {
@@ -499,6 +565,26 @@ internal class HostActivityLaunchAdapter<Host : Any>(
         }
         return checkNotNull(outcome)
     }
+}
+
+internal fun matchesExpectedGuestActivity(
+    expectedPackage: String,
+    expectedEnvironmentId: Int,
+    taskEnvironmentId: Int,
+    topActivityPackage: String?,
+    preparedTaskId: Int,
+    preparedLaunchId: String,
+    taskId: Int,
+    taskPreparedLaunchId: String?,
+): Boolean {
+    val isPreparedTask = if (preparedTaskId >= 0) {
+        taskId == preparedTaskId
+    } else {
+        taskPreparedLaunchId == preparedLaunchId
+    }
+    return isPreparedTask &&
+        taskEnvironmentId == expectedEnvironmentId &&
+        topActivityPackage == expectedPackage
 }
 
 private fun PackageInfo.versionCodeCompat(): Long =

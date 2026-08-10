@@ -78,6 +78,8 @@ public class TransactionHandlerApi37SignatureTest {
                 MergedConfiguration.class, boolean.class, ActivityWindowInfo.class, int.class);
         assertEquals(ActivityClientRecord.class, relaunch.getReturnType());
         assertVoidMethod(handlerClass, "reportRefresh", ActivityClientRecord.class);
+        assertVoidMethod(handlerClass, "reportRelaunch", ActivityClientRecord.class,
+                PendingTransactionActions.class);
         assertVoidMethod(handlerClass, "reportRelaunch", ActivityClientRecord.class);
     }
 

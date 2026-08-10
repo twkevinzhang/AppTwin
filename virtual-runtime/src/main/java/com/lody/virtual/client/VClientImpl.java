@@ -75,6 +75,7 @@ import mirror.android.content.pm.ApplicationInfoN;
 import mirror.android.providers.Settings;
 import mirror.android.renderscript.RenderScriptCacheDir;
 import mirror.android.security.net.config.ApplicationConfig;
+import mirror.android.security.net.config.NetworkSecurityConfigProvider;
 import mirror.android.view.HardwareRenderer;
 import mirror.android.view.RenderScript;
 import mirror.android.view.ThreadedRenderer;
@@ -432,6 +433,13 @@ public final class VClientImpl extends IVClient.Stub {
         if (Build.VERSION.SDK_INT >= 30)
             ApplicationConfig.setDefaultInstance.call(new Object[] { null });
         mInitialApplication = LoadedApk.makeApplication.call(data.info, false, null);
+        if (Build.VERSION.SDK_INT >= 30) {
+            // ActivityThread normally refreshes the process-wide network security
+            // configuration when binding an application. Virtual binding bypasses that
+            // path, so leaving the default instance cleared makes the platform PKIX
+            // TrustManagerFactory unusable ("TrustManagerFactory not initialized").
+            NetworkSecurityConfigProvider.handleNewApplication.call(mInitialApplication);
+        }
 
         mirror.android.app.ActivityThread.mInitialApplication.set(mainThread, mInitialApplication);
         ContextFixer.fixContext(mInitialApplication);

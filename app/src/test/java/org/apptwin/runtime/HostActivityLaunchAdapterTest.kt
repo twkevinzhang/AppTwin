@@ -75,6 +75,54 @@ class HostActivityLaunchAdapterTest {
     }
 
     @Test
+    fun `exact guest task confirms launch when startup transition misses ACK`() {
+        val events = mutableListOf<String>()
+        var nowMs = 0L
+        var probeCount = 0
+        var cancelled: String? = null
+        val adapter = HostActivityLaunchAdapter(
+            prepareActivity = { _, _, _ ->
+                PreparedActivityLaunch.hostStartRequired(
+                    Intent("test.prepared"),
+                    "user-2-launch",
+                )
+            },
+            resumedHost = { "visible-host" },
+            startActivity = { _, _ -> events += "start" },
+            moveTaskToFront = { _, _ -> error("new launch must not reuse a task") },
+            dispatchToMain = ::runImmediately,
+            isMainThread = { false },
+            awaitAcknowledgement = { _, _ ->
+                events += "ack-missed"
+                false
+            },
+            hasExpectedGuestActivity = { packageName, environmentId, prepared ->
+                probeCount += 1
+                events += "task-probe-$probeCount"
+                packageName == "com.example.guest" &&
+                    environmentId == 2 &&
+                    prepared.launchId == "user-2-launch" &&
+                    probeCount == 3
+            },
+            cancelAcknowledgement = { cancelled = it },
+            acknowledgementTimeoutMs = 10L,
+            activityConfirmationTimeoutMs = 100L,
+            activityConfirmationPollMs = 25L,
+            monotonicTimeMs = { nowMs },
+            pause = { nowMs += it },
+        )
+
+        val result = adapter.launch(Intent("test.request"), "com.example.guest", 2)
+
+        assertTrue(result.isSuccess)
+        assertEquals(
+            listOf("start", "ack-missed", "task-probe-1", "task-probe-2", "task-probe-3"),
+            events,
+        )
+        assertEquals("user-2-launch", cancelled)
+    }
+
+    @Test
     fun `environment two launch rejects stale environment one task without exact ACK`() {
         var movedTask = -1
         var cancelled: String? = null
@@ -92,6 +140,7 @@ class HostActivityLaunchAdapterTest {
             awaitAcknowledgement = { _, _ -> resumedEnvironmentId == 2 },
             cancelAcknowledgement = { cancelled = it },
             acknowledgementTimeoutMs = 10L,
+            activityConfirmationTimeoutMs = 0L,
         )
 
         val result = adapter.launch(Intent("test.request"), "com.example.guest", 2)
@@ -100,6 +149,34 @@ class HostActivityLaunchAdapterTest {
         assertEquals("Expected Group activity did not resume", result.failureReason)
         assertEquals(81, movedTask)
         assertEquals("user-2-reuse", cancelled)
+    }
+
+    @Test
+    fun `guest task probe failure remains a launch failure and cleans up ACK`() {
+        var cancelled: String? = null
+        val adapter = HostActivityLaunchAdapter(
+            prepareActivity = { _, _, _ ->
+                PreparedActivityLaunch.hostStartRequired(
+                    Intent("test.prepared"),
+                    "user-2-launch",
+                )
+            },
+            resumedHost = { "visible-host" },
+            startActivity = { _, _ -> Unit },
+            moveTaskToFront = { _, _ -> error("new launch must not reuse a task") },
+            dispatchToMain = ::runImmediately,
+            isMainThread = { false },
+            awaitAcknowledgement = { _, _ -> false },
+            hasExpectedGuestActivity = { _, _, _ -> error("task service unavailable") },
+            cancelAcknowledgement = { cancelled = it },
+            acknowledgementTimeoutMs = 10L,
+        )
+
+        val result = adapter.launch(Intent("test.request"), "com.example.guest", 2)
+
+        assertFalse(result.isSuccess)
+        assertEquals("Expected Group activity did not resume", result.failureReason)
+        assertEquals("user-2-launch", cancelled)
     }
 
     @Test
@@ -123,6 +200,82 @@ class HostActivityLaunchAdapterTest {
 
         assertFalse(result.isSuccess)
         assertFalse(prepared)
+    }
+
+    @Test
+    fun `guest task confirmation requires exact launch environment package and task`() {
+        assertTrue(
+            matchesExpectedGuestActivity(
+                expectedPackage = "com.example.guest",
+                expectedEnvironmentId = 2,
+                taskEnvironmentId = 2,
+                topActivityPackage = "com.example.guest",
+                preparedTaskId = -1,
+                preparedLaunchId = "launch-new",
+                taskId = 73,
+                taskPreparedLaunchId = "launch-new",
+            ),
+        )
+        assertFalse(
+            matchesExpectedGuestActivity(
+                expectedPackage = "com.example.guest",
+                expectedEnvironmentId = 2,
+                taskEnvironmentId = 1,
+                topActivityPackage = "com.example.guest",
+                preparedTaskId = -1,
+                preparedLaunchId = "launch-new",
+                taskId = 73,
+                taskPreparedLaunchId = "launch-new",
+            ),
+        )
+        assertFalse(
+            matchesExpectedGuestActivity(
+                expectedPackage = "com.example.guest",
+                expectedEnvironmentId = 2,
+                taskEnvironmentId = 2,
+                topActivityPackage = "com.example.other",
+                preparedTaskId = -1,
+                preparedLaunchId = "launch-new",
+                taskId = 73,
+                taskPreparedLaunchId = "launch-new",
+            ),
+        )
+        assertFalse(
+            matchesExpectedGuestActivity(
+                expectedPackage = "com.example.guest",
+                expectedEnvironmentId = 2,
+                taskEnvironmentId = 2,
+                topActivityPackage = "com.example.guest",
+                preparedTaskId = -1,
+                preparedLaunchId = "launch-new",
+                taskId = 73,
+                taskPreparedLaunchId = "stale-launch",
+            ),
+        )
+        assertTrue(
+            matchesExpectedGuestActivity(
+                expectedPackage = "com.example.guest",
+                expectedEnvironmentId = 2,
+                taskEnvironmentId = 2,
+                topActivityPackage = "com.example.guest",
+                preparedTaskId = 73,
+                preparedLaunchId = "launch-reuse",
+                taskId = 73,
+                taskPreparedLaunchId = null,
+            ),
+        )
+        assertFalse(
+            matchesExpectedGuestActivity(
+                expectedPackage = "com.example.guest",
+                expectedEnvironmentId = 2,
+                taskEnvironmentId = 2,
+                topActivityPackage = "com.example.guest",
+                preparedTaskId = 73,
+                preparedLaunchId = "launch-reuse",
+                taskId = 74,
+                taskPreparedLaunchId = null,
+            ),
+        )
     }
 
     @Test

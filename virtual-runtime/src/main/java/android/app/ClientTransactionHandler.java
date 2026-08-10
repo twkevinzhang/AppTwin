@@ -316,6 +316,10 @@ public abstract class ClientTransactionHandler {
      * */
     public abstract void reportRelaunch(IBinder token, PendingTransactionActions pendingActions);
 
+    // Android 12 / API 31
+    public abstract void reportRelaunch(ActivityThread.ActivityClientRecord r,
+            PendingTransactionActions pendingActions);
+
     // API 37
     public abstract void reportRelaunch(ActivityThread.ActivityClientRecord r);
     public abstract void reportRefresh(ActivityThread.ActivityClientRecord r);
