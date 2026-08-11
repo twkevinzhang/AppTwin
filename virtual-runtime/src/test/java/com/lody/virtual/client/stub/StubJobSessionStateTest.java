@@ -11,8 +11,58 @@ import java.util.Collections;
 import java.util.List;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 public class StubJobSessionStateTest {
+
+    @Test
+    public void jobBindClearsInheritedSystemIdentityAndRestoresItAfterSuccess() {
+        List<String> events = new ArrayList<>();
+        StubJob.CallingIdentityController identity = new StubJob.CallingIdentityController() {
+            @Override
+            public long clearCallingIdentity() {
+                events.add("clear");
+                return 42L;
+            }
+
+            @Override
+            public void restoreCallingIdentity(long token) {
+                events.add("restore:" + token);
+            }
+        };
+
+        assertTrue(StubJob.bindWithCleanCallingIdentity(identity, () -> {
+            events.add("bind");
+            return true;
+        }));
+        assertEquals(java.util.Arrays.asList("clear", "bind", "restore:42"), events);
+    }
+
+    @Test
+    public void jobBindRestoresInheritedSystemIdentityWhenBindingThrows() {
+        AtomicBoolean restored = new AtomicBoolean(false);
+        StubJob.CallingIdentityController identity = new StubJob.CallingIdentityController() {
+            @Override
+            public long clearCallingIdentity() {
+                return 73L;
+            }
+
+            @Override
+            public void restoreCallingIdentity(long token) {
+                assertEquals(73L, token);
+                restored.set(true);
+            }
+        };
+
+        try {
+            StubJob.bindWithCleanCallingIdentity(identity, () -> {
+                throw new IllegalStateException("bind failed");
+            });
+        } catch (IllegalStateException expected) {
+            assertEquals("bind failed", expected.getMessage());
+        }
+        assertTrue(restored.get());
+    }
 
     @Test
     public void startedBindingClaimsUnbindExactlyOnceAcrossRepeatedCleanup() {

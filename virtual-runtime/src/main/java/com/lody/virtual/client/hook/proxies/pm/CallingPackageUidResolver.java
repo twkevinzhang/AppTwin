@@ -28,6 +28,11 @@ final class CallingPackageUidResolver {
         return requestedUid;
     }
 
+    static boolean belongsToCurrentVirtualUser(int uid, int currentVUid) {
+        return uid >= 0
+                && VUserHandle.getUserId(uid) == VUserHandle.getUserId(currentVUid);
+    }
+
     static boolean mayExposeCurrentGroupCandidates(
             int requestedUid,
             int hostUid,

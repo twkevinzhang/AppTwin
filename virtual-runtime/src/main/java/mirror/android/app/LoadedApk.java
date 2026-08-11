@@ -11,6 +11,7 @@ import android.content.pm.ApplicationInfo;
 import android.os.Handler;
 import android.os.IInterface;
 
+import java.io.File;
 import java.lang.ref.WeakReference;
 
 import mirror.MethodParams;
@@ -21,6 +22,10 @@ import mirror.RefObject;
 public class LoadedApk {
     public static Class Class = RefClass.load(LoadedApk.class, "android.app.LoadedApk");
     public static RefObject<ApplicationInfo> mApplicationInfo;
+    public static RefObject<String> mDataDir;
+    public static RefObject<File> mDataDirFile;
+    public static RefObject<File> mCredentialProtectedDataDirFile;
+    public static RefObject<File> mDeviceProtectedDataDirFile;
     @MethodParams({boolean.class, Instrumentation.class})
     public static RefMethod<Application> makeApplication;
     @MethodParams({ServiceConnection.class, Context.class, Handler.class, int.class})

@@ -366,11 +366,21 @@ public final class VClientImpl extends IVClient.Stub {
         NativeEngine.launchEngine();
         Object mainThread = VirtualCore.mainThread();
         NativeEngine.startDexOverride();
+        // startIOUniformer() must see the physical virtual-data directories so it can
+        // redirect canonical guest paths to them. Once the redirects are active, expose
+        // canonical paths before createPackageContext() constructs LoadedApk.
+        GuestDataPathMapper.apply(data.appInfo);
         // Android 12 records a LoadedApk security violation when the guest context is created
         // while ActivityThread still identifies the process as the host. Establish the virtual
         // identity first so later guest createPackageContext(INCLUDE_CODE) calls can reuse it.
         Object boundApp = fixBoundApp(mBoundApplication);
         Context context = createPackageContext(data.appInfo.packageName);
+        mBoundApplication.info = ContextImpl.mPackageInfo.get(context);
+        ApplicationInfo applicationInfo = LoadedApk.mApplicationInfo.get(data.info);
+        GuestCodePathMapper.apply(applicationInfo, info);
+        // ContextImpl derives and caches files/cache/code-cache paths from LoadedApk. Correct
+        // every data-directory field before the first Context directory accessor is called.
+        GuestDataPathMapper.applyToLoadedApk(data.info, applicationInfo);
         try {
             // anti-virus, fuck ESET-NOD32: a variant of Android/AdDisplay.AdLock.AL potentially unwanted
             // we can make direct call... use reflect to bypass.
@@ -405,7 +415,6 @@ public final class VClientImpl extends IVClient.Stub {
                 RenderScript.setupDiskCache.call(codeCacheDir);
             }
         }
-        mBoundApplication.info = ContextImpl.mPackageInfo.get(context);
         mirror.android.app.ActivityThread.AppBindData.info.set(boundApp, data.info);
         VMRuntime.setTargetSdkVersion.call(VMRuntime.getRuntime.call(), data.appInfo.targetSdkVersion);
 
@@ -414,8 +423,11 @@ public final class VClientImpl extends IVClient.Stub {
             InvocationStubManager.getInstance().checkEnv(AppInstrumentation.class);
         }
 
-        ApplicationInfo applicationInfo = LoadedApk.mApplicationInfo.get(data.info);
-        GuestCodePathMapper.apply(applicationInfo, info);
+        // Guest frameworks may capture data paths and start worker threads from
+        // attachBaseContext(). Expose the canonical package paths before application
+        // construction; the native uniformer redirects their I/O to the private host
+        // directory, including chmod/fchmodat used by split-native-library loaders.
+        GuestDataPathMapper.applyToLoadedApk(data.info, applicationInfo);
         if (Build.VERSION.SDK_INT >= 26 && applicationInfo.splitNames == null) {
             applicationInfo.splitNames = new String[1];
         }
@@ -433,6 +445,7 @@ public final class VClientImpl extends IVClient.Stub {
         if (Build.VERSION.SDK_INT >= 30)
             ApplicationConfig.setDefaultInstance.call(new Object[] { null });
         mInitialApplication = LoadedApk.makeApplication.call(data.info, false, null);
+        GuestDataPathMapper.applyToLoadedApk(data.info, applicationInfo);
         if (Build.VERSION.SDK_INT >= 30) {
             // ActivityThread normally refreshes the process-wide network security
             // configuration when binding an application. Virtual binding bypasses that
@@ -457,6 +470,8 @@ public final class VClientImpl extends IVClient.Stub {
         VirtualCore.get().getComponentDelegate().beforeApplicationCreate(mInitialApplication);
         try {
             mInstrumentation.callApplicationOnCreate(mInitialApplication);
+            GuestDynamicModuleCompat.afterApplicationCreate(
+                    packageName, mInitialApplication.getClassLoader());
             InvocationStubManager.getInstance().checkEnv(HCallbackStub.class);
             if (conflict) {
                 InvocationStubManager.getInstance().checkEnv(AppInstrumentation.class);

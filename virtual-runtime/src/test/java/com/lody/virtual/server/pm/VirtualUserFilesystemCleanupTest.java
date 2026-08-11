@@ -24,6 +24,24 @@ public class VirtualUserFilesystemCleanupTest {
     }
 
     @Test
+    public void guestReadOnlyDirectoryIsMadeOwnerWritableBeforeDeletion() throws Exception {
+        File root = Files.createTempDirectory("apptwin-readonly-cleanup").toFile();
+        File extractedLibraries = new File(root, "package/lib-compressed");
+        if (!extractedLibraries.mkdirs()) throw new IOException("fixture");
+        File library = new File(extractedLibraries, "libguest.so");
+        assertTrue(library.createNewFile());
+        assertTrue(extractedLibraries.setWritable(false, true));
+
+        try {
+            VUserManagerService.removeDirectoryRecursiveOrThrow(root);
+            assertFalse(root.exists());
+        } finally {
+            if (extractedLibraries.exists()) extractedLibraries.setWritable(true, true);
+            if (root.exists()) VUserManagerService.removeDirectoryRecursiveOrThrow(root);
+        }
+    }
+
+    @Test
     public void externalStorageUnavailableIsReportedFailClosed() {
         assertThrows(IOException.class,
                 () -> VUserManagerService.requireExternalFilesRoot(null));

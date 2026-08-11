@@ -415,10 +415,13 @@ import static android.content.pm.ActivityInfo.LAUNCH_SINGLE_TOP;
             ActivityRecord topBeforeMarking = topActivityInTask(reuseTask);
             if (prepareHostLaunch) {
                 boolean requiresIntentDelivery = clearTarget.deliverIntent || singleTop;
+                boolean launcherTaskReactivation = isLauncherTaskReactivation(
+                        intent, topBeforeMarking == null ? null : topBeforeMarking.component);
                 if (!canPrepareReusedTask(reuseTask.taskId, userId, reuseTask.userId,
                         startTaskToFront,
                         topBeforeMarking != null && topBeforeMarking.token != null,
-                        requiresIntentDelivery)) {
+                        requiresIntentDelivery,
+                        launcherTaskReactivation)) {
                     return PreparedActivityLaunch.failure(
                             "Prepared reuse requires the exact same-user task without successor work");
                 }
@@ -475,9 +478,24 @@ import static android.content.pm.ActivityInfo.LAUNCH_SINGLE_TOP;
 
     static boolean canPrepareReusedTask(
             int taskId, int requestedUserId, int taskUserId, boolean startTaskToFront,
-            boolean hasExpectedActivityToken, boolean requiresIntentDelivery) {
+            boolean hasExpectedActivityToken, boolean requiresIntentDelivery,
+            boolean launcherTaskReactivation) {
         return taskId >= 0 && requestedUserId == taskUserId && startTaskToFront
-                && hasExpectedActivityToken && !requiresIntentDelivery;
+                && hasExpectedActivityToken
+                && (!requiresIntentDelivery || launcherTaskReactivation);
+    }
+
+    static boolean isLauncherTaskReactivation(Intent intent, ComponentName topComponent) {
+        return canReactivateLauncherTask(
+                intent != null && Intent.ACTION_MAIN.equals(intent.getAction()),
+                intent != null && intent.hasCategory(Intent.CATEGORY_LAUNCHER),
+                intent != null && intent.getComponent() != null
+                        && intent.getComponent().equals(topComponent));
+    }
+
+    static boolean canReactivateLauncherTask(
+            boolean isMainAction, boolean hasLauncherCategory, boolean targetsCurrentTop) {
+        return isMainAction && hasLauncherCategory && targetsCurrentTop;
     }
 
     private void startActivityInNewTaskLocked(int userId, Intent intent, ActivityInfo info, Bundle options) {
@@ -678,7 +696,7 @@ import static android.content.pm.ActivityInfo.LAUNCH_SINGLE_TOP;
 
     boolean onActivityCreated(ProcessRecord targetApp, ComponentName component, ComponentName caller,
                               IBinder token, Intent taskRoot, String affinity, int taskId,
-                              int launchMode, int flags) {
+                              int launchMode, int flags, String preparedLaunchId) {
         synchronized (mHistory) {
             if (targetApp == null || token == null || taskId < 0) {
                 return false;
@@ -690,7 +708,8 @@ import static android.content.pm.ActivityInfo.LAUNCH_SINGLE_TOP;
                 return false;
             }
             if (task == null) {
-                task = new TaskRecord(taskId, targetApp.userId, affinity, taskRoot);
+                task = new TaskRecord(taskId, targetApp.userId, affinity, taskRoot,
+                        preparedLaunchId);
                 mHistory.put(taskId, task);
             }
             ActivityRecord record = new ActivityRecord(task, component, caller, token, targetApp.userId, targetApp,

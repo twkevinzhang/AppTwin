@@ -709,7 +709,7 @@ public class VAppManagerService extends IAppManager.Stub {
 
                 for (int i = 0; i < length; i++) {
                     String splitName = pkg.splitNames[i];
-                    File privateSplitFile = new File(appDir, splitName + ".apk");
+                    File privateSplitFile = new File(appDir, privateSplitFileName(splitName));
                     try {
                         FileUtils.copyFile(new File(pkg.splitCodePaths[i]), privateSplitFile);
 
@@ -796,6 +796,15 @@ public class VAppManagerService extends IAppManager.Stub {
         return res;
     }
 
+    /**
+     * Android's installed-split contract uses split_<name>.apk beside base.apk. Some apps derive
+     * this path from splitNames instead of trusting ApplicationInfo.splitSourceDirs, so preserving
+     * the platform filename is required even when the package is stored privately.
+     */
+    static String privateSplitFileName(String splitName) {
+        return "split_" + splitName + ".apk";
+    }
+
 
     @Override
     public synchronized boolean installPackageAsUser(int userId, String packageName) {
@@ -810,6 +819,11 @@ public class VAppManagerService extends IAppManager.Stub {
             PackageSetting ps = PackageCacheManager.getSetting(packageName);
             if (ps != null) {
                 if (!ps.isInstalled(userId)) {
+                    if (!ensurePlatformSplitFileNames(PackageCacheManager.get(packageName), ps)) {
+                        VLog.e(TAG, "Unable to normalize split APK filenames before adding %s to user %d",
+                                packageName, userId);
+                        return false;
+                    }
                     if (!VPackageManagerService.get()
                             .clearRuntimePermissionsInternal(packageName, userId)) {
                         // A newly added binding must not inherit a stale decision from an earlier
@@ -837,6 +851,42 @@ public class VAppManagerService extends IAppManager.Stub {
             }
         }
         return false;
+    }
+
+    private boolean ensurePlatformSplitFileNames(VPackage pkg, PackageSetting setting) {
+        if (setting.dependSystem || pkg == null || pkg.splitNames == null
+                || setting.splitCodePaths == null) {
+            return true;
+        }
+        if (pkg.splitNames.length != setting.splitCodePaths.length) {
+            return false;
+        }
+        File appDirectory = new File(setting.apkPath).getParentFile();
+        if (appDirectory == null) {
+            return false;
+        }
+        String[] normalizedPaths = setting.splitCodePaths.clone();
+        for (int index = 0; index < pkg.splitNames.length; index++) {
+            File source = new File(setting.splitCodePaths[index]);
+            File normalized = new File(appDirectory, privateSplitFileName(pkg.splitNames[index]));
+            if (!normalized.equals(source) && !normalized.isFile()) {
+                try {
+                    FileUtils.copyFile(source, normalized);
+                } catch (IOException migrationFailure) {
+                    normalized.delete();
+                    return false;
+                }
+            }
+            normalizedPaths[index] = normalized.getPath();
+        }
+        setting.splitCodePaths = normalizedPaths;
+        pkg.splitCodePaths = normalizedPaths.clone();
+        // PackageManager queries are generated from the cached VPackage ApplicationInfo, while
+        // process binding also receives InstalledAppInfo. Keep both views on the normalized paths
+        // so dynamic module loaders do not see a stale split list after an existing install is
+        // migrated.
+        PackageParserEx.initApplicationInfoBase(setting, pkg);
+        return true;
     }
 
     private boolean ensureNativeLibraries(PackageSetting setting) {
@@ -920,6 +970,10 @@ public class VAppManagerService extends IAppManager.Stub {
                 VLog.e(TAG, "UNINSTALL_PERMISSION_RETRYABLE");
                 return false;
             }
+            if (!GuestKeystoreState.clearPackageState(packageName, userId)) {
+                VLog.e(TAG, "UNINSTALL_KEYSTORE_RETRYABLE");
+                return false;
+            }
             if (userIds.length == 1) {
                 // Self clear is user-scoped. Do not route through the host-only global helper,
                 // which would kill/erase other virtual users if residual state exists.
@@ -960,6 +1014,7 @@ public class VAppManagerService extends IAppManager.Stub {
                         .clearRuntimePermissionsInternal(packageName, id)) {
                     return false;
                 }
+                if (!GuestKeystoreState.clearPackageState(packageName, id)) return false;
                 FileUtils.deleteDir(VEnvironment.getDataUserPackageDirectory(id, packageName));
                 FileUtils.deleteDir(VEnvironment.getDeDataUserPackageDirectory(id, packageName));
                 FileUtils.deleteDir(VEnvironment.getVirtualPrivateStorageDir(id, packageName));
@@ -994,6 +1049,10 @@ public class VAppManagerService extends IAppManager.Stub {
             if (!VPackageManagerService.get()
                     .clearRuntimePermissionsInternal(packageName, userId)) {
                 // Never leave a durable grant that could be inherited if this binding is re-added.
+                return false;
+            }
+            if (!GuestKeystoreState.clearPackageState(packageName, userId)) {
+                VLog.e(TAG, "UNINSTALL_KEYSTORE_RETRYABLE");
                 return false;
             }
             // User-scoped uninstall only removes the binding and private data. Shared code remains
@@ -1047,6 +1106,7 @@ public class VAppManagerService extends IAppManager.Stub {
                     && !activityManager.hasPendingIntentState(packageName, userId)
                     && accountManager != null
                     && !accountManager.hasPackageState(packageName, userId, trustedGms)
+                    && !GuestKeystoreState.hasPackageState(packageName, userId)
                     && !hasPackageDataState(packageName, userId);
             if (!terminal) VLog.e(TAG, "UNINSTALL_TERMINAL_RETRYABLE");
             return terminal;
@@ -1072,6 +1132,7 @@ public class VAppManagerService extends IAppManager.Stub {
                     packageName, userId);
             if (!VPackageManagerService.get()
                     .clearRuntimePermissionsInternal(packageName, userId)) return false;
+            if (!GuestKeystoreState.clearPackageState(packageName, userId)) return false;
             VActivityManagerService activityManager = VActivityManagerService.get();
             activityManager.killAppByPkg(packageName, userId);
             VJobSchedulerService.get().clearPackageState(packageName, userId);
@@ -1089,6 +1150,7 @@ public class VAppManagerService extends IAppManager.Stub {
                     .hasPackageState(packageName, userId)
                     && !activityManager.hasPendingIntentState(packageName, userId)
                     && !accountManager.hasPackageState(packageName, userId, gmsCore)
+                    && !GuestKeystoreState.hasPackageState(packageName, userId)
                     && !hasPackageDataState(packageName, userId);
         } catch (Throwable incomplete) {
             return false;
@@ -1192,6 +1254,7 @@ public class VAppManagerService extends IAppManager.Stub {
             VEnvironment.getOdexFile(packageName).delete();
             for (int id : VUserManagerService.get().getUserIds()) {
                 VPackageManagerService.get().clearRuntimePermissionsInternal(packageName, id);
+                if (!GuestKeystoreState.clearPackageState(packageName, id)) return false;
                 FileUtils.deleteDir(VEnvironment.getDataUserPackageDirectory(id, packageName));
                 FileUtils.deleteDir(VEnvironment.getDeDataUserPackageDirectory(id, packageName));
                 FileUtils.deleteDir(VEnvironment.getVirtualPrivateStorageDir(id, packageName));

@@ -859,13 +859,28 @@ public class VUserManagerService extends IUserManager.Stub {
     }
 
     @android.annotation.SuppressLint("NewApi") // AppTwin's production app minSdk is 26.
-    static void removeDirectoryRecursiveOrThrow(File target) throws IOException {
+    public static void removeDirectoryRecursiveOrThrow(File target) throws IOException {
         if (target == null) return;
         Path root = target.toPath();
         if (!Files.exists(root, java.nio.file.LinkOption.NOFOLLOW_LINKS)) return;
         // walkFileTree does not follow symbolic links unless FOLLOW_LINKS is explicitly requested.
         // A link (including a dangling link) is visited/deleted as a file, never enumerated.
         Files.walkFileTree(root, new SimpleFileVisitor<Path>() {
+            @Override
+            public FileVisitResult preVisitDirectory(
+                    Path directory, BasicFileAttributes attributes) throws IOException {
+                File ownerDirectory = directory.toFile();
+                // Guest extractors can intentionally leave native-library directories read-only.
+                // Deletion still needs owner write permission on each directory to unlink its
+                // children. Restore only owner access and never follow a symbolic link here.
+                if ((!ownerDirectory.canWrite() && !ownerDirectory.setWritable(true, true))
+                        || (!ownerDirectory.canExecute()
+                        && !ownerDirectory.setExecutable(true, true))) {
+                    throw new IOException("Unable to make directory removable: " + directory);
+                }
+                return FileVisitResult.CONTINUE;
+            }
+
             @Override
             public FileVisitResult visitFile(Path file, BasicFileAttributes attributes)
                     throws IOException {

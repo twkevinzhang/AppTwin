@@ -60,6 +60,11 @@ final class VirtualUserCleanupCoordinator {
                 step("device", userId -> VDeviceManagerService.get().clearUserState(userId)),
                 step("location", userId -> VirtualLocationService.get().clearUserState(userId)),
                 step("virtual-storage", userId -> VirtualStorageService.get().clearUserState(userId)),
+                step("keystore", userId -> {
+                    if (!GuestKeystoreState.clearUserState(userId)) {
+                        throw new IllegalStateException("keystore state remains");
+                    }
+                }),
                 step("packages", packageManager::cleanUpUser)
         ));
     }

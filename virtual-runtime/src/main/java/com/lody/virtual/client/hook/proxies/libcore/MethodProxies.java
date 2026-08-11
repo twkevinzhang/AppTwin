@@ -8,6 +8,7 @@ import com.lody.virtual.helper.utils.Reflect;
 
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
+import java.util.function.Function;
 
 import mirror.libcore.io.Os;
 
@@ -16,6 +17,14 @@ import mirror.libcore.io.Os;
  */
 
 class MethodProxies {
+
+    static String redirectStatPath(String path, Function<String, String> redirector) {
+        return path == null ? null : redirector.apply(path);
+    }
+
+    static int reportedStatUid(int ownerUid, int hostUid, int guestFacingUid) {
+        return ownerUid == hostUid ? guestFacingUid : ownerUid;
+    }
 
     static class Lstat extends Stat {
 
@@ -93,11 +102,23 @@ class MethodProxies {
         }
 
         @Override
+        public boolean beforeCall(Object who, Method method, Object... args) {
+            if (args != null && args.length > 0 && args[0] instanceof String) {
+                // libcore.io.Os bypasses the libc PLT hooks used by IOUniformer. Rewrite the
+                // pathname here as well so DexFile's optimized-directory ownership check and
+                // other Java-level stat callers inspect the isolated guest directory.
+                args[0] = redirectStatPath((String) args[0], NativeEngine::getRedirectedPath);
+            }
+            return super.beforeCall(who, method, args);
+        }
+
+        @Override
         public Object afterCall(Object who, Method method, Object[] args, Object result) throws Throwable {
             int uid = (int) st_uid.get(result);
-            if (uid == VirtualCore.get().myUid()) {
-                st_uid.set(result, getBaseVUid());
-            }
+            st_uid.set(result, reportedStatUid(
+                    uid,
+                    VirtualCore.get().myUid(),
+                    VClientImpl.get().getBaseReportedUid(uid)));
             return result;
         }
 

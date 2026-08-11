@@ -1038,8 +1038,32 @@ class MethodProxies {
             int uid1 = (int) args[0];
             int uid2 = (int) args[1];
             if (uid1 == uid2) return PackageManager.SIGNATURE_MATCH;
-            String[] first = VPackageManager.get().getPackagesForUid(uid1);
-            String[] second = VPackageManager.get().getPackagesForUid(uid2);
+            int currentVUid = getVUid();
+            int callingPid = Binder.getCallingPid();
+            VActivityManager activityManager = VActivityManager.get();
+            boolean callerIsVirtualProcess = activityManager.isAppPid(callingPid);
+            int observedCallerVUid = callerIsVirtualProcess
+                    ? activityManager.getUidByPid(callingPid) : currentVUid;
+            int callerVUid = CallingPackageUidResolver.trustedCallerVUid(
+                    currentVUid, observedCallerVUid, callerIsVirtualProcess);
+            int target1 = CallingPackageUidResolver.restoreRequestedUid(
+                    uid1, VirtualCore.get().myUid(), callerVUid);
+            int target2 = CallingPackageUidResolver.restoreRequestedUid(
+                    uid2, VirtualCore.get().myUid(), callerVUid);
+            boolean firstIsVirtual = CallingPackageUidResolver.belongsToCurrentVirtualUser(
+                    target1, currentVUid);
+            boolean secondIsVirtual = CallingPackageUidResolver.belongsToCurrentVirtualUser(
+                    target2, currentVUid);
+            if (!firstIsVirtual && !secondIsVirtual) {
+                return method.invoke(who, args);
+            }
+            if (!firstIsVirtual || !secondIsVirtual) {
+                // A physical UID cannot share a virtual package signature identity. More
+                // importantly, do not send its user-0 UID through the virtual cross-user API.
+                return PackageManager.SIGNATURE_UNKNOWN_PACKAGE;
+            }
+            String[] first = VPackageManager.get().getPackagesForUid(target1);
+            String[] second = VPackageManager.get().getPackagesForUid(target2);
             if (ArrayUtils.isEmpty(first) || ArrayUtils.isEmpty(second)) {
                 return PackageManager.SIGNATURE_UNKNOWN_PACKAGE;
             }

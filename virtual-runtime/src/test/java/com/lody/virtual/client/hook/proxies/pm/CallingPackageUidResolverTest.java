@@ -31,6 +31,16 @@ public class CallingPackageUidResolverTest {
     }
 
     @Test
+    public void distinguishesCurrentVirtualUserFromPhysicalUserZero() {
+        assertTrue(CallingPackageUidResolver.belongsToCurrentVirtualUser(
+                SHOPEE_VUID, CURRENT_GMS_VUID));
+        assertFalse(CallingPackageUidResolver.belongsToCurrentVirtualUser(
+                10042, CURRENT_GMS_VUID));
+        assertFalse(CallingPackageUidResolver.belongsToCurrentVirtualUser(
+                -1, CURRENT_GMS_VUID));
+    }
+
+    @Test
     public void acceptsVirtualCallerOnlyInsideCurrentGroup() {
         assertEquals(SHOPEE_VUID, CallingPackageUidResolver.trustedCallerVUid(
                 CURRENT_GMS_VUID, SHOPEE_VUID, true));

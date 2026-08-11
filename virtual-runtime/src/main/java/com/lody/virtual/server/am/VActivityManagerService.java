@@ -353,7 +353,7 @@ public class VActivityManagerService extends IActivityManager.Stub
             return false;
         }
         boolean accepted = mMainStack.onActivityCreated(targetApp, component, caller, token,
-                intent, affinity, taskId, launchMode, flags);
+                intent, affinity, taskId, launchMode, flags, preparedLaunchId);
         if (!accepted) {
             mPreparedActivityLaunches.cancelForUser(preparedLaunchId, targetApp.userId);
             return false;

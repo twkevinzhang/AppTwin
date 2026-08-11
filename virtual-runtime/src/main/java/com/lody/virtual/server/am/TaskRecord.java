@@ -19,12 +19,15 @@ class TaskRecord {
     public int userId;
     public String affinity;
     public Intent taskRoot;
+    public final String preparedLaunchId;
 
-    TaskRecord(int taskId, int userId, String affinity, Intent intent) {
+    TaskRecord(int taskId, int userId, String affinity, Intent intent,
+               String preparedLaunchId) {
         this.taskId = taskId;
         this.userId = userId;
         this.affinity = affinity;
         this.taskRoot = intent;
+        this.preparedLaunchId = preparedLaunchId;
     }
 
     AppTaskInfo getAppTaskInfo() {
@@ -33,7 +36,8 @@ class TaskRecord {
             return null;
         }
         ComponentName top = activities.get(len - 1).component;
-        return new AppTaskInfo(taskId, taskRoot, taskRoot.getComponent(), top);
+        return new AppTaskInfo(taskId, taskRoot, taskRoot.getComponent(), top,
+                userId, preparedLaunchId);
     }
 
     public boolean isFinishing() {

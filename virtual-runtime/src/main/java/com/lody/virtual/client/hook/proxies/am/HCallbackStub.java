@@ -7,6 +7,7 @@ import android.content.pm.ServiceInfo;
 import android.os.Handler;
 import android.os.IBinder;
 import android.os.Message;
+import android.os.Build;
 
 import com.lody.virtual.client.VClientImpl;
 import com.lody.virtual.client.GuestPackageIdentity;
@@ -22,6 +23,13 @@ import com.lody.virtual.remote.StubActivityRecord;
 import mirror.android.app.ActivityManagerNative;
 import mirror.android.app.ActivityThread;
 import mirror.android.app.IActivityManager;
+
+import java.lang.reflect.Field;
+import java.lang.reflect.Method;
+import java.util.Collections;
+import java.util.List;
+import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 
 enum HCallbackLaunchHandling {
     DELEGATE,
@@ -48,6 +56,9 @@ final class HCallbackLaunchPolicy {
         private static final int CREATE_SERVICE = ActivityThread.H.CREATE_SERVICE.get();
         private static final int SCHEDULE_CRASH =
                 ActivityThread.H.SCHEDULE_CRASH != null ? ActivityThread.H.SCHEDULE_CRASH.get() : -1;
+        private static final int EXECUTE_TRANSACTION = resolveExecuteTransaction();
+        private static final Set<IBinder> STALE_ACTIVITY_TOKENS =
+                Collections.newSetFromMap(new ConcurrentHashMap<IBinder, Boolean>());
 
         private static final String TAG = HCallbackStub.class.getSimpleName();
         private static final HCallbackStub sCallback = new HCallbackStub();
@@ -103,6 +114,9 @@ final class HCallbackLaunchPolicy {
                     } else if (SCHEDULE_CRASH == msg.what) {
                         // to avoid the exception send from System.
                         return true;
+                    } else if (EXECUTE_TRANSACTION == msg.what
+                            && shouldConsumeMissingGuestLaunch(msg.obj)) {
+                        return true;
                     }
                     if (otherCallback != null) {
                         boolean desired = otherCallback.handleMessage(msg);
@@ -116,6 +130,104 @@ final class HCallbackLaunchPolicy {
                 }
             }
             return false;
+        }
+
+        private static int resolveExecuteTransaction() {
+            if (Build.VERSION.SDK_INT < 28) return -1;
+            try {
+                Class<?> handlerClass = Class.forName("android.app.ActivityThread$H");
+                Field field = handlerClass.getDeclaredField("EXECUTE_TRANSACTION");
+                field.setAccessible(true);
+                return field.getInt(null);
+            } catch (Throwable ignored) {
+                return 159;
+            }
+        }
+
+        private static boolean shouldConsumeMissingGuestLaunch(Object transaction) {
+            IBinder activityToken = activityToken(transaction);
+            if (activityToken != null && STALE_ACTIVITY_TOKENS.contains(activityToken)) {
+                VLog.i(TAG, "ignore follow-up transaction for stale activity token");
+                return true;
+            }
+            for (Object item : transactionCallbacks(transaction)) {
+                Intent stubIntent = intentField(item);
+                if (stubIntent == null) continue;
+                StubActivityRecord record = new StubActivityRecord(stubIntent);
+                ActivityInfo info = record.info;
+                if (record.intent == null || info == null) continue;
+                if (VirtualCore.get().getInstalledAppInfo(info.packageName, 0) == null) {
+                    if (activityToken != null) STALE_ACTIVITY_TOKENS.add(activityToken);
+                    VLog.i(TAG, "ignore stale launch transaction for missing guest: "
+                            + info.packageName);
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        private static IBinder activityToken(Object transaction) {
+            if (transaction == null) return null;
+            try {
+                Method method = transaction.getClass().getDeclaredMethod("getActivityToken");
+                method.setAccessible(true);
+                Object value = method.invoke(transaction);
+                return value instanceof IBinder ? (IBinder) value : null;
+            } catch (Throwable ignored) {
+                try {
+                    Field field = findField(transaction.getClass(), "mActivityToken");
+                    if (field == null) return null;
+                    field.setAccessible(true);
+                    Object value = field.get(transaction);
+                    return value instanceof IBinder ? (IBinder) value : null;
+                } catch (Throwable ignoredAgain) {
+                    return null;
+                }
+            }
+        }
+
+        private static List<?> transactionCallbacks(Object transaction) {
+            if (transaction == null) return Collections.emptyList();
+            try {
+                Method method = transaction.getClass().getDeclaredMethod("getCallbacks");
+                method.setAccessible(true);
+                Object value = method.invoke(transaction);
+                return value instanceof List ? (List<?>) value : Collections.emptyList();
+            } catch (Throwable ignored) {
+                try {
+                    Field field = findField(transaction.getClass(), "mActivityCallbacks");
+                    if (field == null) return Collections.emptyList();
+                    field.setAccessible(true);
+                    Object value = field.get(transaction);
+                    return value instanceof List ? (List<?>) value : Collections.emptyList();
+                } catch (Throwable ignoredAgain) {
+                    return Collections.emptyList();
+                }
+            }
+        }
+
+        private static Intent intentField(Object item) {
+            if (item == null) return null;
+            try {
+                Field field = findField(item.getClass(), "mIntent");
+                if (field == null) return null;
+                field.setAccessible(true);
+                Object value = field.get(item);
+                return value instanceof Intent ? (Intent) value : null;
+            } catch (Throwable ignored) {
+                return null;
+            }
+        }
+
+        private static Field findField(Class<?> type, String name) {
+            for (Class<?> current = type; current != null; current = current.getSuperclass()) {
+                try {
+                    return current.getDeclaredField(name);
+                } catch (NoSuchFieldException ignored) {
+                    // Continue through vendor/AOSP superclass variants.
+                }
+            }
+            return null;
         }
 
         private HCallbackLaunchHandling handleLaunchActivity(Message msg) {

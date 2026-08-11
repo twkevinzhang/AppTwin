@@ -39,6 +39,39 @@ public class StubJob extends Service {
     private final SparseArray<JobSession> mJobSessions = new SparseArray<>();
     private JobScheduler mScheduler;
     private boolean mDestroyed;
+
+    interface CallingIdentityController {
+        long clearCallingIdentity();
+
+        void restoreCallingIdentity(long token);
+    }
+
+    interface BindOperation {
+        boolean bind();
+    }
+
+    private static final CallingIdentityController BINDER_CALLING_IDENTITY =
+            new CallingIdentityController() {
+                @Override
+                public long clearCallingIdentity() {
+                    return android.os.Binder.clearCallingIdentity();
+                }
+
+                @Override
+                public void restoreCallingIdentity(long token) {
+                    android.os.Binder.restoreCallingIdentity(token);
+                }
+            };
+
+    static boolean bindWithCleanCallingIdentity(CallingIdentityController identity,
+                                                BindOperation operation) {
+        long token = identity.clearCallingIdentity();
+        try {
+            return operation.bind();
+        } finally {
+            identity.restoreCallingIdentity(token);
+        }
+    }
     private final IJobService mService = new IJobService.Stub() {
 
         @Override
@@ -77,7 +110,14 @@ public class StubJob extends Service {
                 Intent service = new Intent();
                 service.setComponent(new ComponentName(key.packageName, config.serviceName));
                 service.putExtra("_VA_|_user_id_", VUserHandle.getUserId(key.vuid));
-                boolean bound = session.bindIfActive(service);
+                // JobScheduler invokes this Binder entry point as system_server. Without
+                // clearing that inherited identity, the nested virtual package/service lookup
+                // sees system_server instead of the AppTwin host and rejects the valid job as a
+                // cross-user request. The job id/config above is trusted server-owned state, so
+                // dispatch it under the host identity and always restore the platform caller.
+                JobSession activeSession = session;
+                boolean bound = bindWithCleanCallingIdentity(BINDER_CALLING_IDENTITY,
+                        () -> activeSession.bindIfActive(service));
                 if (!bound) {
                     session.finishBeforeStart();
                     mScheduler.cancel(jobId);

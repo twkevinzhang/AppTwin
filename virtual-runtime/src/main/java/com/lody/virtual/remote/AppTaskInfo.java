@@ -25,13 +25,18 @@ public class AppTaskInfo implements Parcelable {
 	public Intent baseIntent;
 	public ComponentName baseActivity;
 	public ComponentName topActivity;
+	public int userId;
+	public String preparedLaunchId;
 
 
-	public AppTaskInfo(int taskId, Intent baseIntent, ComponentName baseActivity, ComponentName topActivity) {
+	public AppTaskInfo(int taskId, Intent baseIntent, ComponentName baseActivity,
+			ComponentName topActivity, int userId, String preparedLaunchId) {
 		this.taskId = taskId;
 		this.baseIntent = baseIntent;
 		this.baseActivity = baseActivity;
 		this.topActivity = topActivity;
+		this.userId = userId;
+		this.preparedLaunchId = preparedLaunchId;
 	}
 
 	protected AppTaskInfo(Parcel in) {
@@ -39,6 +44,8 @@ public class AppTaskInfo implements Parcelable {
 		baseIntent = in.readParcelable(Intent.class.getClassLoader());
 		baseActivity = in.readParcelable(ComponentName.class.getClassLoader());
 		topActivity = in.readParcelable(ComponentName.class.getClassLoader());
+		userId = in.readInt();
+		preparedLaunchId = in.readString();
 	}
 
 	@Override
@@ -52,5 +59,7 @@ public class AppTaskInfo implements Parcelable {
 		dest.writeParcelable(baseIntent, flags);
 		dest.writeParcelable(baseActivity, flags);
 		dest.writeParcelable(topActivity, flags);
+		dest.writeInt(userId);
+		dest.writeString(preparedLaunchId);
 	}
 }
