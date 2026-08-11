@@ -32,6 +32,7 @@ import com.lody.virtual.client.hook.proxies.input.InputMethodManagerStub;
 import com.lody.virtual.client.hook.proxies.isms.ISmsStub;
 import com.lody.virtual.client.hook.proxies.isub.ISubStub;
 import com.lody.virtual.client.hook.proxies.job.JobServiceStub;
+import com.lody.virtual.client.hook.proxies.keystore.KeystoreStub;
 import com.lody.virtual.client.hook.proxies.libcore.LibCoreStub;
 import com.lody.virtual.client.hook.proxies.locale.LocaleManagerStub;
 import com.lody.virtual.client.hook.proxies.location.LocationManagerStub;
@@ -212,6 +213,9 @@ public final class InvocationStubManager {
 			}
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
                 addInjector(new PermissionManagerStub());
+            }
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                addInjector(new KeystoreStub());
             }
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
                 addInjector(new LocaleManagerStub());

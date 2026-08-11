@@ -64,7 +64,11 @@ static jstring jni_nativeGetRedirectedPath(alias_ref<jclass> jclazz, jstring ori
     ScopeUtfString orig_path(origPath);
     const char *redirected_path = IOUniformer::query(orig_path.c_str());
     if (redirected_path != NULL) {
-        return Environment::current()->NewStringUTF(redirected_path);
+        jstring result = Environment::current()->NewStringUTF(redirected_path);
+        if (redirected_path != orig_path.c_str()) {
+            free((void *) redirected_path);
+        }
+        return result;
     }
     return NULL;
 }
@@ -72,7 +76,11 @@ static jstring jni_nativeGetRedirectedPath(alias_ref<jclass> jclazz, jstring ori
 static jstring jni_nativeReverseRedirectedPath(alias_ref<jclass> jclazz, jstring redirectedPath) {
     ScopeUtfString redirected_path(redirectedPath);
     const char *orig_path = IOUniformer::reverse(redirected_path.c_str());
-    return Environment::current()->NewStringUTF(orig_path);
+    jstring result = Environment::current()->NewStringUTF(orig_path);
+    if (orig_path != redirected_path.c_str()) {
+        free((void *) orig_path);
+    }
+    return result;
 }
 
 

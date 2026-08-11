@@ -119,7 +119,13 @@ const char *relocate_path(const char *_path, int *result) {
         ReplaceItem &item = replace_items[i];
         if (match_path(item.is_folder, item.orig_size, item.orig_path, path)) {
             std::string redirect_path(item.new_path);
-            redirect_path += path + item.orig_size;
+            // Directory rules carry a trailing slash, while canonicalization removes it
+            // from an exact directory path. Advancing by orig_size in that case reads one
+            // byte beyond the terminating NUL and can turn an exact dataDir lookup into a
+            // malformed redirect. Descendants still start after the rule's trailing slash.
+            size_t path_size = strlen(path);
+            size_t suffix_offset = item.orig_size > path_size ? path_size : item.orig_size;
+            redirect_path += path + suffix_offset;
             *result = MATCH;
             free(path);
             return strdup(redirect_path.c_str());
@@ -160,7 +166,9 @@ const char *reverse_relocate_path(const char *_path) {
         ReplaceItem &item = replace_items[i];
         if (match_path(item.is_folder, item.new_size, item.new_path, path)) {
             std::string reverse_path(item.orig_path);
-            reverse_path += path + item.new_size;
+            size_t path_size = strlen(path);
+            size_t suffix_offset = item.new_size > path_size ? path_size : item.new_size;
+            reverse_path += path + suffix_offset;
             free(path);
             return strdup(reverse_path.c_str());
         }

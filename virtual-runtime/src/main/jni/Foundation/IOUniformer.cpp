@@ -7,6 +7,7 @@
 #include <stdio.h>
 #include <sys/stat.h>
 #include <sys/mman.h>
+#include <android/dlext.h>
 #include <atomic>
 #include <mutex>
 #include <string>
@@ -256,7 +257,8 @@ void IOUniformer::redirect(const char *orig_path, const char *new_path) {
 }
 
 const char *IOUniformer::query(const char *orig_path) {
-    return reverse_relocate_path(orig_path);
+    int result;
+    return relocate_path(orig_path, &result);
 }
 
 void IOUniformer::whitelist(const char *_path) {
@@ -291,6 +293,75 @@ HOOK_DEF(int, access, const char *pathname, int mode) {
     int ret = syscall(__NR_faccessat, AT_FDCWD, redirect_path, mode);
     FREE(redirect_path, pathname);
     return ret;
+}
+
+
+HOOK_DEF(int, chmod, const char *pathname, mode_t mode) {
+    int res;
+    const char *redirect_path = relocate_path(pathname, &res);
+    RETURN_IF_FORBID
+    int ret = orig_chmod(redirect_path, mode);
+    FREE(redirect_path, pathname);
+    return ret;
+}
+
+
+HOOK_DEF(int, fchmodat, int dirfd, const char *pathname, mode_t mode, int flags) {
+    int res;
+    const char *redirect_path = relocate_path(pathname, &res);
+    RETURN_IF_FORBID
+    int ret = orig_fchmodat(dirfd, redirect_path, mode, flags);
+    FREE(redirect_path, pathname);
+    return ret;
+}
+
+
+HOOK_DEF(jstring, JVM_NativeLoad, JNIEnv *env, jstring filename, jobject loader,
+         jclass caller) {
+    if (filename == nullptr) {
+        return orig_JVM_NativeLoad(env, filename, loader, caller);
+    }
+    const char *original_path = env->GetStringUTFChars(filename, nullptr);
+    if (original_path == nullptr) {
+        return orig_JVM_NativeLoad(env, filename, loader, caller);
+    }
+    int res;
+    const char *redirect_path = relocate_path(original_path, &res);
+    if (res == FORBID) {
+        env->ReleaseStringUTFChars(filename, original_path);
+        return env->NewStringUTF("Guest native library path is forbidden");
+    }
+    jstring redirected_filename = env->NewStringUTF(redirect_path);
+    jstring result = orig_JVM_NativeLoad(env, redirected_filename, loader, caller);
+    env->DeleteLocalRef(redirected_filename);
+    FREE(redirect_path, original_path);
+    env->ReleaseStringUTFChars(filename, original_path);
+    return result;
+}
+
+
+HOOK_DEF(void *, android_dlopen_ext, const char *filename, int flags,
+         const android_dlextinfo *extinfo) {
+    if (filename == nullptr) {
+        return orig_android_dlopen_ext(filename, flags, extinfo);
+    }
+    int res;
+    const char *redirect_path = relocate_path(filename, &res);
+    if (res == FORBID) {
+        return nullptr;
+    }
+    using LoaderDlopen = void *(*)(const char *, int, const android_dlextinfo *, const void *);
+    LoaderDlopen loader_dlopen = reinterpret_cast<LoaderDlopen>(
+            dlsym(RTLD_DEFAULT, "__loader_android_dlopen_ext"));
+    void *result;
+    if (loader_dlopen != nullptr) {
+        result = loader_dlopen(redirect_path, flags, extinfo,
+                __builtin_return_address(0));
+    } else {
+        result = orig_android_dlopen_ext(redirect_path, flags, extinfo);
+    }
+    FREE(redirect_path, filename);
+    return result;
 }
 
 
@@ -369,6 +440,19 @@ HOOK_DEF(int, openat, int dirfd, const char *pathname, int flags, ...) {
     int ret = syscall(__NR_openat, dirfd, redirect_path, flags, mode);
     FREE(redirect_path, pathname);
     return ret;
+}
+
+
+// Bionic's fortified headers route two-argument open/openat calls through these
+// distinct symbols. Native guest libraries use both entry points, so hooking only
+// open/openat lets reads of canonical guest data paths escape the redirect layer.
+HOOK_DEF(int, __open_2, const char *pathname, int flags) {
+    return new_open(pathname, flags);
+}
+
+
+HOOK_DEF(int, __openat_2, int dirfd, const char *pathname, int flags) {
+    return new_openat(dirfd, pathname, flags);
 }
 
 
@@ -911,10 +995,14 @@ void IOUniformer::startUniformer(const char *so_path, const char *host_package,
     void *handle = dlopen("libc.so", RTLD_NOW);
     if (handle) {
         HOOK_SYMBOL(handle, access);
+        HOOK_SYMBOL(handle, chmod);
+        HOOK_SYMBOL(handle, fchmodat);
         HOOK_SYMBOL(handle, stat);
         HOOK_SYMBOL(handle, lstat);
         HOOK_SYMBOL(handle, open);
         HOOK_SYMBOL(handle, openat);
+        HOOK_SYMBOL(handle, __open_2);
+        HOOK_SYMBOL(handle, __openat_2);
         HOOK_SYMBOL(handle, fopen);
         HOOK_SYMBOL(handle, opendir);
         HOOK_SYMBOL(handle, mkdir);
@@ -939,7 +1027,18 @@ void IOUniformer::startUniformer(const char *so_path, const char *host_package,
         dlclose(handle);
         uniformer_started = true;
     }
-    // hook_dlopen(api_level);
+    // Runtime.nativeLoad reaches the linker namespace check before libc open
+    // hooks. Rewrite its absolute path while retaining the guest class loader.
+    void *openjdk_handle = dlopen("libopenjdkjvm.so", RTLD_NOW);
+    if (openjdk_handle != nullptr) {
+        HOOK_SYMBOL(openjdk_handle, JVM_NativeLoad);
+        dlclose(openjdk_handle);
+    }
+    void *libdl_handle = dlopen("libdl.so", RTLD_NOW);
+    if (libdl_handle != nullptr) {
+        HOOK_SYMBOL(libdl_handle, android_dlopen_ext);
+        dlclose(libdl_handle);
+    }
 }
 
 int IOUniformer::countProcMapsLeaksForProbe() {

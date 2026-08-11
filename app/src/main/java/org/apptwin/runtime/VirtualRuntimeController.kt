@@ -13,14 +13,17 @@ import com.lody.virtual.client.core.InstallStrategy
 import com.lody.virtual.client.core.VirtualCore
 import com.lody.virtual.client.ipc.VActivityManager
 import com.lody.virtual.client.ipc.VPackageManager
+import com.lody.virtual.client.hook.proxies.keystore.KeystoreAliasPolicy
 import com.lody.virtual.os.VEnvironment
 import com.lody.virtual.os.VUserManager
 import com.lody.virtual.remote.PreparedActivityLaunch
-import com.lody.virtual.remote.StubActivityRecord
+import com.lody.virtual.server.pm.VUserManagerService
 import java.io.BufferedInputStream
 import java.io.File
 import java.io.FileInputStream
 import java.security.MessageDigest
+import java.security.KeyStore
+import java.util.Collections
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
@@ -156,6 +159,7 @@ class VirtualRuntimeController internal constructor(
             "$packageName 仍存在於群組環境"
         }
         deleteGuestPrivateData(binding.internalId, packageName)
+        deleteGuestKeystoreEntries(binding.internalId, packageName)
         Log.i(
             TAG,
             "group-app-removed package=$packageName environmentId=${binding.internalId}",
@@ -173,9 +177,25 @@ class VirtualRuntimeController internal constructor(
             VEnvironment.getDeDataUserPackageDirectory(environmentId, packageName),
             VEnvironment.getVirtualPrivateStorageDir(environmentId, packageName),
         ).forEach { directory ->
-            check(!directory.exists() || directory.deleteRecursively()) {
-                "無法刪除群組 App 私有資料：${directory.absolutePath}"
-            }
+            VUserManagerService.removeDirectoryRecursiveOrThrow(directory)
+        }
+    }
+
+    private fun deleteGuestKeystoreEntries(environmentId: Int, packageName: String) {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S) return
+        val keyStore = KeyStore.getInstance("AndroidKeyStore").apply { load(null) }
+        val ownedAliases = KeystoreAliasPolicy.ownedAliases(
+            packageName,
+            environmentId,
+            Collections.list(keyStore.aliases()),
+        )
+        ownedAliases.forEach(keyStore::deleteEntry)
+        if (ownedAliases.isNotEmpty()) {
+            Log.i(
+                TAG,
+                "group-keystore-cleared package=$packageName " +
+                    "environmentId=$environmentId count=${ownedAliases.size}",
+            )
         }
     }
 
@@ -318,19 +338,18 @@ class VirtualRuntimeController internal constructor(
             appContext.getSystemService(Context.ACTIVITY_SERVICE) as ActivityManager
         @Suppress("DEPRECATION")
         val physicalTask = activityManager.getRunningTasks(1).firstOrNull() ?: return false
-        val taskRecord = StubActivityRecord(physicalTask.baseIntent)
         @Suppress("DEPRECATION")
         val taskId = physicalTask.id
         val virtualTask = VActivityManager.get().getTaskInfo(taskId) ?: return false
         return matchesExpectedGuestActivity(
             expectedPackage = expectedPackage,
             expectedEnvironmentId = environmentId,
-            taskEnvironmentId = taskRecord.userId,
+            taskEnvironmentId = virtualTask.userId,
             topActivityPackage = virtualTask.topActivity?.packageName,
             preparedTaskId = prepared.taskId,
             preparedLaunchId = requireNotNull(prepared.launchId),
             taskId = taskId,
-            taskPreparedLaunchId = taskRecord.preparedLaunchId,
+            taskPreparedLaunchId = virtualTask.preparedLaunchId,
         )
     }
 

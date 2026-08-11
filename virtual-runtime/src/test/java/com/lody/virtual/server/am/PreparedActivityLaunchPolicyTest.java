@@ -30,13 +30,23 @@ public class PreparedActivityLaunchPolicyTest {
     @Test
     public void reusedTaskMustBelongToExactRequestedVirtualUser() {
         assertTrue(ActivityStack.canPrepareReusedTask(
-                42, 7, 7, true, true, false));
+                42, 7, 7, true, true, false, false));
         assertFalse(ActivityStack.canPrepareReusedTask(
-                42, 7, 8, true, true, false));
+                42, 7, 8, true, true, false, false));
         assertFalse(ActivityStack.canPrepareReusedTask(
-                42, 7, 7, false, true, false));
+                42, 7, 7, false, true, false, false));
         assertFalse(ActivityStack.canPrepareReusedTask(
-                42, 7, 7, true, true, true));
+                42, 7, 7, true, true, true, false));
+        assertTrue(ActivityStack.canPrepareReusedTask(
+                42, 7, 7, true, true, true, true));
+    }
+
+    @Test
+    public void launcherReactivationMayReuseOnlyTheExactCurrentTopActivity() {
+        assertTrue(ActivityStack.canReactivateLauncherTask(true, true, true));
+        assertFalse(ActivityStack.canReactivateLauncherTask(true, true, false));
+        assertFalse(ActivityStack.canReactivateLauncherTask(false, true, true));
+        assertFalse(ActivityStack.canReactivateLauncherTask(true, false, true));
     }
 
     @Test

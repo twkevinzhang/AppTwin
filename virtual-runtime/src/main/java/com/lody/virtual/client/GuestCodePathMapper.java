@@ -10,8 +10,8 @@ import java.util.Arrays;
 import mirror.android.content.pm.ApplicationInfoL;
 
 /**
- * Gives guest code a package-owned view of its APK paths while retaining the host-private
- * activated revision as the physical backing store.
+ * Keeps compatibility redirects for package-owned APK paths while exposing real, readable
+ * paths to Android runtime components that bypass the virtual I/O layer.
  */
 final class GuestCodePathMapper {
 
@@ -53,16 +53,20 @@ final class GuestCodePathMapper {
                     mapping.physicalSplitPaths[index]);
         }
 
-        applicationInfo.sourceDir = mapping.guestBasePath;
-        applicationInfo.publicSourceDir = mapping.guestBasePath;
-        applicationInfo.splitSourceDirs = copyOrNull(mapping.guestSplitPaths);
-        applicationInfo.splitPublicSourceDirs = copyOrNull(mapping.guestSplitPaths);
+        // Native linker namespaces and app-side java.io.File checks do not consistently pass
+        // through NativeEngine's path redirection. Supplying synthetic /data/app paths here
+        // consequently makes installed split APKs appear missing. These files are private to
+        // the AppTwin host UID and are directly readable by the guest process it owns.
+        applicationInfo.sourceDir = mapping.physicalBasePath;
+        applicationInfo.publicSourceDir = mapping.physicalBasePath;
+        applicationInfo.splitSourceDirs = copyOrNull(mapping.physicalSplitPaths);
+        applicationInfo.splitPublicSourceDirs = copyOrNull(mapping.physicalSplitPaths);
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
             if (ApplicationInfoL.scanSourceDir != null) {
-                ApplicationInfoL.scanSourceDir.set(applicationInfo, mapping.guestBasePath);
+                ApplicationInfoL.scanSourceDir.set(applicationInfo, mapping.physicalBasePath);
             }
             if (ApplicationInfoL.scanPublicSourceDir != null) {
-                ApplicationInfoL.scanPublicSourceDir.set(applicationInfo, mapping.guestBasePath);
+                ApplicationInfoL.scanPublicSourceDir.set(applicationInfo, mapping.physicalBasePath);
             }
         }
     }
