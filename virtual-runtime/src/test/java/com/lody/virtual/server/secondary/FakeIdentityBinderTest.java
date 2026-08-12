@@ -27,4 +27,25 @@ public class FakeIdentityBinderTest {
         assertEquals(hostUid, (int) (identity >>> 32));
         org.junit.Assert.assertNotEquals(guestLogicalUid, (int) (identity >>> 32));
     }
+
+    @Test
+    public void virtualAccountManagerMayCallAccountAuthenticator() {
+        assertEquals(0, VirtualAccountPermissionEnforcer.permissionResult(
+                android.Manifest.permission.ACCOUNT_MANAGER, 4201, 4201));
+    }
+
+    @Test
+    public void unrelatedPermissionIsDeniedForAccountManager() {
+        assertEquals(2, VirtualAccountPermissionEnforcer.permissionResult(
+                android.Manifest.permission.INTERNET, 4201, 4201));
+    }
+
+    @Test
+    public void directGuestAuthenticatorCallerIsDenied() {
+        assertEquals(2, VirtualAccountPermissionEnforcer.permissionResult(
+                android.Manifest.permission.ACCOUNT_MANAGER, 4201, 7302));
+        assertEquals(2, VirtualAccountPermissionEnforcer.permissionResult(
+                android.Manifest.permission.ACCOUNT_MANAGER, 0, 0));
+    }
+
 }

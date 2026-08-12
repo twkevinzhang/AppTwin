@@ -52,6 +52,7 @@ import com.lody.virtual.os.VEnvironment;
 import com.lody.virtual.os.VUserHandle;
 import com.lody.virtual.remote.InstalledAppInfo;
 import com.lody.virtual.remote.PendingResultData;
+import com.lody.virtual.server.secondary.BinderDelegateService;
 import com.lody.virtual.remote.VDeviceInfo;
 import com.lody.virtual.server.interfaces.IUiCallback;
 
@@ -887,7 +888,10 @@ public final class VClientImpl extends IVClient.Stub {
 
     @Override
     public IBinder createProxyService(ComponentName component, IBinder binder) {
-        return binder;
+        // This call executes in the guest service process, before the Binder crosses into the
+        // virtual activity-manager process and becomes a BinderProxy. Account authenticator
+        // permission mediation therefore has to be installed here rather than server-side.
+        return BinderDelegateService.createProxyService(binder);
     }
 
     @Override

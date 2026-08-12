@@ -59,9 +59,11 @@ public class JobServiceStub extends BinderInvocationProxy {
 		private enqueue() {
 		}
 		public Object call(Object who, Method method, Object... args) throws Throwable {
+			JobInfo jobInfo = findJobInfo(args);
+			Object workItem = findJobWorkItem(args);
 			return VJobScheduler.get().enqueue(
-					(JobInfo) args[0],
-					JobServiceStub.this.redirect(args[1], MethodProxy.getAppPkg())
+					jobInfo,
+					JobServiceStub.this.redirect(workItem, MethodProxy.getAppPkg())
 			);
 		}
 		public String getMethodName() {
@@ -90,9 +92,31 @@ public class JobServiceStub extends BinderInvocationProxy {
 
 		@Override
 		public Object call(Object who, Method method, Object... args) throws Throwable {
-			JobInfo jobInfo = (JobInfo) args[0];
+			JobInfo jobInfo = findJobInfo(args);
 			return VJobScheduler.get().schedule(jobInfo);
 		}
+	}
+
+	static JobInfo findJobInfo(Object[] args) {
+		if (args != null) {
+			for (Object arg : args) {
+				if (arg instanceof JobInfo) {
+					return (JobInfo) arg;
+				}
+			}
+		}
+		return null;
+	}
+
+	private static Object findJobWorkItem(Object[] args) {
+		if (args != null) {
+			for (Object arg : args) {
+				if (arg != null && JobWorkItem.TYPE.isInstance(arg)) {
+					return arg;
+				}
+			}
+		}
+		return null;
 	}
 
 	private class getAllPendingJobs extends MethodProxy {

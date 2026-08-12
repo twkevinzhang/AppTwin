@@ -7,6 +7,7 @@ import android.app.Notification;
 import android.app.NotificationManager;
 import android.content.BroadcastReceiver;
 import android.content.ComponentName;
+import android.content.ContentProviderClient;
 import android.content.Context;
 import android.content.Intent;
 import android.content.ServiceConnection;
@@ -960,8 +961,14 @@ public class VActivityManagerService extends IActivityManager.Stub
             if (boundRecord == null) {
                 return;
             }
-            connections = boundRecord.publish(r.generation, service);
             component = ComponentUtils.toComponentName(r.serviceInfo);
+            try {
+                service = r.process.client.createProxyService(component, service);
+            } catch (RemoteException e) {
+                VLog.w(TAG, "Unable to create guest service proxy " + component, e);
+                service = null;
+            }
+            connections = boundRecord.publish(r.generation, service);
         }
         for (IServiceConnection conn : connections) {
             if (boundRecord.containConnection(conn)) {
@@ -1097,6 +1104,7 @@ public class VActivityManagerService extends IActivityManager.Stub
                 return;
             }
             process.terminalCleanupStarted = true;
+            closeStubProviderClient(process);
             if (process.osIsolatedWorker) {
                 mIsolatedServiceOwners.remove(process.isolatedOwnerKey,
                         process.generation, process);
@@ -1687,20 +1695,31 @@ public class VActivityManagerService extends IActivityManager.Stub
             LogicalProcessOwnerRegistry.Reservation reservation, ProcessRecord app,
             Bundle extras) {
         Bundle response = null;
-        RuntimeException lastFailure = null;
+        Exception lastFailure = null;
         for (int attempt = 1; attempt <= STUB_INIT_MAX_ATTEMPTS; attempt++) {
+            ContentProviderClient providerClient = null;
             try {
-                response = ProviderCall.call(VASettings.getStubAuthority(vpid),
+                // Keep a stable provider reference for the lifetime of the logical guest
+                // process. Android 15 otherwise freezes a background Stub process even while
+                // AppTwin still owns its IVClient Binder. A later synchronous lifecycle call
+                // then receives BR_FROZEN_REPLY and Android kills the Stub. The stable provider
+                // dependency gives ActivityManager the same liveness relationship that a
+                // regular framework-hosted process has with its client.
+                providerClient = VirtualCore.get().getContext().getContentResolver()
+                        .acquireContentProviderClient(VASettings.getStubAuthority(vpid));
+                response = providerClient == null ? null : providerClient.call(
                         StubProcessContract.METHOD_INIT_PROCESS, null, extras);
                 lastFailure = null;
-            } catch (RuntimeException initFailure) {
+            } catch (RemoteException | RuntimeException initFailure) {
                 lastFailure = initFailure;
                 response = null;
             }
             if (response != null
                     && response.getBoolean(StubProcessContract.KEY_ACCEPTED, false)) {
+                app.stubProviderClient = providerClient;
                 return response;
             }
+            closeQuietly(providerClient);
             if (response != null) {
                 int conflictingPid = response.getInt(StubProcessContract.KEY_PID, -1);
                 IBinder conflictingToken = BundleCompat.getBinder(response,
@@ -1722,6 +1741,23 @@ public class VActivityManagerService extends IActivityManager.Stub
                     + " slot=" + vpid + " error=" + lastFailure);
         }
         return response;
+    }
+
+    private static void closeStubProviderClient(ProcessRecord process) {
+        ContentProviderClient client = process.stubProviderClient;
+        process.stubProviderClient = null;
+        closeQuietly(client);
+    }
+
+    private static void closeQuietly(ContentProviderClient client) {
+        if (client == null) {
+            return;
+        }
+        try {
+            client.close();
+        } catch (RuntimeException ignored) {
+            // The provider process may already be dead during terminal cleanup.
+        }
     }
 
     private LogicalProcessOwnerRegistry.ReservationResult<ProcessRecord>

@@ -44,6 +44,9 @@ public class VJobScheduler {
     }
 
     public int schedule(JobInfo job) {
+        if (job == null) {
+            return android.app.job.JobScheduler.RESULT_FAILURE;
+        }
         try {
             return getRemote().schedule(job);
         } catch (RemoteException e) {
@@ -84,8 +87,8 @@ public class VJobScheduler {
 
     @TargetApi(Build.VERSION_CODES.O)
     public int enqueue(JobInfo job, Object workItem) {
-        if (workItem == null) {
-            return -1;
+        if (job == null || workItem == null) {
+            return android.app.job.JobScheduler.RESULT_FAILURE;
         }
         try {
             return getRemote().enqueue(job, (JobWorkItem) workItem);

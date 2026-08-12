@@ -24,7 +24,7 @@ public class BinderDelegateService extends IBinderDelegateService.Stub {
     }
     private static final Map<String, ProxyBinderFactory> mFactories = new HashMap<>();
     static {
-        mFactories.put("android.accounts.IAccountAuthenticator", new ProxyBinderFactory() {
+        mFactories.put(FakeIdentityBinder.ACCOUNT_AUTHENTICATOR_DESCRIPTOR, new ProxyBinderFactory() {
             @Override
             public IBinder create(Binder binder) {
                 return new FakeIdentityBinder(binder);
@@ -34,6 +34,11 @@ public class BinderDelegateService extends IBinderDelegateService.Stub {
 
     public BinderDelegateService(ComponentName name, IBinder service) {
         this.name = name;
+        this.service = createProxyService(service);
+    }
+
+    /** Must run in the guest service process while a local Binder is still available. */
+    public static IBinder createProxyService(IBinder service) {
         if (service instanceof Binder) {
             Binder localService = (Binder) service;
             ProxyBinderFactory factory = mFactories.get(localService.getInterfaceDescriptor());
@@ -41,7 +46,7 @@ public class BinderDelegateService extends IBinderDelegateService.Stub {
                 service = factory.create(localService);
             }
         }
-        this.service = service;
+        return service;
     }
 
     @Override
