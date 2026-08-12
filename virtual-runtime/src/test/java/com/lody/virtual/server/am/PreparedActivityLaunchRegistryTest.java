@@ -81,6 +81,17 @@ public class PreparedActivityLaunchRegistryTest {
         assertEquals(0, registry.pendingCount());
     }
 
+    @Test
+    public void pendingLookupIsScopedToExactVirtualUserAndClearsAfterAwait() {
+        PreparedActivityLaunchRegistry registry = new PreparedActivityLaunchRegistry();
+        registry.register("launch-6", 7, null);
+
+        assertTrue(registry.isPending("launch-6", 7));
+        assertFalse(registry.isPending("launch-6", 8));
+        assertFalse(registry.await("launch-6", 1L));
+        assertFalse(registry.isPending("launch-6", 7));
+    }
+
     private static final class EqualToken {
         private final String value;
 

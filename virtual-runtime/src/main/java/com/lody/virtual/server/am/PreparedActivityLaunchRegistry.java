@@ -98,6 +98,11 @@ final class PreparedActivityLaunchRegistry {
 
     synchronized int pendingCount() { return entries.size(); }
 
+    synchronized boolean isPending(String launchId, int userId) {
+        Entry entry = entries.get(launchId);
+        return entry != null && entry.userId == userId;
+    }
+
     private static boolean sameToken(Object first, Object second) {
         return first == second || (first != null && first.equals(second));
     }
