@@ -353,13 +353,16 @@ public class VActivityManagerService extends IActivityManager.Stub
         if (targetApp == null) {
             return false;
         }
+        boolean preparedLaunchPending = preparedLaunchId != null
+                && mPreparedActivityLaunches.isPending(preparedLaunchId, targetApp.userId);
         boolean accepted = mMainStack.onActivityCreated(targetApp, component, caller, token,
-                intent, affinity, taskId, launchMode, flags, preparedLaunchId);
+                intent, affinity, taskId, launchMode, flags, preparedLaunchId,
+                preparedLaunchId != null && !preparedLaunchPending);
         if (!accepted) {
             mPreparedActivityLaunches.cancelForUser(preparedLaunchId, targetApp.userId);
             return false;
         }
-        if (preparedLaunchId != null
+        if (preparedLaunchPending
                 && !mPreparedActivityLaunches.attachActivity(
                 preparedLaunchId, targetApp.userId, token)) {
             mMainStack.onActivityDestroyed(targetApp.userId, token);

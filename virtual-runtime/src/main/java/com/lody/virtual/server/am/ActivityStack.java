@@ -696,7 +696,8 @@ import static android.content.pm.ActivityInfo.LAUNCH_SINGLE_TOP;
 
     boolean onActivityCreated(ProcessRecord targetApp, ComponentName component, ComponentName caller,
                               IBinder token, Intent taskRoot, String affinity, int taskId,
-                              int launchMode, int flags, String preparedLaunchId) {
+                              int launchMode, int flags, String preparedLaunchId,
+                              boolean allowPreparedTaskRestore) {
         synchronized (mHistory) {
             if (targetApp == null || token == null || taskId < 0) {
                 return false;
@@ -705,6 +706,11 @@ import static android.content.pm.ActivityInfo.LAUNCH_SINGLE_TOP;
             TaskRecord task = mHistory.get(taskId);
             if (!canAttachActivityToTask(targetApp.userId,
                     task == null ? VUserHandle.USER_NULL : task.userId)) {
+                return false;
+            }
+            if (task != null && preparedLaunchId != null
+                    && !canRestorePreparedTask(targetApp.userId, task.userId,
+                    preparedLaunchId, task.preparedLaunchId, allowPreparedTaskRestore)) {
                 return false;
             }
             if (task == null) {
@@ -724,6 +730,16 @@ import static android.content.pm.ActivityInfo.LAUNCH_SINGLE_TOP;
     static boolean canAttachActivityToTask(int activityUserId, int existingTaskUserId) {
         return existingTaskUserId == VUserHandle.USER_NULL
                 || existingTaskUserId == activityUserId;
+    }
+
+    static boolean canRestorePreparedTask(int activityUserId, int existingTaskUserId,
+                                          String requestedLaunchId,
+                                          String existingLaunchId,
+                                          boolean launchIsNoLongerPending) {
+        return activityUserId == existingTaskUserId
+                && requestedLaunchId != null
+                && requestedLaunchId.equals(existingLaunchId)
+                && launchIsNoLongerPending;
     }
 
     boolean onActivityResumed(int userId, IBinder token) {

@@ -57,6 +57,18 @@ public class PreparedActivityLaunchPolicyTest {
     }
 
     @Test
+    public void recentsRestoreRequiresExactCompletedLaunchAndVirtualUser() {
+        assertTrue(ActivityStack.canRestorePreparedTask(
+                7, 7, "launch-1", "launch-1", true));
+        assertFalse(ActivityStack.canRestorePreparedTask(
+                7, 8, "launch-1", "launch-1", true));
+        assertFalse(ActivityStack.canRestorePreparedTask(
+                7, 7, "launch-2", "launch-1", true));
+        assertFalse(ActivityStack.canRestorePreparedTask(
+                7, 7, "launch-1", "launch-1", false));
+    }
+
+    @Test
     public void hostStartFlagsAreAppliedWithoutChangingGuestIntent() {
         int guestFlags = Intent.FLAG_ACTIVITY_NO_ANIMATION;
         int hostFlags = ActivityStack.preparedHostActivityFlags(
