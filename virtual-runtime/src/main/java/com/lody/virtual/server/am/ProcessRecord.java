@@ -1,6 +1,7 @@
 package com.lody.virtual.server.am;
 
 import android.content.pm.ApplicationInfo;
+import android.content.ContentProviderClient;
 import android.os.Binder;
 import android.os.IInterface;
 
@@ -20,6 +21,7 @@ final class ProcessRecord extends Binder implements Comparable<ProcessRecord> {
 	public IVClient client;
 	IInterface appThread;
 	public int pid;
+	ContentProviderClient stubProviderClient;
 	public int vuid;
 	public int vpid;
 	public int userId;

@@ -961,7 +961,28 @@ class MethodProxies {
                 return VActivityManager.get().bindService(caller.asBinder(), token, service, resolvedType,
                         conn, flags, userId);
             }
+            // Android 15 sends ContextImpl#getOpPackageName() with bindServiceInstance().
+            // A guest package is not owned by the host UID, so forwarding it unchanged makes
+            // ActivityManager reject framework-owned external/isolated services (notably the
+            // System WebView sandbox). The physical call is made by AppTwin's real process;
+            // represent that identity only on this fallback path. Virtual services above keep
+            // the guest package and continue through VActivityManager.
+            replacePhysicalServiceCaller(args, getHostPkg());
             return method.invoke(who, args);
+        }
+
+        static String replacePhysicalServiceCaller(Object[] args, String hostPackage) {
+            if (args == null) {
+                return null;
+            }
+            for (int i = args.length - 1; i >= 0; i--) {
+                if (args[i] instanceof String) {
+                    String guestPackage = (String) args[i];
+                    args[i] = hostPackage;
+                    return guestPackage;
+                }
+            }
+            return null;
         }
 
         @Override
