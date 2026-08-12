@@ -12,6 +12,7 @@ import android.os.Parcelable;
 import android.os.WorkSource;
 
 import com.lody.virtual.client.hook.base.BinderInvocationProxy;
+import com.lody.virtual.client.hook.base.BinderInvocationStub;
 import com.lody.virtual.client.hook.base.MethodProxy;
 import com.lody.virtual.client.hook.base.ReplaceCallingPkgMethodProxy;
 import com.lody.virtual.client.hook.base.StaticMethodProxy;
@@ -60,6 +61,10 @@ public class WifiManagerStub extends BinderInvocationProxy {
 
     public WifiManagerStub() {
         super(IWifiManager.Stub.asInterface, Context.WIFI_SERVICE);
+    }
+
+    WifiManagerStub(BinderInvocationStub invocationStub) {
+        super(invocationStub, Context.WIFI_SERVICE);
     }
 
     @Override
@@ -112,6 +117,7 @@ public class WifiManagerStub extends BinderInvocationProxy {
         });
         addMethodProxy(new GetConnectionInfo());
         addMethodProxy(new GetScanResults());
+        addMethodProxy(new ReplaceCallingPkgMethodProxy("getDhcpInfo"));
         addMethodProxy(new ReplaceCallingPkgMethodProxy("getBatchedScanResults"));
         addMethodProxy(new RemoveWorkSourceMethodProxy("acquireWifiLock"));
         addMethodProxy(new RemoveWorkSourceMethodProxy("updateWifiLockWorkSource"));
