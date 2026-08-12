@@ -139,6 +139,12 @@ public class WifiManagerStub extends BinderInvocationProxy {
         }
 
         @Override
+        public boolean beforeCall(Object who, Method method, Object... args) {
+            rewriteConnectionInfoPackage(args, getAppPkg(), getHostPkg());
+            return super.beforeCall(who, method, args);
+        }
+
+        @Override
         public Object call(Object who, Method method, Object... args) throws Throwable {
             WifiInfo wifiInfo = (WifiInfo) method.invoke(who, args);
             if (isFakeLocationEnable()) {
@@ -153,6 +159,21 @@ public class WifiManagerStub extends BinderInvocationProxy {
             }
             return wifiInfo;
         }
+    }
+
+    static int rewriteConnectionInfoPackage(
+            Object[] args, String guestPackage, String hostPackage) {
+        if (args == null || guestPackage == null || hostPackage == null) {
+            return 0;
+        }
+        int replaced = 0;
+        for (int index = 0; index < args.length; index++) {
+            if (guestPackage.equals(args[index])) {
+                args[index] = hostPackage;
+                replaced++;
+            }
+        }
+        return replaced;
     }
 
     @FakeLocMark("fake scan result")

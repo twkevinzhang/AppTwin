@@ -1,5 +1,7 @@
 package com.lody.virtual.client.hook.proxies.wifi;
 
+import static org.junit.Assert.assertArrayEquals;
+import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNotNull;
 
 import android.os.IBinder;
@@ -21,6 +23,36 @@ public class WifiManagerStubTest {
         new WifiManagerStub(invocationStub);
 
         assertNotNull(invocationStub.getMethodProxy("getDhcpInfo"));
+    }
+
+    @Test
+    public void bindsConnectionInfoCallingPackageIdentityHook() {
+        TestBinderInvocationStub invocationStub = new TestBinderInvocationStub();
+        new WifiManagerStub(invocationStub);
+
+        assertNotNull(invocationStub.getMethodProxy("getConnectionInfo"));
+    }
+
+    @Test
+    public void connectionInfoRewritesGuestPackageWithoutChangingAttributionTag() {
+        Object[] args = {"com.xiaomi.smarthome", "mi-home-local-otu"};
+
+        int replaced = WifiManagerStub.rewriteConnectionInfoPackage(
+                args, "com.xiaomi.smarthome", "org.apptwin");
+
+        assertEquals(1, replaced);
+        assertArrayEquals(new Object[]{"org.apptwin", "mi-home-local-otu"}, args);
+    }
+
+    @Test
+    public void connectionInfoLeavesUnrelatedStringsUntouched() {
+        Object[] args = {"other-package", "mi-home-local-otu"};
+
+        int replaced = WifiManagerStub.rewriteConnectionInfoPackage(
+                args, "com.xiaomi.smarthome", "org.apptwin");
+
+        assertEquals(0, replaced);
+        assertArrayEquals(new Object[]{"other-package", "mi-home-local-otu"}, args);
     }
 
     /** Records hooks without requiring a live Android Binder. */
