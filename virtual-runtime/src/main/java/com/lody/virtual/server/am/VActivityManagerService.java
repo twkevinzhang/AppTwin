@@ -1104,7 +1104,6 @@ public class VActivityManagerService extends IActivityManager.Stub
                 return;
             }
             process.terminalCleanupStarted = true;
-            closeStubProviderClient(process);
             if (process.osIsolatedWorker) {
                 mIsolatedServiceOwners.remove(process.isolatedOwnerKey,
                         process.generation, process);
@@ -1699,14 +1698,19 @@ public class VActivityManagerService extends IActivityManager.Stub
         for (int attempt = 1; attempt <= STUB_INIT_MAX_ATTEMPTS; attempt++) {
             ContentProviderClient providerClient = null;
             try {
-                // Keep a stable provider reference for the lifetime of the logical guest
-                // process. Android 15 otherwise freezes a background Stub process even while
-                // AppTwin still owns its IVClient Binder. A later synchronous lifecycle call
-                // then receives BR_FROZEN_REPLY and Android kills the Stub. The stable provider
-                // dependency gives ActivityManager the same liveness relationship that a
-                // regular framework-hosted process has with its client.
-                providerClient = VirtualCore.get().getContext().getContentResolver()
-                        .acquireContentProviderClient(VASettings.getStubAuthority(vpid));
+                // The Stub provider is only a bootstrap transport. Keeping this client open
+                // creates a stable-provider dependency from the engine to the guest process;
+                // when a short-lived guest subprocess exits normally, Android then kills the
+                // engine as a dependent process. Use the provider only for the synchronous init
+                // exchange and close it before returning; the IVClient Binder and explicit
+                // process lifecycle own the guest after the handshake.
+                if (StubProviderBootstrapPolicy.useStableProviderDependency()) {
+                    providerClient = VirtualCore.get().getContext().getContentResolver()
+                            .acquireContentProviderClient(VASettings.getStubAuthority(vpid));
+                } else {
+                    providerClient = VirtualCore.get().getContext().getContentResolver()
+                            .acquireUnstableContentProviderClient(VASettings.getStubAuthority(vpid));
+                }
                 response = providerClient == null ? null : providerClient.call(
                         StubProcessContract.METHOD_INIT_PROCESS, null, extras);
                 lastFailure = null;
@@ -1716,7 +1720,9 @@ public class VActivityManagerService extends IActivityManager.Stub
             }
             if (response != null
                     && response.getBoolean(StubProcessContract.KEY_ACCEPTED, false)) {
-                app.stubProviderClient = providerClient;
+                if (!StubProviderBootstrapPolicy.retainProviderAfterHandshake()) {
+                    closeQuietly(providerClient);
+                }
                 return response;
             }
             closeQuietly(providerClient);
@@ -1741,12 +1747,6 @@ public class VActivityManagerService extends IActivityManager.Stub
                     + " slot=" + vpid + " error=" + lastFailure);
         }
         return response;
-    }
-
-    private static void closeStubProviderClient(ProcessRecord process) {
-        ContentProviderClient client = process.stubProviderClient;
-        process.stubProviderClient = null;
-        closeQuietly(client);
     }
 
     private static void closeQuietly(ContentProviderClient client) {
