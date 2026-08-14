@@ -34,6 +34,7 @@ public class LogicalProcessOwnerRegistryTest {
         assertEquals(LogicalProcessOwnerRegistry.ReservationStatus.RESERVED, reserved.status());
         assertEquals(LogicalProcessOwnerRegistry.ClaimStatus.CLAIMED, claimed.status());
         assertSame(owner, registry.find(LINE).owner());
+        assertSame(owner, registry.findLive(LINE).owner());
         assertSame(owner, registry.findBySlot(4).owner());
         assertEquals(1, registry.ownerCount());
     }
@@ -106,6 +107,8 @@ public class LogicalProcessOwnerRegistryTest {
         TestOwner deadOwner = claim(LINE, 2);
         long deadGeneration = registry.find(LINE).generation();
         deadOwner.alive = false;
+
+        assertNull(registry.findLive(LINE));
 
         LogicalProcessOwnerRegistry.Reservation replacement =
                 registry.reserve(LINE, 2).reservation();

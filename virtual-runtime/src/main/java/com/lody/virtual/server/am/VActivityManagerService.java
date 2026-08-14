@@ -104,6 +104,7 @@ public class VActivityManagerService extends IActivityManager.Stub
     private final PendingIntents mPendingIntents = new PendingIntents();
     private final PreparedActivityLaunchRegistry mPreparedActivityLaunches =
             new PreparedActivityLaunchRegistry();
+    private GmsBackgroundKeepAlive mGmsBackgroundKeepAlive;
     private Handler mServiceHandler;
     private ActivityManager am = (ActivityManager) VirtualCore.get().getContext()
             .getSystemService(Context.ACTIVITY_SERVICE);
@@ -131,6 +132,7 @@ public class VActivityManagerService extends IActivityManager.Stub
     public void onCreate(Context context) {
         AttributeCache.init(context);
         mServiceHandler = new Handler(Looper.getMainLooper());
+        mGmsBackgroundKeepAlive = new GmsBackgroundKeepAlive(context);
         PackageManager pm = context.getPackageManager();
         PackageInfo packageInfo = null;
         try {
@@ -1144,6 +1146,7 @@ public class VActivityManagerService extends IActivityManager.Stub
             }
         }
 
+        mGmsBackgroundKeepAlive.release(process);
         for (ServiceRecord service : ownedServices) {
             ComponentName component = ComponentUtils.toComponentName(service.serviceInfo);
             for (IServiceConnection connection : disconnectedClients.get(service)) {
@@ -1427,6 +1430,7 @@ public class VActivityManagerService extends IActivityManager.Stub
                 mPidsSelfLocked.put(app.pid, app);
             }
         }
+        mGmsBackgroundKeepAlive.retain(app);
 
         boolean needsDeathLink = previousClientBinder == null
                 || !previousClientBinder.equals(clientBinder) || previousPid != pid;
@@ -1489,7 +1493,20 @@ public class VActivityManagerService extends IActivityManager.Stub
     private ProcessRecord tryStartProcessForBinding(String processName, int userId,
                                                      String packageName,
                                                      boolean isolatedProcess) {
+        ProcessRecord existing = findLiveLogicalProcess(processName, userId, packageName);
+        if (existing != null) {
+            return existing;
+        }
         if (!mProcessStartGate.tryEnter()) {
+            // The process-start owner may have claimed the logical process between the first
+            // lookup and this failed tryLock. Reuse that STARTING endpoint so the service work is
+            // queued behind application bind instead of dropping the one-shot bind request.
+            existing = findLiveLogicalProcess(processName, userId, packageName);
+            if (existing != null) {
+                VLog.d(TAG, "Reusing contended service process package=" + packageName
+                        + " process=" + processName + " user=" + userId);
+                return existing;
+            }
             VLog.d(TAG, "Skipping contended service process start package=" + packageName
                     + " process=" + processName + " user=" + userId);
             return null;
@@ -1499,6 +1516,19 @@ public class VActivityManagerService extends IActivityManager.Stub
         } finally {
             mProcessStartGate.exit();
         }
+    }
+
+    private ProcessRecord findLiveLogicalProcess(String processName, int userId,
+                                                  String packageName) {
+        PackageSetting setting = PackageCacheManager.getSetting(packageName);
+        if (setting == null) {
+            return null;
+        }
+        int vuid = VUserHandle.getUid(userId, setting.appId);
+        LogicalProcessOwnerRegistry.OwnerSnapshot<ProcessRecord> existing =
+                mLogicalProcessOwners.findLive(
+                        new LogicalProcessKey(vuid, packageName, processName));
+        return existing == null ? null : existing.owner();
     }
 
     private ProcessRecord startIsolatedServiceProcess(ServiceInfo serviceInfo, int userId) {
@@ -2209,6 +2239,7 @@ public class VActivityManagerService extends IActivityManager.Stub
             return;
         }
         if (r.lifecycle.markReady(r.generation)) {
+            mGmsBackgroundKeepAlive.retain(r);
             VLog.i(TAG, "process-lifecycle pid=" + r.pid + " generation=" + r.generation
                     + " STARTING->READY pending=" + r.lifecycle.pendingCount());
             drainProcessLifecycle(r);
@@ -2322,7 +2353,9 @@ public class VActivityManagerService extends IActivityManager.Stub
             r = findProcessLocked(info.processName, vuid);
         }
         if ((BROADCAST_NOT_STARTED_PKG
-                || isStartProcessForBroadcast(info.processName, info.packageName)) && r == null) {
+                || isStartProcessForBroadcast(info.processName, info.packageName)
+                || GmsBroadcastProcessPolicy.shouldStart(
+                        info.packageName, info.name, intent.getAction())) && r == null) {
             r = startProcessIfNeedLocked(info.processName, getUserId(vuid), info.packageName);
         }
         if (r != null && r.appThread != null) {

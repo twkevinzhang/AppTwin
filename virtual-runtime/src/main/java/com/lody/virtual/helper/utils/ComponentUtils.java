@@ -117,6 +117,11 @@ public class ComponentUtils {
         } else if (pkg != null) {
             newIntent.putExtra("_VA_|_user_id_", userId);
             newIntent.putExtra("_VA_|_creator_", pkg);
+            // setPackage() is cleared so the host can reach dynamically registered virtual
+            // receivers. Carry the original package separately or the protected action would
+            // fan out to every cloned app that declares the same receiver action (for example
+            // every Firebase client listening for C2DM RECEIVE).
+            newIntent.putExtra(BroadcastPackageScope.EXTRA_TARGET_PACKAGE, pkg);
             newIntent.putExtra("_VA_|_intent_", new Intent(intent));
             String protectedAction = SpecialComponentList.protectAction(intent.getAction());
             if (protectedAction != null) {

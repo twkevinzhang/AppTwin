@@ -1,6 +1,8 @@
 package org.apptwin.gms
 
 import android.app.Application
+import java.nio.charset.StandardCharsets
+import java.util.UUID
 import org.apptwin.gms.capabilities.GmsCapability
 import org.apptwin.gms.capabilities.GmsCapabilityAssessment
 import org.apptwin.gms.model.GmsGroupId
@@ -30,6 +32,7 @@ data class GmsGroupProductState(
 data class GmsStartupResult(
     val reconciliation: GmsReconciliationResult,
     val profiles: List<GmsProfile>,
+    val cloudMessagingRepairFailures: List<String> = emptyList(),
 )
 
 /**
@@ -38,8 +41,8 @@ data class GmsStartupResult(
  */
 internal class AndroidGmsOperations(
     application: Application,
-    releases: ActiveGmsReleasePort = UnavailableGmsReleasePort,
-    runtime: GmsRuntimePort = UnavailableGmsRuntimePort,
+    private val releases: ActiveGmsReleasePort = UnavailableGmsReleasePort,
+    private val runtime: GmsRuntimePort = UnavailableGmsRuntimePort,
 ) {
     companion object {}
     private val issues = GmsDataIssueRecorder()
@@ -69,7 +72,31 @@ internal class AndroidGmsOperations(
     fun startupReconcile(groupIds: List<String>): GmsStartupResult {
         val reconciliation = reconcile.execute()
         val evaluated = groupIds.map { groupId -> evaluateProfile.execute(GmsGroupId(groupId)) }
-        return GmsStartupResult(reconciliation, evaluated)
+        val release = releases.current()
+        val failures = evaluated
+            .filter { profile ->
+                profile.desiredState == org.apptwin.gms.model.GmsDesiredState.ENABLED &&
+                    profile.networkConsent == GmsNetworkConsent.GRANTED
+            }
+            .mapNotNull { profile ->
+                if (release == null) {
+                    "TRUSTED_RELEASE_UNAVAILABLE"
+                } else {
+                    when (val result = runCatching {
+                        runtime.ensureEnabled(
+                            profile.groupId,
+                            release,
+                            cloudMessagingRepairOperationId(profile.groupId),
+                        )
+                    }.getOrNull()) {
+                        is GmsRuntimeMutationResult.RetryableFailure -> result.code
+                        is GmsRuntimeMutationResult.Rejected -> result.code
+                        null -> "CLOUD_MESSAGING_REPAIR_RETRYABLE"
+                        else -> null
+                    }
+                }
+            }
+        return GmsStartupResult(reconciliation, evaluated, failures)
     }
 
     fun snapshot(groupId: String): GmsGroupProductState {
@@ -110,6 +137,11 @@ internal class AndroidGmsOperations(
 
     fun warnings(): List<GmsDataWarning> = issues.list()
 }
+
+internal fun cloudMessagingRepairOperationId(groupId: GmsGroupId): String =
+    UUID.nameUUIDFromBytes(
+        "apptwin:cloud-messaging:${groupId.value}".toByteArray(StandardCharsets.UTF_8),
+    ).toString()
 
 private val DurableAndroidDirectorySync: (java.io.File) -> Unit = { directory ->
     val descriptor = android.system.Os.open(

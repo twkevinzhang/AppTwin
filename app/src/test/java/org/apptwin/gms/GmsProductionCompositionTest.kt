@@ -4,6 +4,7 @@ import java.io.ByteArrayInputStream
 import java.nio.file.Files
 import org.apptwin.groups.EnvironmentBinding
 import org.apptwin.groups.FileGroupStore
+import org.apptwin.gms.model.GmsGroupId
 import org.apptwin.microg.artifact.PinnedMicrogRelease
 import org.apptwin.microg.artifact.ProductionMicrogArtifactKind
 import org.junit.Assert.assertEquals
@@ -13,6 +14,15 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class GmsProductionCompositionTest {
+    @Test
+    fun `cloud messaging repair operation is stable per Group`() {
+        val first = cloudMessagingRepairOperationId(GmsGroupId("group-a"))
+
+        assertEquals(first, cloudMessagingRepairOperationId(GmsGroupId("group-a")))
+        assertFalse(first == cloudMessagingRepairOperationId(GmsGroupId("group-b")))
+        assertTrue(Regex("[0-9a-f-]{36}").matches(first))
+    }
+
     @Test
     fun `active release uses unique host signer and exact pinned artifact`() {
         val hostSigner = "a".repeat(64)

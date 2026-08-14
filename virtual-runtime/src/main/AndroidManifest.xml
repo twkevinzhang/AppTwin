@@ -1702,6 +1702,256 @@
             android:process=":p49" />
 
         <service
+            android:name="com.lody.virtual.client.stub.StubKeepAliveService$C0"
+            android:exported="false"
+            android:process=":p0" />
+
+        <service
+            android:name="com.lody.virtual.client.stub.StubKeepAliveService$C1"
+            android:exported="false"
+            android:process=":p1" />
+
+        <service
+            android:name="com.lody.virtual.client.stub.StubKeepAliveService$C2"
+            android:exported="false"
+            android:process=":p2" />
+
+        <service
+            android:name="com.lody.virtual.client.stub.StubKeepAliveService$C3"
+            android:exported="false"
+            android:process=":p3" />
+
+        <service
+            android:name="com.lody.virtual.client.stub.StubKeepAliveService$C4"
+            android:exported="false"
+            android:process=":p4" />
+
+        <service
+            android:name="com.lody.virtual.client.stub.StubKeepAliveService$C5"
+            android:exported="false"
+            android:process=":p5" />
+
+        <service
+            android:name="com.lody.virtual.client.stub.StubKeepAliveService$C6"
+            android:exported="false"
+            android:process=":p6" />
+
+        <service
+            android:name="com.lody.virtual.client.stub.StubKeepAliveService$C7"
+            android:exported="false"
+            android:process=":p7" />
+
+        <service
+            android:name="com.lody.virtual.client.stub.StubKeepAliveService$C8"
+            android:exported="false"
+            android:process=":p8" />
+
+        <service
+            android:name="com.lody.virtual.client.stub.StubKeepAliveService$C9"
+            android:exported="false"
+            android:process=":p9" />
+
+        <service
+            android:name="com.lody.virtual.client.stub.StubKeepAliveService$C10"
+            android:exported="false"
+            android:process=":p10" />
+
+        <service
+            android:name="com.lody.virtual.client.stub.StubKeepAliveService$C11"
+            android:exported="false"
+            android:process=":p11" />
+
+        <service
+            android:name="com.lody.virtual.client.stub.StubKeepAliveService$C12"
+            android:exported="false"
+            android:process=":p12" />
+
+        <service
+            android:name="com.lody.virtual.client.stub.StubKeepAliveService$C13"
+            android:exported="false"
+            android:process=":p13" />
+
+        <service
+            android:name="com.lody.virtual.client.stub.StubKeepAliveService$C14"
+            android:exported="false"
+            android:process=":p14" />
+
+        <service
+            android:name="com.lody.virtual.client.stub.StubKeepAliveService$C15"
+            android:exported="false"
+            android:process=":p15" />
+
+        <service
+            android:name="com.lody.virtual.client.stub.StubKeepAliveService$C16"
+            android:exported="false"
+            android:process=":p16" />
+
+        <service
+            android:name="com.lody.virtual.client.stub.StubKeepAliveService$C17"
+            android:exported="false"
+            android:process=":p17" />
+
+        <service
+            android:name="com.lody.virtual.client.stub.StubKeepAliveService$C18"
+            android:exported="false"
+            android:process=":p18" />
+
+        <service
+            android:name="com.lody.virtual.client.stub.StubKeepAliveService$C19"
+            android:exported="false"
+            android:process=":p19" />
+
+        <service
+            android:name="com.lody.virtual.client.stub.StubKeepAliveService$C20"
+            android:exported="false"
+            android:process=":p20" />
+
+        <service
+            android:name="com.lody.virtual.client.stub.StubKeepAliveService$C21"
+            android:exported="false"
+            android:process=":p21" />
+
+        <service
+            android:name="com.lody.virtual.client.stub.StubKeepAliveService$C22"
+            android:exported="false"
+            android:process=":p22" />
+
+        <service
+            android:name="com.lody.virtual.client.stub.StubKeepAliveService$C23"
+            android:exported="false"
+            android:process=":p23" />
+
+        <service
+            android:name="com.lody.virtual.client.stub.StubKeepAliveService$C24"
+            android:exported="false"
+            android:process=":p24" />
+
+        <service
+            android:name="com.lody.virtual.client.stub.StubKeepAliveService$C25"
+            android:exported="false"
+            android:process=":p25" />
+
+        <service
+            android:name="com.lody.virtual.client.stub.StubKeepAliveService$C26"
+            android:exported="false"
+            android:process=":p26" />
+
+        <service
+            android:name="com.lody.virtual.client.stub.StubKeepAliveService$C27"
+            android:exported="false"
+            android:process=":p27" />
+
+        <service
+            android:name="com.lody.virtual.client.stub.StubKeepAliveService$C28"
+            android:exported="false"
+            android:process=":p28" />
+
+        <service
+            android:name="com.lody.virtual.client.stub.StubKeepAliveService$C29"
+            android:exported="false"
+            android:process=":p29" />
+
+        <service
+            android:name="com.lody.virtual.client.stub.StubKeepAliveService$C30"
+            android:exported="false"
+            android:process=":p30" />
+
+        <service
+            android:name="com.lody.virtual.client.stub.StubKeepAliveService$C31"
+            android:exported="false"
+            android:process=":p31" />
+
+        <service
+            android:name="com.lody.virtual.client.stub.StubKeepAliveService$C32"
+            android:exported="false"
+            android:process=":p32" />
+
+        <service
+            android:name="com.lody.virtual.client.stub.StubKeepAliveService$C33"
+            android:exported="false"
+            android:process=":p33" />
+
+        <service
+            android:name="com.lody.virtual.client.stub.StubKeepAliveService$C34"
+            android:exported="false"
+            android:process=":p34" />
+
+        <service
+            android:name="com.lody.virtual.client.stub.StubKeepAliveService$C35"
+            android:exported="false"
+            android:process=":p35" />
+
+        <service
+            android:name="com.lody.virtual.client.stub.StubKeepAliveService$C36"
+            android:exported="false"
+            android:process=":p36" />
+
+        <service
+            android:name="com.lody.virtual.client.stub.StubKeepAliveService$C37"
+            android:exported="false"
+            android:process=":p37" />
+
+        <service
+            android:name="com.lody.virtual.client.stub.StubKeepAliveService$C38"
+            android:exported="false"
+            android:process=":p38" />
+
+        <service
+            android:name="com.lody.virtual.client.stub.StubKeepAliveService$C39"
+            android:exported="false"
+            android:process=":p39" />
+
+        <service
+            android:name="com.lody.virtual.client.stub.StubKeepAliveService$C40"
+            android:exported="false"
+            android:process=":p40" />
+
+        <service
+            android:name="com.lody.virtual.client.stub.StubKeepAliveService$C41"
+            android:exported="false"
+            android:process=":p41" />
+
+        <service
+            android:name="com.lody.virtual.client.stub.StubKeepAliveService$C42"
+            android:exported="false"
+            android:process=":p42" />
+
+        <service
+            android:name="com.lody.virtual.client.stub.StubKeepAliveService$C43"
+            android:exported="false"
+            android:process=":p43" />
+
+        <service
+            android:name="com.lody.virtual.client.stub.StubKeepAliveService$C44"
+            android:exported="false"
+            android:process=":p44" />
+
+        <service
+            android:name="com.lody.virtual.client.stub.StubKeepAliveService$C45"
+            android:exported="false"
+            android:process=":p45" />
+
+        <service
+            android:name="com.lody.virtual.client.stub.StubKeepAliveService$C46"
+            android:exported="false"
+            android:process=":p46" />
+
+        <service
+            android:name="com.lody.virtual.client.stub.StubKeepAliveService$C47"
+            android:exported="false"
+            android:process=":p47" />
+
+        <service
+            android:name="com.lody.virtual.client.stub.StubKeepAliveService$C48"
+            android:exported="false"
+            android:process=":p48" />
+
+        <service
+            android:name="com.lody.virtual.client.stub.StubKeepAliveService$C49"
+            android:exported="false"
+            android:process=":p49" />
+
+        <service
             android:name="com.lody.virtual.client.stub.StubIsolatedService$C0"
             android:exported="false"
             android:isolatedProcess="true"

@@ -1751,6 +1751,8 @@ class MethodProxies {
 
 
     static class BroadcastIntent extends MethodProxy {
+        private static final String MICROG_SERVICE_INFO_RESPONSE =
+                "org.microg.gms.gcm.SERVICE_INFO_RESPONSE";
 
         @Override
         public String getMethodName() {
@@ -1768,6 +1770,11 @@ class MethodProxies {
                     ? (String) args[intentIndex + 1]
                     : null;
             intent.setDataAndType(intent.getData(), type);
+            if (makeMicrogServiceInfoExchangeUnordered(
+                    Build.VERSION.SDK_INT, intent.getAction(), args, intentIndex)) {
+                VLog.i("BroadcastIntent", "microg-service-info-unordered action=%s",
+                        intent.getAction());
+            }
             if (VirtualCore.get().getComponentDelegate() != null) {
                 VirtualCore.get().getComponentDelegate().onSendBroadcast(intent);
             }
@@ -1800,6 +1807,26 @@ class MethodProxies {
                 args[args.length - 1] = 0;
             }
             return method.invoke(who, args);
+        }
+
+        static boolean makeMicrogServiceInfoExchangeUnordered(
+                int sdkInt, String action, Object[] args, int intentIndex) {
+            if (sdkInt < 37 || args == null
+                    || !MICROG_SERVICE_INFO_RESPONSE.equals(action)) {
+                return false;
+            }
+            // IActivityManager.broadcastIntent places the ordered/serialized boolean before
+            // the sticky boolean. The preceding parameters vary by Android release, so locate
+            // the first boolean after the Intent instead of hard-coding an API-specific index.
+            // This response only resumes microG's local settings coroutine; it has no result
+            // receiver or ordering dependency.
+            for (int i = Math.max(0, intentIndex + 1); i < args.length; i++) {
+                if (args[i] instanceof Boolean) {
+                    args[i] = false;
+                    return true;
+                }
+            }
+            return false;
         }
 
         private Intent handleIntent(final Intent intent) {

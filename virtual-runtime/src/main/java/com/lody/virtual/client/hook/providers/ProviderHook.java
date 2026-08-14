@@ -191,8 +191,8 @@ public class ProviderHook implements InvocationHandler {
                 return getType(methodBox, (Uri) args[0]);
             } else if ("delete".equals(name)) {
                 Uri url = (Uri) args[start];
-                String selection = (String) args[start + 1];
-                String[] selectionArgs = (String[]) args[start + 2];
+                String selection = optionalStringArg(args, start + 1);
+                String[] selectionArgs = optionalStringArrayArg(args, start + 2);
                 return delete(methodBox, url, selection, selectionArgs);
             } else if ("bulkInsert".equals(name)) {
                 Uri url = (Uri) args[start];
@@ -201,8 +201,13 @@ public class ProviderHook implements InvocationHandler {
             } else if ("update".equals(name)) {
                 Uri url = (Uri) args[start];
                 ContentValues values = (ContentValues) args[start + 1];
-                String selection = (String) args[start + 2];
-                String[] selectionArgs = (String[]) args[start + 3];
+                // Android 11+ replaces the legacy selection/selectionArgs pair with a
+                // single Bundle. Android 17 therefore supplies only four arguments:
+                // AttributionSource, Uri, ContentValues and Bundle. Keep exposing the
+                // legacy values to specialised hooks when present, but never index past
+                // the modern method shape before forwarding the original invocation.
+                String selection = optionalStringArg(args, start + 2);
+                String[] selectionArgs = optionalStringArrayArg(args, start + 3);
                 return update(methodBox, url, values, selection, selectionArgs);
             } else if ("openFile".equals(name)) {
                 Uri url = (Uri) args[start];
@@ -246,6 +251,18 @@ public class ProviderHook implements InvocationHandler {
 
     protected void processArgs(Method method, Object... args) {
 
+    }
+
+    static String optionalStringArg(Object[] args, int index) {
+        return args != null && index >= 0 && index < args.length && args[index] instanceof String
+                ? (String) args[index]
+                : null;
+    }
+
+    static String[] optionalStringArrayArg(Object[] args, int index) {
+        return args != null && index >= 0 && index < args.length && args[index] instanceof String[]
+                ? (String[]) args[index]
+                : null;
     }
 
     protected boolean isExternalProvider() {
