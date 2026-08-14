@@ -1,6 +1,7 @@
 package com.lody.virtual.client.hook.proxies.shortcut;
 
 import android.annotation.TargetApi;
+import android.content.ComponentName;
 import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.content.pm.ShortcutInfo;
@@ -48,10 +49,10 @@ public class ShortcutServiceStub extends BinderInvocationProxy {
     @Override
     protected void onBindMethods() {
         super.onBindMethods();
-        addMethodProxy(new ReplaceCallingPkgMethodProxy("getManifestShortcuts"));
+        addMethodProxy(new ReplacePkgAndRepairShortcutListMethodProxy("getManifestShortcuts"));
         // TODO: 18/3/3 Support dynamic shortcut ?
-        addMethodProxy(new ReplaceCallingPkgMethodProxy("getDynamicShortcuts"));
-        addMethodProxy(new ReplaceCallingPkgMethodProxy("getShortcuts"));
+        addMethodProxy(new ReplacePkgAndRepairShortcutListMethodProxy("getDynamicShortcuts"));
+        addMethodProxy(new ReplacePkgAndRepairShortcutListMethodProxy("getShortcuts"));
         addMethodProxy(new ReplaceCallingPkgMethodProxy("getShareTargets"));
         addMethodProxy(new ReplaceCallingPkgMethodProxy("hasShareTargets"));
         addMethodProxy(new ReplacePkgAndShortcutListMethodProxy("setDynamicShortcuts"));
@@ -72,7 +73,7 @@ public class ShortcutServiceStub extends BinderInvocationProxy {
         addMethodProxy(new ReplaceCallingPkgMethodProxy("onApplicationActive"));
         addMethodProxy(new ReplaceCallingPkgMethodProxy("removeAllDynamicShortcuts"));
 
-        addMethodProxy(new ReplaceCallingPkgMethodProxy("getPinnedShortcuts"));
+        addMethodProxy(new ReplacePkgAndRepairShortcutListMethodProxy("getPinnedShortcuts"));
         addMethodProxy(new ReplacePkgAndShortcutMethodProxy("requestPinShortcut"));
     }
 
@@ -83,6 +84,13 @@ public class ShortcutServiceStub extends BinderInvocationProxy {
         }
 
         mirror.android.content.pm.ShortcutInfo.mPackageName.set(shortcutInfo, hostPackage);
+        rewriteShortcutActivity(
+                shortcutInfo,
+                hostPackage,
+                Constants.SHORTCUT_PROXY_ACTIVITY_NAME,
+                ComponentName::new,
+                (target, activity) ->
+                        mirror.android.content.pm.ShortcutInfo.mActivity.set(target, activity));
         Icon icon = selectHostIcon(
                 () -> createBitmapIcon(pm.getApplicationIcon(hostPackage)),
                 ShortcutServiceStub::createFallbackIcon,
@@ -110,7 +118,7 @@ public class ShortcutServiceStub extends BinderInvocationProxy {
                     persistableBundle = new PersistableBundle();
                 }
 
-                Intent shortcutIntent = new Intent();
+                Intent shortcutIntent = new Intent(selectShortcutProxyAction(intent.getAction()));
                 shortcutIntent.setClassName(hostPackage, Constants.SHORTCUT_PROXY_ACTIVITY_NAME);
                 shortcutIntent.addCategory(Intent.CATEGORY_DEFAULT);
 
@@ -121,6 +129,41 @@ public class ShortcutServiceStub extends BinderInvocationProxy {
 
             System.arraycopy(swap, 0, intents, 0, length);
             mirror.android.content.pm.ShortcutInfo.mIntentPersistableExtrases.set(shortcutInfo, persistableBundles);
+        }
+    }
+
+    static <S, T> void rewriteShortcutActivity(
+            S shortcutInfo,
+            String hostPackage,
+            String proxyActivityName,
+            ShortcutActivityFactory<T> factory,
+            ShortcutActivitySetter<S, T> setter) {
+        setter.set(shortcutInfo, factory.create(hostPackage, proxyActivityName));
+    }
+
+    static String selectShortcutProxyAction(String originalAction) {
+        return originalAction == null || originalAction.isEmpty()
+                ? Intent.ACTION_VIEW
+                : originalAction;
+    }
+
+    @TargetApi(Build.VERSION_CODES.N_MR1)
+    private static void repairShortcutInfoForGuest(ShortcutInfo shortcutInfo) {
+        if (shortcutInfo == null) {
+            return;
+        }
+        Intent[] intents = mirror.android.content.pm.ShortcutInfo.mIntents.get(shortcutInfo);
+        if (intents == null) {
+            return;
+        }
+        for (Intent intent : intents) {
+            if (intent != null && (intent.getAction() == null || intent.getAction().isEmpty())) {
+                // AppTwin versions before this migration published explicit proxy intents without
+                // an action. Android accepted them, but ShortcutInfo.Builder rejects them when a
+                // guest reads the shortcut back and rebuilds it. Repair the returned copy so the
+                // existing launcher state remains usable without deleting user shortcuts.
+                intent.setAction(Intent.ACTION_VIEW);
+            }
         }
     }
 
@@ -176,6 +219,14 @@ public class ShortcutServiceStub extends BinderInvocationProxy {
         T get() throws Throwable;
     }
 
+    interface ShortcutActivityFactory<T> {
+        T create(String packageName, String className);
+    }
+
+    interface ShortcutActivitySetter<S, T> {
+        void set(S shortcutInfo, T activity);
+    }
+
     private interface IconFailureReporter {
         void report(String message, Throwable error);
     }
@@ -210,6 +261,31 @@ public class ShortcutServiceStub extends BinderInvocationProxy {
                 }
             }
             return null;
+        }
+    }
+
+    private static class ReplacePkgAndRepairShortcutListMethodProxy
+            extends ReplaceCallingPkgMethodProxy {
+        ReplacePkgAndRepairShortcutListMethodProxy(String name) {
+            super(name);
+        }
+
+        @Override
+        public Object afterCall(Object who, Method method, Object[] args, Object result)
+                throws Throwable {
+            Object replacement = super.afterCall(who, method, args, result);
+            List shortcutList;
+            if (replacement instanceof List) {
+                shortcutList = (List) replacement;
+            } else {
+                shortcutList = ParceledListSliceCompat.getList(replacement);
+            }
+            for (Object item : shortcutList) {
+                if (item instanceof ShortcutInfo) {
+                    repairShortcutInfoForGuest((ShortcutInfo) item);
+                }
+            }
+            return replacement;
         }
     }
 
