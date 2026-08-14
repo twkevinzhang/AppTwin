@@ -483,6 +483,9 @@ public final class VClientImpl extends IVClient.Stub {
             }
         } catch (Exception e) {
             if (!mInstrumentation.onException(mInitialApplication, e)) {
+                VLog.e(TAG, "Guest Application.onCreate failed for " + packageName
+                        + " in process " + processName);
+                VLog.e(TAG, e);
                 // 1. tell ui that do not need wait use now.
                 if (mUiCallback != null) {
                     try {
