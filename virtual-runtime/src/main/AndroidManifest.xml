@@ -211,6 +211,7 @@
     <uses-permission android:name="com.huawei.android.launcher.permission.READ_SETTINGS" />
     <uses-permission android:name="com.huawei.android.launcher.permission.CHANGE_BADGE" />
     <uses-permission android:name="android.permission.GET_INTENT_SENDER_INTENT" />
+    <uses-permission android:name="android.permission.MANAGE_OWN_CALLS" />
 
     <uses-permission
         android:name="android.permission.WRITE_APN_SETTINGS"
@@ -1950,6 +1951,506 @@
             android:name="com.lody.virtual.client.stub.StubKeepAliveService$C49"
             android:exported="false"
             android:process=":p49" />
+
+        <service
+            android:name="com.lody.virtual.client.stub.StubConnectionService$C0"
+            android:exported="true"
+            android:permission="android.permission.BIND_TELECOM_CONNECTION_SERVICE"
+            android:process=":p0">
+            <intent-filter>
+                <action android:name="android.telecom.ConnectionService" />
+            </intent-filter>
+        </service>
+
+        <service
+            android:name="com.lody.virtual.client.stub.StubConnectionService$C1"
+            android:exported="true"
+            android:permission="android.permission.BIND_TELECOM_CONNECTION_SERVICE"
+            android:process=":p1">
+            <intent-filter>
+                <action android:name="android.telecom.ConnectionService" />
+            </intent-filter>
+        </service>
+
+        <service
+            android:name="com.lody.virtual.client.stub.StubConnectionService$C2"
+            android:exported="true"
+            android:permission="android.permission.BIND_TELECOM_CONNECTION_SERVICE"
+            android:process=":p2">
+            <intent-filter>
+                <action android:name="android.telecom.ConnectionService" />
+            </intent-filter>
+        </service>
+
+        <service
+            android:name="com.lody.virtual.client.stub.StubConnectionService$C3"
+            android:exported="true"
+            android:permission="android.permission.BIND_TELECOM_CONNECTION_SERVICE"
+            android:process=":p3">
+            <intent-filter>
+                <action android:name="android.telecom.ConnectionService" />
+            </intent-filter>
+        </service>
+
+        <service
+            android:name="com.lody.virtual.client.stub.StubConnectionService$C4"
+            android:exported="true"
+            android:permission="android.permission.BIND_TELECOM_CONNECTION_SERVICE"
+            android:process=":p4">
+            <intent-filter>
+                <action android:name="android.telecom.ConnectionService" />
+            </intent-filter>
+        </service>
+
+        <service
+            android:name="com.lody.virtual.client.stub.StubConnectionService$C5"
+            android:exported="true"
+            android:permission="android.permission.BIND_TELECOM_CONNECTION_SERVICE"
+            android:process=":p5">
+            <intent-filter>
+                <action android:name="android.telecom.ConnectionService" />
+            </intent-filter>
+        </service>
+
+        <service
+            android:name="com.lody.virtual.client.stub.StubConnectionService$C6"
+            android:exported="true"
+            android:permission="android.permission.BIND_TELECOM_CONNECTION_SERVICE"
+            android:process=":p6">
+            <intent-filter>
+                <action android:name="android.telecom.ConnectionService" />
+            </intent-filter>
+        </service>
+
+        <service
+            android:name="com.lody.virtual.client.stub.StubConnectionService$C7"
+            android:exported="true"
+            android:permission="android.permission.BIND_TELECOM_CONNECTION_SERVICE"
+            android:process=":p7">
+            <intent-filter>
+                <action android:name="android.telecom.ConnectionService" />
+            </intent-filter>
+        </service>
+
+        <service
+            android:name="com.lody.virtual.client.stub.StubConnectionService$C8"
+            android:exported="true"
+            android:permission="android.permission.BIND_TELECOM_CONNECTION_SERVICE"
+            android:process=":p8">
+            <intent-filter>
+                <action android:name="android.telecom.ConnectionService" />
+            </intent-filter>
+        </service>
+
+        <service
+            android:name="com.lody.virtual.client.stub.StubConnectionService$C9"
+            android:exported="true"
+            android:permission="android.permission.BIND_TELECOM_CONNECTION_SERVICE"
+            android:process=":p9">
+            <intent-filter>
+                <action android:name="android.telecom.ConnectionService" />
+            </intent-filter>
+        </service>
+
+        <service
+            android:name="com.lody.virtual.client.stub.StubConnectionService$C10"
+            android:exported="true"
+            android:permission="android.permission.BIND_TELECOM_CONNECTION_SERVICE"
+            android:process=":p10">
+            <intent-filter>
+                <action android:name="android.telecom.ConnectionService" />
+            </intent-filter>
+        </service>
+
+        <service
+            android:name="com.lody.virtual.client.stub.StubConnectionService$C11"
+            android:exported="true"
+            android:permission="android.permission.BIND_TELECOM_CONNECTION_SERVICE"
+            android:process=":p11">
+            <intent-filter>
+                <action android:name="android.telecom.ConnectionService" />
+            </intent-filter>
+        </service>
+
+        <service
+            android:name="com.lody.virtual.client.stub.StubConnectionService$C12"
+            android:exported="true"
+            android:permission="android.permission.BIND_TELECOM_CONNECTION_SERVICE"
+            android:process=":p12">
+            <intent-filter>
+                <action android:name="android.telecom.ConnectionService" />
+            </intent-filter>
+        </service>
+
+        <service
+            android:name="com.lody.virtual.client.stub.StubConnectionService$C13"
+            android:exported="true"
+            android:permission="android.permission.BIND_TELECOM_CONNECTION_SERVICE"
+            android:process=":p13">
+            <intent-filter>
+                <action android:name="android.telecom.ConnectionService" />
+            </intent-filter>
+        </service>
+
+        <service
+            android:name="com.lody.virtual.client.stub.StubConnectionService$C14"
+            android:exported="true"
+            android:permission="android.permission.BIND_TELECOM_CONNECTION_SERVICE"
+            android:process=":p14">
+            <intent-filter>
+                <action android:name="android.telecom.ConnectionService" />
+            </intent-filter>
+        </service>
+
+        <service
+            android:name="com.lody.virtual.client.stub.StubConnectionService$C15"
+            android:exported="true"
+            android:permission="android.permission.BIND_TELECOM_CONNECTION_SERVICE"
+            android:process=":p15">
+            <intent-filter>
+                <action android:name="android.telecom.ConnectionService" />
+            </intent-filter>
+        </service>
+
+        <service
+            android:name="com.lody.virtual.client.stub.StubConnectionService$C16"
+            android:exported="true"
+            android:permission="android.permission.BIND_TELECOM_CONNECTION_SERVICE"
+            android:process=":p16">
+            <intent-filter>
+                <action android:name="android.telecom.ConnectionService" />
+            </intent-filter>
+        </service>
+
+        <service
+            android:name="com.lody.virtual.client.stub.StubConnectionService$C17"
+            android:exported="true"
+            android:permission="android.permission.BIND_TELECOM_CONNECTION_SERVICE"
+            android:process=":p17">
+            <intent-filter>
+                <action android:name="android.telecom.ConnectionService" />
+            </intent-filter>
+        </service>
+
+        <service
+            android:name="com.lody.virtual.client.stub.StubConnectionService$C18"
+            android:exported="true"
+            android:permission="android.permission.BIND_TELECOM_CONNECTION_SERVICE"
+            android:process=":p18">
+            <intent-filter>
+                <action android:name="android.telecom.ConnectionService" />
+            </intent-filter>
+        </service>
+
+        <service
+            android:name="com.lody.virtual.client.stub.StubConnectionService$C19"
+            android:exported="true"
+            android:permission="android.permission.BIND_TELECOM_CONNECTION_SERVICE"
+            android:process=":p19">
+            <intent-filter>
+                <action android:name="android.telecom.ConnectionService" />
+            </intent-filter>
+        </service>
+
+        <service
+            android:name="com.lody.virtual.client.stub.StubConnectionService$C20"
+            android:exported="true"
+            android:permission="android.permission.BIND_TELECOM_CONNECTION_SERVICE"
+            android:process=":p20">
+            <intent-filter>
+                <action android:name="android.telecom.ConnectionService" />
+            </intent-filter>
+        </service>
+
+        <service
+            android:name="com.lody.virtual.client.stub.StubConnectionService$C21"
+            android:exported="true"
+            android:permission="android.permission.BIND_TELECOM_CONNECTION_SERVICE"
+            android:process=":p21">
+            <intent-filter>
+                <action android:name="android.telecom.ConnectionService" />
+            </intent-filter>
+        </service>
+
+        <service
+            android:name="com.lody.virtual.client.stub.StubConnectionService$C22"
+            android:exported="true"
+            android:permission="android.permission.BIND_TELECOM_CONNECTION_SERVICE"
+            android:process=":p22">
+            <intent-filter>
+                <action android:name="android.telecom.ConnectionService" />
+            </intent-filter>
+        </service>
+
+        <service
+            android:name="com.lody.virtual.client.stub.StubConnectionService$C23"
+            android:exported="true"
+            android:permission="android.permission.BIND_TELECOM_CONNECTION_SERVICE"
+            android:process=":p23">
+            <intent-filter>
+                <action android:name="android.telecom.ConnectionService" />
+            </intent-filter>
+        </service>
+
+        <service
+            android:name="com.lody.virtual.client.stub.StubConnectionService$C24"
+            android:exported="true"
+            android:permission="android.permission.BIND_TELECOM_CONNECTION_SERVICE"
+            android:process=":p24">
+            <intent-filter>
+                <action android:name="android.telecom.ConnectionService" />
+            </intent-filter>
+        </service>
+
+        <service
+            android:name="com.lody.virtual.client.stub.StubConnectionService$C25"
+            android:exported="true"
+            android:permission="android.permission.BIND_TELECOM_CONNECTION_SERVICE"
+            android:process=":p25">
+            <intent-filter>
+                <action android:name="android.telecom.ConnectionService" />
+            </intent-filter>
+        </service>
+
+        <service
+            android:name="com.lody.virtual.client.stub.StubConnectionService$C26"
+            android:exported="true"
+            android:permission="android.permission.BIND_TELECOM_CONNECTION_SERVICE"
+            android:process=":p26">
+            <intent-filter>
+                <action android:name="android.telecom.ConnectionService" />
+            </intent-filter>
+        </service>
+
+        <service
+            android:name="com.lody.virtual.client.stub.StubConnectionService$C27"
+            android:exported="true"
+            android:permission="android.permission.BIND_TELECOM_CONNECTION_SERVICE"
+            android:process=":p27">
+            <intent-filter>
+                <action android:name="android.telecom.ConnectionService" />
+            </intent-filter>
+        </service>
+
+        <service
+            android:name="com.lody.virtual.client.stub.StubConnectionService$C28"
+            android:exported="true"
+            android:permission="android.permission.BIND_TELECOM_CONNECTION_SERVICE"
+            android:process=":p28">
+            <intent-filter>
+                <action android:name="android.telecom.ConnectionService" />
+            </intent-filter>
+        </service>
+
+        <service
+            android:name="com.lody.virtual.client.stub.StubConnectionService$C29"
+            android:exported="true"
+            android:permission="android.permission.BIND_TELECOM_CONNECTION_SERVICE"
+            android:process=":p29">
+            <intent-filter>
+                <action android:name="android.telecom.ConnectionService" />
+            </intent-filter>
+        </service>
+
+        <service
+            android:name="com.lody.virtual.client.stub.StubConnectionService$C30"
+            android:exported="true"
+            android:permission="android.permission.BIND_TELECOM_CONNECTION_SERVICE"
+            android:process=":p30">
+            <intent-filter>
+                <action android:name="android.telecom.ConnectionService" />
+            </intent-filter>
+        </service>
+
+        <service
+            android:name="com.lody.virtual.client.stub.StubConnectionService$C31"
+            android:exported="true"
+            android:permission="android.permission.BIND_TELECOM_CONNECTION_SERVICE"
+            android:process=":p31">
+            <intent-filter>
+                <action android:name="android.telecom.ConnectionService" />
+            </intent-filter>
+        </service>
+
+        <service
+            android:name="com.lody.virtual.client.stub.StubConnectionService$C32"
+            android:exported="true"
+            android:permission="android.permission.BIND_TELECOM_CONNECTION_SERVICE"
+            android:process=":p32">
+            <intent-filter>
+                <action android:name="android.telecom.ConnectionService" />
+            </intent-filter>
+        </service>
+
+        <service
+            android:name="com.lody.virtual.client.stub.StubConnectionService$C33"
+            android:exported="true"
+            android:permission="android.permission.BIND_TELECOM_CONNECTION_SERVICE"
+            android:process=":p33">
+            <intent-filter>
+                <action android:name="android.telecom.ConnectionService" />
+            </intent-filter>
+        </service>
+
+        <service
+            android:name="com.lody.virtual.client.stub.StubConnectionService$C34"
+            android:exported="true"
+            android:permission="android.permission.BIND_TELECOM_CONNECTION_SERVICE"
+            android:process=":p34">
+            <intent-filter>
+                <action android:name="android.telecom.ConnectionService" />
+            </intent-filter>
+        </service>
+
+        <service
+            android:name="com.lody.virtual.client.stub.StubConnectionService$C35"
+            android:exported="true"
+            android:permission="android.permission.BIND_TELECOM_CONNECTION_SERVICE"
+            android:process=":p35">
+            <intent-filter>
+                <action android:name="android.telecom.ConnectionService" />
+            </intent-filter>
+        </service>
+
+        <service
+            android:name="com.lody.virtual.client.stub.StubConnectionService$C36"
+            android:exported="true"
+            android:permission="android.permission.BIND_TELECOM_CONNECTION_SERVICE"
+            android:process=":p36">
+            <intent-filter>
+                <action android:name="android.telecom.ConnectionService" />
+            </intent-filter>
+        </service>
+
+        <service
+            android:name="com.lody.virtual.client.stub.StubConnectionService$C37"
+            android:exported="true"
+            android:permission="android.permission.BIND_TELECOM_CONNECTION_SERVICE"
+            android:process=":p37">
+            <intent-filter>
+                <action android:name="android.telecom.ConnectionService" />
+            </intent-filter>
+        </service>
+
+        <service
+            android:name="com.lody.virtual.client.stub.StubConnectionService$C38"
+            android:exported="true"
+            android:permission="android.permission.BIND_TELECOM_CONNECTION_SERVICE"
+            android:process=":p38">
+            <intent-filter>
+                <action android:name="android.telecom.ConnectionService" />
+            </intent-filter>
+        </service>
+
+        <service
+            android:name="com.lody.virtual.client.stub.StubConnectionService$C39"
+            android:exported="true"
+            android:permission="android.permission.BIND_TELECOM_CONNECTION_SERVICE"
+            android:process=":p39">
+            <intent-filter>
+                <action android:name="android.telecom.ConnectionService" />
+            </intent-filter>
+        </service>
+
+        <service
+            android:name="com.lody.virtual.client.stub.StubConnectionService$C40"
+            android:exported="true"
+            android:permission="android.permission.BIND_TELECOM_CONNECTION_SERVICE"
+            android:process=":p40">
+            <intent-filter>
+                <action android:name="android.telecom.ConnectionService" />
+            </intent-filter>
+        </service>
+
+        <service
+            android:name="com.lody.virtual.client.stub.StubConnectionService$C41"
+            android:exported="true"
+            android:permission="android.permission.BIND_TELECOM_CONNECTION_SERVICE"
+            android:process=":p41">
+            <intent-filter>
+                <action android:name="android.telecom.ConnectionService" />
+            </intent-filter>
+        </service>
+
+        <service
+            android:name="com.lody.virtual.client.stub.StubConnectionService$C42"
+            android:exported="true"
+            android:permission="android.permission.BIND_TELECOM_CONNECTION_SERVICE"
+            android:process=":p42">
+            <intent-filter>
+                <action android:name="android.telecom.ConnectionService" />
+            </intent-filter>
+        </service>
+
+        <service
+            android:name="com.lody.virtual.client.stub.StubConnectionService$C43"
+            android:exported="true"
+            android:permission="android.permission.BIND_TELECOM_CONNECTION_SERVICE"
+            android:process=":p43">
+            <intent-filter>
+                <action android:name="android.telecom.ConnectionService" />
+            </intent-filter>
+        </service>
+
+        <service
+            android:name="com.lody.virtual.client.stub.StubConnectionService$C44"
+            android:exported="true"
+            android:permission="android.permission.BIND_TELECOM_CONNECTION_SERVICE"
+            android:process=":p44">
+            <intent-filter>
+                <action android:name="android.telecom.ConnectionService" />
+            </intent-filter>
+        </service>
+
+        <service
+            android:name="com.lody.virtual.client.stub.StubConnectionService$C45"
+            android:exported="true"
+            android:permission="android.permission.BIND_TELECOM_CONNECTION_SERVICE"
+            android:process=":p45">
+            <intent-filter>
+                <action android:name="android.telecom.ConnectionService" />
+            </intent-filter>
+        </service>
+
+        <service
+            android:name="com.lody.virtual.client.stub.StubConnectionService$C46"
+            android:exported="true"
+            android:permission="android.permission.BIND_TELECOM_CONNECTION_SERVICE"
+            android:process=":p46">
+            <intent-filter>
+                <action android:name="android.telecom.ConnectionService" />
+            </intent-filter>
+        </service>
+
+        <service
+            android:name="com.lody.virtual.client.stub.StubConnectionService$C47"
+            android:exported="true"
+            android:permission="android.permission.BIND_TELECOM_CONNECTION_SERVICE"
+            android:process=":p47">
+            <intent-filter>
+                <action android:name="android.telecom.ConnectionService" />
+            </intent-filter>
+        </service>
+
+        <service
+            android:name="com.lody.virtual.client.stub.StubConnectionService$C48"
+            android:exported="true"
+            android:permission="android.permission.BIND_TELECOM_CONNECTION_SERVICE"
+            android:process=":p48">
+            <intent-filter>
+                <action android:name="android.telecom.ConnectionService" />
+            </intent-filter>
+        </service>
+
+        <service
+            android:name="com.lody.virtual.client.stub.StubConnectionService$C49"
+            android:exported="true"
+            android:permission="android.permission.BIND_TELECOM_CONNECTION_SERVICE"
+            android:process=":p49">
+            <intent-filter>
+                <action android:name="android.telecom.ConnectionService" />
+            </intent-filter>
+        </service>
 
         <service
             android:name="com.lody.virtual.client.stub.StubIsolatedService$C0"
