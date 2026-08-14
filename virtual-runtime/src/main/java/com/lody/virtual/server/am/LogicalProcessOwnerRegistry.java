@@ -369,6 +369,13 @@ final class LogicalProcessOwnerRegistry<T> {
         return entry == null || entry.isReservation() ? null : snapshot(entry);
     }
 
+    /** Returns the claimed owner only while its endpoint is still usable. */
+    synchronized OwnerSnapshot<T> findLive(LogicalProcessKey key) {
+        Entry<T> entry = byKey.get(key);
+        return entry == null || entry.isReservation() || !liveness.isAlive(entry.owner)
+                ? null : snapshot(entry);
+    }
+
     synchronized OwnerSnapshot<T> findBySlot(int slot) {
         Entry<T> entry = bySlot.get(slot);
         return entry == null || entry.isReservation() ? null : snapshot(entry);

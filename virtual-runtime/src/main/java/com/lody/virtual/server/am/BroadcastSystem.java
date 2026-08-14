@@ -13,6 +13,7 @@ import android.os.Message;
 import com.lody.virtual.client.core.VirtualCore;
 import com.lody.virtual.client.env.SpecialComponentList;
 import com.lody.virtual.helper.collection.ArrayMap;
+import com.lody.virtual.helper.utils.BroadcastPackageScope;
 import com.lody.virtual.helper.utils.VLog;
 import com.lody.virtual.remote.PendingResultData;
 import com.lody.virtual.server.pm.PackageSetting;
@@ -244,8 +245,9 @@ public class BroadcastSystem {
             if ((intent.getFlags() & FLAG_RECEIVER_REGISTERED_ONLY) != 0 || isInitialStickyBroadcast()) {
                 return;
             }
-            String privilegePkg = intent.getStringExtra("_VA_|_privilege_pkg_");
-            if (privilegePkg != null && !info.packageName.equals(privilegePkg)) {
+            String targetPackage = intent.getStringExtra(
+                    BroadcastPackageScope.EXTRA_TARGET_PACKAGE);
+            if (!BroadcastPackageScope.accepts(targetPackage, info.packageName)) {
                 return;
             }
             PendingResult result = goAsync();

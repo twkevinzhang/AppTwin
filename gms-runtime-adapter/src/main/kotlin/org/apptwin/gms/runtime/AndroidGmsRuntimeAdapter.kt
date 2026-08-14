@@ -114,6 +114,7 @@ class AndroidGmsRuntimeAdapter private constructor(
         val before = observeForMutation(groupId, binding)
             ?: return GmsRuntimeMutationResult.RetryableFailure("RUNTIME_OBSERVE_RETRYABLE")
         if (before.satisfies(GmsDesiredState.ENABLED, release.release.releaseId)) {
+            provisionCloudMessaging(binding)?.let { return it }
             if (!receipts.contains(receipt)) receipts.record(receipt)
             return GmsRuntimeMutationResult.AlreadySatisfied(before)
         }
@@ -243,8 +244,17 @@ class AndroidGmsRuntimeAdapter private constructor(
             is RuntimeEngineResult.Retryable ->
                 return GmsRuntimeMutationResult.RetryableFailure(prepared.code)
         }
+        provisionCloudMessaging(userId)?.let { return it }
         return terminal(groupId, userId, receipt, release.release.releaseId)
     }
+
+    private fun provisionCloudMessaging(userId: Int): GmsRuntimeMutationResult? =
+        when (val provisioned = safeEngine { engine.provisionCloudMessaging(userId) }) {
+            RuntimeEngineResult.Success -> null
+            is RuntimeEngineResult.Rejected -> GmsRuntimeMutationResult.Rejected(provisioned.code)
+            is RuntimeEngineResult.Retryable ->
+                GmsRuntimeMutationResult.RetryableFailure(provisioned.code)
+        }
 
     private fun terminal(
         groupId: GmsGroupId,

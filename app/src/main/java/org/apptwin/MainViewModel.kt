@@ -739,6 +739,11 @@ class MainViewModel internal constructor(
                 gmsResult.onFailure { error ->
                     add("Google 服務相容資料需要處理：${error.userMessage()}")
                 }
+                gmsResult.onSuccess { result ->
+                    if (result.cloudMessagingRepairFailures.isNotEmpty()) {
+                        add("Google 背景通知服務需要重試")
+                    }
+                }
             }
             if (notices.isNotEmpty()) showMessage(notices.joinToString("\n"))
             refresh()

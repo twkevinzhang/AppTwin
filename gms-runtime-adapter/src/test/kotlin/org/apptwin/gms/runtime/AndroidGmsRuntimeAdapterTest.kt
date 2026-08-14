@@ -37,6 +37,7 @@ class AndroidGmsRuntimeAdapterTest {
         assertTrue(fixture.engine.state(11).installed)
         assertFalse(fixture.engine.state(12).installed)
         assertEquals(listOf(11, 11), fixture.engine.installUsers)
+        assertEquals(listOf(11), fixture.engine.cloudMessagingUsers)
         with(fixture.engine.provenances.single { it.packageName == PinnedMicrogRelease.PACKAGE_NAME }) {
             assertEquals(PinnedMicrogRelease.PACKAGE_NAME, packageName)
             assertEquals(PinnedMicrogRelease.VERSION_CODE.toInt(), versionCode)
@@ -64,6 +65,34 @@ class AndroidGmsRuntimeAdapterTest {
         assertTrue(second is GmsRuntimeMutationResult.Applied)
         assertTrue(third is GmsRuntimeMutationResult.AlreadySatisfied)
         assertEquals(3, fixture.engine.installUsers.size)
+        assertEquals(listOf(11, 11), fixture.engine.cloudMessagingUsers)
+    }
+
+    @Test
+    fun `already enabled runtime repairs cloud messaging provisioning`() {
+        val fixture = Fixture()
+        fixture.adapter.ensureEnabled(groupA, release(), operationA)
+        fixture.engine.cloudMessagingUsers.clear()
+
+        val result = fixture.adapter.ensureEnabled(groupA, release(), operationB)
+
+        assertTrue(result is GmsRuntimeMutationResult.AlreadySatisfied)
+        assertEquals(listOf(11), fixture.engine.cloudMessagingUsers)
+    }
+
+    @Test
+    fun `cloud messaging provisioning failure remains retryable`() {
+        val fixture = Fixture()
+        fixture.engine.cloudMessagingResults +=
+            RuntimeEngineResult.Retryable("CLOUD_MESSAGING_PROVISION_RETRYABLE")
+
+        val result = fixture.adapter.ensureEnabled(groupA, release(), operationA)
+
+        assertEquals(
+            GmsRuntimeMutationResult.RetryableFailure("CLOUD_MESSAGING_PROVISION_RETRYABLE"),
+            result,
+        )
+        assertEquals(0, fixture.receipts.recordedCount)
     }
 
     @Test
@@ -374,6 +403,8 @@ class AndroidGmsRuntimeAdapterTest {
         val installResults = ArrayDeque<RuntimeEngineResult>()
         val suspendResults = ArrayDeque<RuntimeEngineResult>()
         val installUsers = mutableListOf<Int>()
+        val cloudMessagingUsers = mutableListOf<Int>()
+        val cloudMessagingResults = ArrayDeque<RuntimeEngineResult>()
         val suspendUsers = mutableListOf<Int>()
         val uninstallUsers = mutableListOf<Int>()
         val provenances = mutableListOf<TrustedPackageProvenance>()
@@ -423,6 +454,10 @@ class AndroidGmsRuntimeAdapterTest {
         override fun preparePrivateState(userId: Int): RuntimeEngineResult {
             state(userId).privateState = true
             return RuntimeEngineResult.Success
+        }
+        override fun provisionCloudMessaging(userId: Int): RuntimeEngineResult {
+            cloudMessagingUsers += userId
+            return cloudMessagingResults.pollFirst() ?: RuntimeEngineResult.Success
         }
         override fun suspendPreservingData(userId: Int): RuntimeEngineResult {
             suspendUsers += userId
