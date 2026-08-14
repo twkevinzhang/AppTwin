@@ -954,6 +954,15 @@ class MethodProxies {
             }
             ServiceInfo serviceInfo = VirtualCore.get().resolveServiceInfo(service, userId);
             if (serviceInfo != null) {
+                if (GmsServiceBindingPolicy.shouldRejectUnavailableWearableBinding(
+                        getAppPkg(), service.getAction(), serviceInfo.packageName)) {
+                    // The virtual Wearable service cannot publish a useful Binder without a
+                    // physical companion. Report bind failure so optional clients can continue
+                    // through their supported no-Wear fallback instead of waiting indefinitely.
+                    VLog.i("VA-GmsRoute", "reject unavailable wearable binding caller=%s",
+                            getAppPkg());
+                    return 0;
+                }
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
                     service.setComponent(new ComponentName(serviceInfo.packageName, serviceInfo.name));
                 }

@@ -27,10 +27,18 @@ public class ShortcutServiceStubTest {
 
         new ShortcutServiceStub(invocationStub);
 
-        String[] callingPackageMethods = {
+        String[] shortcutReadMethods = {
                 "getManifestShortcuts",
                 "getDynamicShortcuts",
                 "getShortcuts",
+                "getPinnedShortcuts"
+        };
+        for (String method : shortcutReadMethods) {
+            assertProxyType(invocationStub, method,
+                    "ReplacePkgAndRepairShortcutListMethodProxy");
+        }
+
+        String[] callingPackageMethods = {
                 "getShareTargets",
                 "hasShareTargets",
                 "disableShortcuts",
@@ -44,8 +52,7 @@ public class ShortcutServiceStubTest {
                 "isRequestPinItemSupported",
                 "reportShortcutUsed",
                 "onApplicationActive",
-                "removeAllDynamicShortcuts",
-                "getPinnedShortcuts"
+                "removeAllDynamicShortcuts"
         };
         for (String method : callingPackageMethods) {
             assertProxyType(invocationStub, method, ReplaceCallingPkgMethodProxy.class);
@@ -130,6 +137,41 @@ public class ShortcutServiceStubTest {
                 });
 
         assertNull(selected);
+    }
+
+    @Test
+    public void rewritesShortcutActivityToHostProxyComponent() {
+        String proxyActivity = "com.lody.virtual.client.stub.ShortcutHandleActivity";
+        String[] incomingShortcutActivity = {
+                "jp.naver.line.android/jp.naver.line.android.activity.SplashActivity"
+        };
+
+        ShortcutServiceStub.rewriteShortcutActivity(
+                incomingShortcutActivity,
+                "org.apptwin",
+                proxyActivity,
+                (packageName, className) -> packageName + "/" + className,
+                (shortcut, activity) -> shortcut[0] = activity);
+
+        assertEquals("org.apptwin/" + proxyActivity, incomingShortcutActivity[0]);
+    }
+
+    @Test
+    public void preservesGuestActionForShortcutProxyIntent() {
+        assertEquals(
+                "jp.naver.line.android.action.OPEN_CHAT",
+                ShortcutServiceStub.selectShortcutProxyAction(
+                        "jp.naver.line.android.action.OPEN_CHAT"));
+    }
+
+    @Test
+    public void suppliesViewActionWhenGuestShortcutActionIsMissing() {
+        assertEquals(
+                "android.intent.action.VIEW",
+                ShortcutServiceStub.selectShortcutProxyAction(null));
+        assertEquals(
+                "android.intent.action.VIEW",
+                ShortcutServiceStub.selectShortcutProxyAction(""));
     }
 
     private static Object invokeShortcutFinder(String proxySimpleName, String finderName)
