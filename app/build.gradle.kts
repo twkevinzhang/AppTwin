@@ -1,5 +1,9 @@
+import com.google.firebase.crashlytics.buildtools.gradle.CrashlyticsExtension
+
 plugins {
     id("com.android.application")
+    id("com.google.gms.google-services")
+    id("com.google.firebase.crashlytics")
     id("org.jetbrains.kotlin.android")
     id("org.jetbrains.kotlin.plugin.compose")
 }
@@ -34,8 +38,24 @@ android {
     }
 
     buildTypes {
+        debug {
+            configure<CrashlyticsExtension> {
+                nativeSymbolUploadEnabled = true
+                // libva++.so is built in the virtual-runtime library module. Point the
+                // uploader at its unstripped NDK output so guest native crashes resolve.
+                unstrippedNativeLibsDir = project(":virtual-runtime")
+                    .layout.buildDirectory
+                    .dir("intermediates/cxx/Debug")
+                    .get()
+                    .asFile
+            }
+        }
         release {
             isMinifyEnabled = false
+            configure<CrashlyticsExtension> {
+                mappingFileUploadEnabled = false
+                nativeSymbolUploadEnabled = false
+            }
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro",
@@ -99,6 +119,7 @@ tasks.configureEach {
 
 dependencies {
     val composeBom = platform("androidx.compose:compose-bom:2025.03.00")
+    val firebaseBom = platform("com.google.firebase:firebase-bom:34.16.0")
 
     implementation(project(":virtual-runtime"))
     implementation(project(":package-source"))
@@ -117,6 +138,8 @@ dependencies {
     implementation("androidx.lifecycle:lifecycle-viewmodel-ktx:2.8.7")
     debugImplementation("androidx.compose.ui:ui-tooling")
     debugImplementation("androidx.compose.ui:ui-test-manifest")
+    debugImplementation(firebaseBom)
+    debugImplementation("com.google.firebase:firebase-crashlytics-ndk")
     androidTestImplementation(composeBom)
     androidTestImplementation("androidx.compose.ui:ui-test-junit4")
     androidTestImplementation("androidx.test.ext:junit:1.2.1")

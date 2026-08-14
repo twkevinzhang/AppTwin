@@ -8,6 +8,7 @@ import com.lody.virtual.client.NativeEngine
 import com.lody.virtual.client.core.VirtualCore
 import com.lody.virtual.client.isolated.IsolatedWorkerProcess
 import com.lody.virtual.client.stub.VASettings
+import org.apptwin.crash.CrashReporting
 
 /** Boots the GPL virtual runtime before Android creates any host or guest component. */
 class AppTwinApplication : Application() {
@@ -31,6 +32,7 @@ class AppTwinApplication : Application() {
     override fun onCreate() {
         super.onCreate()
         if (isolatedWorker) return
+        CrashReporting.initialize(this, VirtualCore.get())
         runCatching {
             VirtualCore.get().initialize(object : VirtualCore.VirtualInitializer() {})
         }.onFailure { Log.e(TAG, "VirtualCore initialization failed", it) }

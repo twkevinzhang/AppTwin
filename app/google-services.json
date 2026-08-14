@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "53707316877",
+    "project_id": "report-robot-397115",
+    "storage_bucket": "report-robot-397115.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:53707316877:android:a6dde114c7ef73ba4a0cc4",
+        "android_client_info": {
+          "package_name": "org.apptwin"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyA2lnj4ftg8ifWtM5VmqaLIC1nFF4jYdyM"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
