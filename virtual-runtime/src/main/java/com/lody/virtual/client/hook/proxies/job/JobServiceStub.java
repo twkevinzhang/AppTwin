@@ -48,7 +48,8 @@ public class JobServiceStub extends BinderInvocationProxy {
 		private getPendingJob() {
 		}
 		public Object call(Object who, Method method, Object... args) throws Throwable {
-			return VJobScheduler.get().getPendingJob((Integer) args[0]);
+			Integer jobId = findJobId(args);
+			return jobId == null ? null : VJobScheduler.get().getPendingJob(jobId);
 		}
 		public String getMethodName() {
 			return "getPendingJob";
@@ -108,6 +109,21 @@ public class JobServiceStub extends BinderInvocationProxy {
 		return null;
 	}
 
+	/**
+	 * Android 15+ prefixes some IJobScheduler methods with a nullable namespace.
+	 * Locate the client job id by type instead of assuming it is the first argument.
+	 */
+	static Integer findJobId(Object[] args) {
+		if (args != null) {
+			for (Object arg : args) {
+				if (arg instanceof Integer) {
+					return (Integer) arg;
+				}
+			}
+		}
+		return null;
+	}
+
 	private static Object findJobWorkItem(Object[] args) {
 		if (args != null) {
 			for (Object arg : args) {
@@ -155,8 +171,10 @@ public class JobServiceStub extends BinderInvocationProxy {
 
 		@Override
 		public Object call(Object who, Method method, Object... args) throws Throwable {
-			int jobId = (int) args[0];
-			VJobScheduler.get().cancel(jobId);
+			Integer jobId = findJobId(args);
+			if (jobId != null) {
+				VJobScheduler.get().cancel(jobId);
+			}
 			return 0;
 		}
 	}
