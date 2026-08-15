@@ -105,6 +105,7 @@ public class VActivityManagerService extends IActivityManager.Stub
     private final PreparedActivityLaunchRegistry mPreparedActivityLaunches =
             new PreparedActivityLaunchRegistry();
     private GmsBackgroundKeepAlive mGmsBackgroundKeepAlive;
+    private LinePushProcessGuard mLinePushProcessGuard;
     private Handler mServiceHandler;
     private ActivityManager am = (ActivityManager) VirtualCore.get().getContext()
             .getSystemService(Context.ACTIVITY_SERVICE);
@@ -133,6 +134,7 @@ public class VActivityManagerService extends IActivityManager.Stub
         AttributeCache.init(context);
         mServiceHandler = new Handler(Looper.getMainLooper());
         mGmsBackgroundKeepAlive = new GmsBackgroundKeepAlive(context);
+        mLinePushProcessGuard = new LinePushProcessGuard(context, mServiceHandler);
         PackageManager pm = context.getPackageManager();
         PackageInfo packageInfo = null;
         try {
@@ -1147,6 +1149,7 @@ public class VActivityManagerService extends IActivityManager.Stub
         }
 
         mGmsBackgroundKeepAlive.release(process);
+        mLinePushProcessGuard.release(process);
         for (ServiceRecord service : ownedServices) {
             ComponentName component = ComponentUtils.toComponentName(service.serviceInfo);
             for (IServiceConnection connection : disconnectedClients.get(service)) {
@@ -2342,12 +2345,11 @@ public class VActivityManagerService extends IActivityManager.Stub
             // restore to origin action.
             realIntent.setAction(originAction);
         }
-        handleStaticBroadcastAsUser(vuid, info, realIntent, result);
-        return true;
+        return handleStaticBroadcastAsUser(vuid, info, realIntent, result);
     }
 
-    private void handleStaticBroadcastAsUser(int vuid, ActivityInfo info, Intent intent,
-                                             PendingResultData result) {
+    private boolean handleStaticBroadcastAsUser(int vuid, ActivityInfo info, Intent intent,
+                                                PendingResultData result) {
         ProcessRecord r;
         synchronized (mProcessNames) {
             r = findProcessLocked(info.processName, vuid);
@@ -2355,12 +2357,22 @@ public class VActivityManagerService extends IActivityManager.Stub
         if ((BROADCAST_NOT_STARTED_PKG
                 || isStartProcessForBroadcast(info.processName, info.packageName)
                 || GmsBroadcastProcessPolicy.shouldStart(
-                        info.packageName, info.name, intent.getAction())) && r == null) {
+                        info.packageName, info.name, intent.getAction())
+                || LinePushBroadcastPolicy.shouldStart(
+                        info.packageName, info.processName, intent.getAction())) && r == null) {
             r = startProcessIfNeedLocked(info.processName, getUserId(vuid), info.packageName);
         }
-        if (r != null && r.appThread != null) {
-            performScheduleReceiver(r.client, vuid, info, intent, result);
+        if (r == null || r.appThread == null) {
+            return false;
         }
+        final ProcessRecord target = r;
+        Runnable dispatch = () -> performScheduleReceiver(
+                target.client, vuid, info, intent, result);
+        if (!mLinePushProcessGuard.protectAndDispatch(
+                target, intent.getAction(), result, dispatch)) {
+            dispatch.run();
+        }
+        return true;
     }
 
     private static boolean isStartProcessForBroadcast(String processName, String packageName) {
@@ -2376,9 +2388,13 @@ public class VActivityManagerService extends IActivityManager.Stub
             client.scheduleReceiver(info.processName, componentName, intent, result);
         } catch (Throwable e) {
             if (result != null) {
-                result.finish();
+                BroadcastSystem.get().broadcastFinish(result);
             }
         }
+    }
+
+    void onStaticBroadcastFinished(IBinder token) {
+        mLinePushProcessGuard.complete(token);
     }
 
     @Override

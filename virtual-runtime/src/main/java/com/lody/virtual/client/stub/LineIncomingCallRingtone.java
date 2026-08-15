@@ -1,6 +1,7 @@
 package com.lody.virtual.client.stub;
 
 import android.content.Context;
+import android.content.res.AssetFileDescriptor;
 import android.media.AudioAttributes;
 import android.media.AudioManager;
 import android.media.MediaPlayer;
@@ -17,6 +18,7 @@ import com.lody.virtual.helper.utils.VLog;
 final class LineIncomingCallRingtone {
     private static final String TAG = LineIncomingCallRingtone.class.getSimpleName();
     private static final long STATE_POLL_MILLIS = 100L;
+    private static final long PLAYBACK_START_DELAY_MILLIS = 250L;
     static final String LINE_RINGTONE_RESOURCE = "lineapp_ring_16k";
 
     private final Context context;
@@ -32,11 +34,20 @@ final class LineIncomingCallRingtone {
                 stop();
                 return;
             }
+            if (shouldStartPlayback(observed.getState())
+                    && lineRingtone == null
+                    && systemRingtone == null
+                    && !playbackAttempted) {
+                startPlayback();
+            }
             handler.postDelayed(this, STATE_POLL_MILLIS);
         }
     };
 
     private Connection connection;
+    private Context guestContext;
+    private String guestPackage;
+    private boolean playbackAttempted;
     private MediaPlayer lineRingtone;
     private Ringtone systemRingtone;
 
@@ -58,13 +69,24 @@ final class LineIncomingCallRingtone {
             VLog.i(TAG, "Respecting silent or zero-volume ringer state");
             return;
         }
+        connection = incomingConnection;
+        this.guestContext = guestContext;
+        this.guestPackage = guestPackage;
+        playbackAttempted = false;
+        handler.postDelayed(stateMonitor, PLAYBACK_START_DELAY_MILLIS);
+        VLog.i(TAG, "Scheduled cloned LINE incoming-call ringtone state="
+                + incomingConnection.getState());
+    }
+
+    private void startPlayback() {
+        playbackAttempted = true;
         try {
             AudioAttributes attributes = new AudioAttributes.Builder()
                     .setUsage(AudioAttributes.USAGE_NOTIFICATION_RINGTONE)
                     .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
                     .build();
             MediaPlayer nextLineRingtone = createLineRingtone(
-                    guestContext, guestPackage, attributes);
+                    context, guestContext, guestPackage, attributes);
             Ringtone nextSystemRingtone = null;
             if (nextLineRingtone == null) {
                 nextSystemRingtone = RingtoneManager.getRingtone(
@@ -78,7 +100,6 @@ final class LineIncomingCallRingtone {
                     nextSystemRingtone.setLooping(true);
                 }
             }
-            connection = incomingConnection;
             lineRingtone = nextLineRingtone;
             systemRingtone = nextSystemRingtone;
             if (nextLineRingtone != null) {
@@ -88,9 +109,7 @@ final class LineIncomingCallRingtone {
                 nextSystemRingtone.play();
                 VLog.w(TAG, "Started cloned LINE incoming-call ringtone using system fallback");
             }
-            handler.postDelayed(stateMonitor, STATE_POLL_MILLIS);
         } catch (Throwable error) {
-            connection = null;
             releaseLineRingtone();
             stopSystemRingtone();
             VLog.e(TAG, "Unable to start cloned LINE incoming-call ringtone", error);
@@ -100,6 +119,9 @@ final class LineIncomingCallRingtone {
     void stop() {
         handler.removeCallbacks(stateMonitor);
         connection = null;
+        guestContext = null;
+        guestPackage = null;
+        playbackAttempted = false;
         boolean hadActiveRingtone = lineRingtone != null || systemRingtone != null;
         releaseLineRingtone();
         stopSystemRingtone();
@@ -121,8 +143,9 @@ final class LineIncomingCallRingtone {
     }
 
     private static MediaPlayer createLineRingtone(
-            Context guestContext, String guestPackage, AudioAttributes attributes) {
-        if (guestContext == null || guestPackage == null) {
+            Context hostContext, Context guestContext, String guestPackage,
+            AudioAttributes attributes) throws Exception {
+        if (hostContext == null || guestContext == null || guestPackage == null) {
             return null;
         }
         int resourceId = guestContext.getResources().getIdentifier(
@@ -130,11 +153,30 @@ final class LineIncomingCallRingtone {
         if (!shouldUseLineRingtone(resourceId)) {
             return null;
         }
-        MediaPlayer player = MediaPlayer.create(guestContext, resourceId, attributes, 0);
-        if (player != null) {
-            player.setLooping(true);
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S) {
+            MediaPlayer legacyPlayer = MediaPlayer.create(
+                    guestContext, resourceId, attributes, 0);
+            if (legacyPlayer != null) {
+                legacyPlayer.setLooping(true);
+            }
+            return legacyPlayer;
         }
-        return player;
+        MediaPlayer player = new MediaPlayer(hostContext);
+        try (AssetFileDescriptor resource = guestContext.getResources()
+                .openRawResourceFd(resourceId)) {
+            if (resource == null) {
+                player.release();
+                return null;
+            }
+            player.setAudioAttributes(attributes);
+            player.setDataSource(resource);
+            player.prepare();
+            player.setLooping(true);
+            return player;
+        } catch (Throwable error) {
+            player.release();
+            throw error;
+        }
     }
 
     private void releaseLineRingtone() {
@@ -164,5 +206,9 @@ final class LineIncomingCallRingtone {
         return connectionState == Connection.STATE_NEW
                 || connectionState == Connection.STATE_INITIALIZING
                 || connectionState == Connection.STATE_RINGING;
+    }
+
+    static boolean shouldStartPlayback(int connectionState) {
+        return shouldContinue(connectionState);
     }
 }
