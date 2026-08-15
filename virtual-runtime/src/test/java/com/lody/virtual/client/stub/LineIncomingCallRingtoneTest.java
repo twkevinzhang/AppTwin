@@ -33,4 +33,13 @@ public class LineIncomingCallRingtoneTest {
         assertFalse(LineIncomingCallRingtone.shouldContinue(Connection.STATE_HOLDING));
         assertFalse(LineIncomingCallRingtone.shouldContinue(Connection.STATE_DISCONNECTED));
     }
+
+    @Test
+    public void startsAfterDelayWhileIncomingConnectionIsStillPending() {
+        assertTrue(LineIncomingCallRingtone.shouldStartPlayback(Connection.STATE_NEW));
+        assertTrue(LineIncomingCallRingtone.shouldStartPlayback(Connection.STATE_INITIALIZING));
+        assertTrue(LineIncomingCallRingtone.shouldStartPlayback(Connection.STATE_RINGING));
+        assertFalse(LineIncomingCallRingtone.shouldStartPlayback(Connection.STATE_ACTIVE));
+        assertFalse(LineIncomingCallRingtone.shouldStartPlayback(Connection.STATE_DISCONNECTED));
+    }
 }

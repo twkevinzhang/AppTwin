@@ -160,6 +160,7 @@ public class BroadcastSystem {
                 BroadcastRecord record = entry.getValue();
                 if (record.receiverInfo.packageName.equals(packageName)) {
                     record.pendingResult.finish();
+                    mAMS.onStaticBroadcastFinished(entry.getKey());
                     iterator.remove();
                 }
             }
@@ -183,6 +184,7 @@ public class BroadcastSystem {
             }
         }
         mTimeoutHandler.removeMessages(0, res.mToken);
+        mAMS.onStaticBroadcastFinished(res.mToken);
         res.finish();
     }
 
@@ -216,9 +218,13 @@ public class BroadcastSystem {
         @Override
         public void handleMessage(Message msg) {
             IBinder token = (IBinder) msg.obj;
-            BroadcastRecord r = mBroadcastRecords.remove(token);
+            BroadcastRecord r;
+            synchronized (mBroadcastRecords) {
+                r = mBroadcastRecords.remove(token);
+            }
             if (r != null) {
                 VLog.w(TAG, "Broadcast timeout, cancel to dispatch it.");
+                mAMS.onStaticBroadcastFinished(token);
                 r.pendingResult.finish();
             }
         }
