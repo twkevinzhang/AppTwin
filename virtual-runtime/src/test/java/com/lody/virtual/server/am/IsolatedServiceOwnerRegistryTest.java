@@ -2,6 +2,8 @@ package com.lody.virtual.server.am;
 
 import org.junit.Test;
 
+import android.content.pm.ServiceInfo;
+
 import java.util.ArrayList;
 import java.util.List;
 
@@ -71,6 +73,26 @@ public class IsolatedServiceOwnerRegistryTest {
         assertFalse(registry.remove(key, deadGeneration, dead));
         assertSame(successor, registry.find(key).owner());
         assertTrue(registry.remove(key, successorGeneration, successor));
+    }
+
+    @Test
+    public void namedInstancesOfSameComponentNeverShareAnOwnerKey() {
+        ServiceInfo service = new ServiceInfo();
+        service.packageName = "org.mozilla.firefox";
+        service.processName = "org.mozilla.firefox:tab";
+        service.name = "org.mozilla.gecko.process.GeckoChildProcessServices$tab";
+
+        LogicalProcessKey ordinary = VActivityManagerService.isolatedServiceKey(
+                110_005, service, null);
+        LogicalProcessKey first = VActivityManagerService.isolatedServiceKey(
+                110_005, service, "tab-1");
+        LogicalProcessKey second = VActivityManagerService.isolatedServiceKey(
+                110_005, service, "tab-2");
+
+        assertNotEquals(ordinary, first);
+        assertNotEquals(first, second);
+        assertEquals(ordinary, VActivityManagerService.isolatedServiceKey(
+                110_005, service, ""));
     }
 
     private Owner claim(LogicalProcessKey key, int slot) {

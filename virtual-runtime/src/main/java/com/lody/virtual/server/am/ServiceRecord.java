@@ -8,6 +8,8 @@ import android.os.Binder;
 import android.os.IBinder;
 import android.os.RemoteException;
 
+import com.lody.virtual.helper.utils.IsolatedServiceRouting;
+
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.IdentityHashMap;
@@ -24,6 +26,7 @@ public class ServiceRecord extends Binder {
 	public long activeSince;
 	public long lastActivityTime;
 	public ServiceInfo serviceInfo;
+	private String serviceInstanceName;
 	public int startId;
 	public ProcessRecord process;
 	public int foregroundId;
@@ -38,6 +41,15 @@ public class ServiceRecord extends Binder {
 
 	ServiceRecord(long generation) {
 		this.generation = generation;
+	}
+
+	void setServiceInstanceName(String instanceName) {
+		serviceInstanceName = IsolatedServiceRouting.normalizeInstanceName(instanceName);
+	}
+
+	boolean matchesServiceInstanceName(String instanceName) {
+		return java.util.Objects.equals(serviceInstanceName,
+				IsolatedServiceRouting.normalizeInstanceName(instanceName));
 	}
 
 	/** Returns true only for the first create dispatch of a live service generation. */
