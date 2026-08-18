@@ -80,18 +80,42 @@ import static android.content.pm.ActivityInfo.LAUNCH_SINGLE_TOP;
     }
 
 
-    private void deliverNewIntentLocked(ActivityRecord sourceRecord, ActivityRecord targetRecord, Intent intent) {
-        if (targetRecord == null) {
-            return;
+    private boolean deliverNewIntentLocked(ActivityRecord sourceRecord, ActivityRecord targetRecord,
+                                          Intent intent) {
+        if (targetRecord == null || targetRecord.process == null || targetRecord.process.terminalCleanupStarted) {
+            return false;
         }
         String creator = sourceRecord != null ? sourceRecord.component.getPackageName() : "android";
         try {
+            if (!isProcessEndpointAlive(targetRecord.process)) {
+                return false;
+            }
             targetRecord.process.client.scheduleNewIntent(creator, targetRecord.token, intent);
+            return true;
         } catch (RemoteException e) {
             e.printStackTrace();
+            return false;
         } catch (NullPointerException npe) {
             npe.printStackTrace();
+            return false;
         }
+    }
+
+    private static boolean isProcessEndpointAlive(ProcessRecord processRecord) {
+        if (processRecord == null || processRecord.terminalCleanupStarted) {
+            return false;
+        }
+        if (processRecord.lifecycle.state() != ProcessLifecycle.State.READY) {
+            return false;
+        }
+        if (processRecord.osIsolatedWorker && processRecord.client instanceof IsolatedGuestClient) {
+            return ((IsolatedGuestClient) processRecord.client).isEndpointActive();
+        }
+        if (processRecord.appThread == null) {
+            return false;
+        }
+        return processRecord.appThread.asBinder().isBinderAlive()
+                && processRecord.appThread.asBinder().pingBinder();
     }
 
     private TaskRecord findTaskByAffinityLocked(int userId, String affinity) {
@@ -413,6 +437,12 @@ import static android.content.pm.ActivityInfo.LAUNCH_SINGLE_TOP;
             boolean successorFailed = false;
             boolean startTaskToFront = !clearTask && !clearTop && ComponentUtils.isSameIntent(intent, reuseTask.taskRoot);
             ActivityRecord topBeforeMarking = topActivityInTask(reuseTask);
+            if (startTaskToFront && (topBeforeMarking == null
+                    || topBeforeMarking.process == null
+                    || topBeforeMarking.process.terminalCleanupStarted
+                    || !isProcessEndpointAlive(topBeforeMarking.process))) {
+                startTaskToFront = false;
+            }
             if (prepareHostLaunch) {
                 boolean requiresIntentDelivery = clearTarget.deliverIntent || singleTop;
                 boolean launcherTaskReactivation = isLauncherTaskReactivation(
@@ -435,6 +465,7 @@ import static android.content.pm.ActivityInfo.LAUNCH_SINGLE_TOP;
             }
             mAM.moveTaskToFront(reuseTask.taskId, 0);
             ArrayList<ActivityRecord> newlyMarked = new ArrayList<>();
+            boolean shouldStartSuccessor = !startTaskToFront;
 
             if (clearTarget.deliverIntent || singleTop) {
                 taskMarked = markTaskByClearTarget(reuseTask, clearTarget,
@@ -445,11 +476,13 @@ import static android.content.pm.ActivityInfo.LAUNCH_SINGLE_TOP;
                 }
                 // Target activity is on top
                 if (topRecord != null && !topRecord.marked && topRecord.component.equals(intent.getComponent())) {
-                    deliverNewIntentLocked(sourceRecord, topRecord, intent);
-                    delivered = true;
+                    delivered = deliverNewIntentLocked(sourceRecord, topRecord, intent);
+                    if (startTaskToFront && !delivered) {
+                        shouldStartSuccessor = true;
+                    }
                 }
             }
-            if (!startTaskToFront) {
+            if (shouldStartSuccessor) {
                 if (!delivered) {
                     destIntent = startActivityProcess(userId, sourceRecord, intent, info);
                     if (destIntent != null) {
@@ -469,7 +502,7 @@ import static android.content.pm.ActivityInfo.LAUNCH_SINGLE_TOP;
             } else if (taskMarked) {
                 rollbackMarkedActivities(newlyMarked);
             }
-            if (successorFailed || (!startTaskToFront && !delivered && !successorStarted)) {
+            if (successorFailed || (shouldStartSuccessor && !delivered && !successorStarted)) {
                 return PreparedActivityLaunch.failure("Unable to start activity in reused task");
             }
         }

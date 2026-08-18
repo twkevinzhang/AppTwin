@@ -514,6 +514,34 @@ public class VActivityManagerService extends IActivityManager.Stub
         }
     }
 
+    private boolean isUsableServiceRecordLocked(ServiceRecord record) {
+        if (record == null || record.process == null || record.isRetired()) {
+            return false;
+        }
+        ProcessLifecycle.State processState = record.process.lifecycle.state();
+        if (record.process.terminalCleanupStarted
+                || processState == ProcessLifecycle.State.FAILED
+                || processState == ProcessLifecycle.State.DEAD) {
+            return false;
+        }
+        return isCurrentProcessOwner(record.process) && isProcessEndpointActive(record.process);
+    }
+
+    private boolean isUsableServiceRecordLocked(ServiceRecord record, int userId) {
+        return isUsableServiceRecordLocked(record)
+                && record.process.userId == userId;
+    }
+
+    private void retireServiceRecordLocked(ServiceRecord record, String reason) {
+        if (record == null || !containsServiceRecordLocked(record) || record.isRetired()) {
+            return;
+        }
+        record.retire();
+        removeRecord(record);
+        VLog.w(TAG, "Retired unusable service record "
+                + ComponentUtils.toComponentName(record.serviceInfo) + " reason=" + reason);
+    }
+
 
     @Override
     public ComponentName startService(IBinder caller, Intent service, String resolvedType, int userId) {
@@ -697,6 +725,9 @@ public class VActivityManagerService extends IActivityManager.Stub
             r.retire();
             removeRecord(r);
         }
+        if (r.process == null) {
+            return;
+        }
         for (IServiceConnection connection : connections) {
             notifyServiceDisconnected(connection, className);
         }
@@ -722,6 +753,10 @@ public class VActivityManagerService extends IActivityManager.Stub
         ServiceRecord r;
         synchronized (this) {
             r = findRecordLocked(userId, serviceInfo, instanceName);
+            if (r != null && !isUsableServiceRecordLocked(r)) {
+                retireServiceRecordLocked(r, "stale-service-record");
+                r = null;
+            }
         }
         if (r == null && (flags & Context.BIND_AUTO_CREATE) != 0) {
             if (startServiceCommon(service, false, userId, instanceName) == null) {
@@ -729,6 +764,11 @@ public class VActivityManagerService extends IActivityManager.Stub
             }
             synchronized (this) {
                 r = findRecordLocked(userId, serviceInfo, instanceName);
+                if (r != null && !isUsableServiceRecordLocked(r)) {
+                    retireServiceRecordLocked(r, "stale-service-record");
+                    r = null;
+                    return 0;
+                }
             }
         }
         if (r == null) {
@@ -739,7 +779,7 @@ public class VActivityManagerService extends IActivityManager.Stub
         final ServiceRecord.IntentBindRecord boundRecord;
         boolean queuedWork = false;
         synchronized (this) {
-            if (!containsServiceRecordLocked(targetRecord) || targetRecord.isRetired()) {
+            if (!containsServiceRecordLocked(targetRecord) || !isUsableServiceRecordLocked(targetRecord)) {
                 return 0;
             }
             boundRecord = targetRecord.addToBoundIntent(new Intent(service), connection);
@@ -804,7 +844,10 @@ public class VActivityManagerService extends IActivityManager.Stub
         boolean queuedWork = false;
         synchronized (this) {
             r = findRecordLocked(connection);
-            if (r == null) {
+            if (r == null || !isUsableServiceRecordLocked(r, userId)) {
+                if (r != null) {
+                    retireServiceRecordLocked(r, "stale-service-record");
+                }
                 return false;
             }
 
@@ -830,7 +873,7 @@ public class VActivityManagerService extends IActivityManager.Stub
                 queuedWork |= enqueueStopOperationLocked(r, "last-client-unbound");
             }
         }
-        if (queuedWork) {
+        if (queuedWork && r != null && r.process != null) {
             drainProcessLifecycle(r.process);
         }
         return true;
@@ -845,8 +888,7 @@ public class VActivityManagerService extends IActivityManager.Stub
         boolean queuedWork = false;
         synchronized (this) {
             r = token instanceof ServiceRecord ? (ServiceRecord) token : null;
-            if (r == null || !containsServiceRecordLocked(r) || r.isRetired()
-                    || r.process.userId != userId) {
+            if (!isUsableServiceRecordLocked(r, userId)) {
                 return;
             }
             boundRecord = resolveBinding(r, bindToken, service);
@@ -855,7 +897,7 @@ public class VActivityManagerService extends IActivityManager.Stub
             }
             queuedWork = finishUnbindLocked(r, boundRecord, doRebind);
         }
-        if (queuedWork) {
+        if (queuedWork && r != null && r.process != null) {
             drainProcessLifecycle(r.process);
         }
     }
@@ -928,7 +970,10 @@ public class VActivityManagerService extends IActivityManager.Stub
         boolean queuedWork = false;
         synchronized (this) {
             r = token instanceof ServiceRecord ? (ServiceRecord) token : null;
-            if (r == null || r.process.userId != userId) {
+            if (!isUsableServiceRecordLocked(r, userId)) {
+                if (r != null) {
+                    retireServiceRecordLocked(r, "stale-service-record");
+                }
                 return;
             }
             if (ActivityManagerCompat.SERVICE_DONE_EXECUTING_STOP == type) {
@@ -942,7 +987,7 @@ public class VActivityManagerService extends IActivityManager.Stub
                 }
             }
         }
-        if (queuedWork) {
+        if (queuedWork && r != null && r.process != null) {
             drainProcessLifecycle(r.process);
         }
     }
@@ -976,8 +1021,11 @@ public class VActivityManagerService extends IActivityManager.Stub
         final ComponentName component;
         synchronized (this) {
             r = token instanceof ServiceRecord ? (ServiceRecord) token : null;
-            if (r == null || !containsServiceRecordLocked(r) || r.isRetired()
-                    || r.process.userId != userId) {
+            if (!isUsableServiceRecordLocked(r, userId)) {
+                if (r != null) {
+                    r.retire();
+                    removeRecord(r);
+                }
                 return;
             }
             boundRecord = resolveBinding(r, bindToken, intent);
@@ -1193,7 +1241,10 @@ public class VActivityManagerService extends IActivityManager.Stub
         }
         boolean queuedWork = false;
         synchronized (this) {
-            if (!containsServiceRecordLocked(service) || service.isRetired()) {
+            if (!isUsableServiceRecordLocked(service)) {
+                if (service != null) {
+                    retireServiceRecordLocked(service, "stale-service-record");
+                }
                 return;
             }
             binding.cancelPendingBindIfNoConnections();
@@ -1210,7 +1261,7 @@ public class VActivityManagerService extends IActivityManager.Stub
                 queuedWork |= enqueueStopOperationLocked(service, "connection-died");
             }
         }
-        if (queuedWork) {
+        if (queuedWork && service != null && service.process != null) {
             drainProcessLifecycle(service.process);
         }
     }
@@ -1221,7 +1272,7 @@ public class VActivityManagerService extends IActivityManager.Stub
         synchronized (mHistory) {
             List<ActivityManager.RunningServiceInfo> services = new ArrayList<>(mHistory.size());
             for (ServiceRecord r : mHistory) {
-                if (r.process.userId != userId) {
+                if (r.process == null || r.process.userId != userId) {
                     continue;
                 }
                 ActivityManager.RunningServiceInfo info = new ActivityManager.RunningServiceInfo();
@@ -1254,7 +1305,7 @@ public class VActivityManagerService extends IActivityManager.Stub
         synchronized (this) {
             r = token instanceof ServiceRecord ? (ServiceRecord) token : null;
             if (r == null || r.isRetired() || !containsServiceRecordLocked(r)
-                    || !isCurrentProcessOwner(r.process)) {
+                    || r.process == null || !isCurrentProcessOwner(r.process)) {
                 return;
             }
             packageName = r.serviceInfo.packageName;
@@ -1989,7 +2040,8 @@ public class VActivityManagerService extends IActivityManager.Stub
             return process.client instanceof IsolatedGuestClient
                     && ((IsolatedGuestClient) process.client).isWorkerAlive();
         }
-        return process.appThread.asBinder().isBinderAlive();
+        return process.appThread.asBinder().isBinderAlive()
+                && process.appThread.asBinder().pingBinder();
     }
 
     private static boolean isProcessEndpointActive(ProcessRecord process) {

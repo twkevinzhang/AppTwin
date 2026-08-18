@@ -165,6 +165,11 @@ final class IsolatedGuestClient extends IVClient.Stub
     }
 
     private void createInWorker(IIsolatedGuestWorker active, ServiceInfo info) {
+        if (active == null || !active.asBinder().isBinderAlive()
+                || !active.asBinder().pingBinder()) {
+            signalCreateFailed("isolated worker is unavailable for slot " + slot);
+            return;
+        }
         try {
             Bundle result = active.createGuestService(info);
             if (result == null) {
@@ -220,7 +225,8 @@ final class IsolatedGuestClient extends IVClient.Stub
 
     private IIsolatedGuestWorker requireWorker() throws RemoteException {
         synchronized (lock) {
-            if (closed || worker == null || !worker.asBinder().isBinderAlive()) {
+            if (closed || worker == null || !worker.asBinder().isBinderAlive()
+                    || !worker.asBinder().pingBinder()) {
                 throw new RemoteException("isolated worker is unavailable for slot " + slot);
             }
             return worker;
