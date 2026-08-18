@@ -62,6 +62,7 @@ import com.lody.virtual.helper.utils.ComponentUtils;
 import com.lody.virtual.helper.utils.DrawableUtils;
 import com.lody.virtual.helper.utils.EncodeUtils;
 import com.lody.virtual.helper.utils.FileUtils;
+import com.lody.virtual.helper.utils.IsolatedServiceRouting;
 import com.lody.virtual.helper.utils.Reflect;
 import com.lody.virtual.helper.utils.VLog;
 import com.lody.virtual.os.VUserHandle;
@@ -73,6 +74,7 @@ import java.io.File;
 import java.lang.ref.WeakReference;
 import java.lang.reflect.Method;
 import java.util.ArrayList;
+import java.util.Iterator;
 import java.util.List;
 import java.util.WeakHashMap;
 
@@ -954,6 +956,7 @@ class MethodProxies {
             }
             ServiceInfo serviceInfo = VirtualCore.get().resolveServiceInfo(service, userId);
             if (serviceInfo != null) {
+                prepareVirtualServiceIntent(service, args);
                 if (GmsServiceBindingPolicy.shouldRejectUnavailableWearableBinding(
                         getAppPkg(), service.getAction(), serviceInfo.packageName)) {
                     // The virtual Wearable service cannot publish a useful Binder without a
@@ -978,6 +981,12 @@ class MethodProxies {
             // the guest package and continue through VActivityManager.
             replacePhysicalServiceCaller(args, getHostPkg());
             return method.invoke(who, args);
+        }
+
+        protected void prepareVirtualServiceIntent(Intent service, Object[] args) {
+            // Never trust a guest-supplied copy of the private transport extra. Only the
+            // bindIsolatedService override below may populate it from framework-owned args.
+            IsolatedServiceRouting.putInstanceName(service, null);
         }
 
         static String replacePhysicalServiceCaller(Object[] args, String hostPackage) {
@@ -1028,6 +1037,18 @@ class MethodProxies {
         public boolean beforeCall(Object who, Method method, Object... args) {
             MethodParameterUtils.replaceLastAppPkg(args);
             return super.beforeCall(who, method, args);
+        }
+
+        @Override
+        protected void prepareVirtualServiceIntent(Intent service, Object[] args) {
+            IsolatedServiceRouting.putInstanceName(service, instanceName(args));
+        }
+
+        static String instanceName(Object[] args) {
+            if (args == null || args.length <= 6 || !(args[6] instanceof String)) {
+                return null;
+            }
+            return IsolatedServiceRouting.normalizeInstanceName((String) args[6]);
         }
     }
 
@@ -1439,6 +1460,8 @@ class MethodProxies {
                     ? getHostDynamicReceiverPermission()
                     : null;
             IntentFilter filter = (IntentFilter) args[mIntentFilterIndex];
+            filter = withoutBlockingLineScreenActions(filter);
+            args[mIntentFilterIndex] = filter;
             SpecialComponentList.protectIntentFilter(filter);
             if (args.length > mIIntentReceiverIndex && IIntentReceiver.class.isInstance(args[mIIntentReceiverIndex])) {
                 final IInterface old = (IInterface) args[mIIntentReceiverIndex];
@@ -1466,6 +1489,39 @@ class MethodProxies {
                 }
             }
             return method.invoke(who, args);
+        }
+
+        private static IntentFilter withoutBlockingLineScreenActions(IntentFilter original) {
+            if (original == null) {
+                return null;
+            }
+            String packageName = getAppPkg();
+            android.content.pm.ApplicationInfo info =
+                    VClientImpl.get().getCurrentApplicationInfo();
+            String processName = info == null ? null : info.processName;
+            IntentFilter sanitized = null;
+            Iterator<String> actions = original.actionsIterator();
+            while (actions != null && actions.hasNext()) {
+                String action = actions.next();
+                if (!LineScreenReceiverPolicy.shouldSuppress(
+                        packageName, processName, action)) {
+                    continue;
+                }
+                if (sanitized == null) {
+                    sanitized = new IntentFilter(original);
+                }
+                removeAction(sanitized, action);
+            }
+            return sanitized == null ? original : sanitized;
+        }
+
+        private static void removeAction(IntentFilter filter, String action) {
+            Iterator<String> actions = filter.actionsIterator();
+            while (actions != null && actions.hasNext()) {
+                if (action.equals(actions.next())) {
+                    actions.remove();
+                }
+            }
         }
 
 

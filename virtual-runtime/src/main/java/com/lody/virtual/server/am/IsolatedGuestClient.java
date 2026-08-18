@@ -84,23 +84,28 @@ final class IsolatedGuestClient extends IVClient.Stub
 
     void close() {
         IIsolatedGuestWorker active;
+        boolean shouldUnbind;
         synchronized (lock) {
             if (closed) return;
             closed = true;
             active = worker;
             worker = null;
+            shouldUnbind = bindRequested;
         }
         if (active != null) {
-            active.asBinder().unlinkToDeath(this, 0);
+            try {
+                active.asBinder().unlinkToDeath(this, 0);
+            } catch (Throwable ignored) {
+            }
             try {
                 active.destroyGuestService();
-            } catch (RemoteException ignored) {
+            } catch (Throwable ignored) {
             }
         }
-        if (bindRequested) {
+        if (shouldUnbind) {
             try {
                 context.unbindService(this);
-            } catch (IllegalArgumentException ignored) {
+            } catch (Throwable ignored) {
             }
         }
     }
@@ -136,6 +141,11 @@ final class IsolatedGuestClient extends IVClient.Stub
     }
 
     @Override
+    public void onNullBinding(ComponentName name) {
+        signalCreateFailed("isolated worker returned a null binding for slot " + slot);
+    }
+
+    @Override
     public void binderDied() {
         signalWorkerDied();
     }
@@ -157,6 +167,10 @@ final class IsolatedGuestClient extends IVClient.Stub
     private void createInWorker(IIsolatedGuestWorker active, ServiceInfo info) {
         try {
             Bundle result = active.createGuestService(info);
+            if (result == null) {
+                signalCreateFailed("isolated worker returned no create result for slot " + slot);
+                return;
+            }
             if (!result.getBoolean("created")) {
                 signalCreateFailed(result.getString("errorClass") + ":"
                         + result.getString("errorMessage") + "\n"
@@ -164,8 +178,12 @@ final class IsolatedGuestClient extends IVClient.Stub
                 return;
             }
             listener.onReady(this, result.getInt("pid", -1), result.getInt("uid", -1));
-        } catch (RemoteException error) {
-            signalWorkerDied();
+        } catch (Throwable error) {
+            if (error instanceof RemoteException) {
+                signalWorkerDied();
+            } else {
+                signalCreateFailed(error.getClass().getName() + ":" + error.getMessage());
+            }
         }
     }
 

@@ -45,6 +45,7 @@ import com.lody.virtual.helper.compat.ApplicationThreadCompat;
 import com.lody.virtual.helper.compat.BundleCompat;
 import com.lody.virtual.helper.compat.ServiceConnectionCompat;
 import com.lody.virtual.helper.utils.ComponentUtils;
+import com.lody.virtual.helper.utils.IsolatedServiceRouting;
 import com.lody.virtual.helper.utils.VLog;
 import com.lody.virtual.os.VBinder;
 import com.lody.virtual.os.VUserHandle;
@@ -483,12 +484,18 @@ public class VActivityManagerService extends IActivityManager.Stub
     }
 
     private ServiceRecord findRecordLocked(int userId, ServiceInfo serviceInfo) {
+        return findRecordLocked(userId, serviceInfo, null);
+    }
+
+    private ServiceRecord findRecordLocked(int userId, ServiceInfo serviceInfo,
+                                           String instanceName) {
         synchronized (mHistory) {
             for (ServiceRecord r : mHistory) {
                 // If service is not created, and bindService with the flag that is
                 // not BIND_AUTO_CREATE, r.process is null
                 if ((r.process == null || r.process.userId == userId)
-                        && ComponentUtils.isSameComponent(serviceInfo, r.serviceInfo)) {
+                        && ComponentUtils.isSameComponent(serviceInfo, r.serviceInfo)
+                        && r.matchesServiceInstanceName(instanceName)) {
                     return r;
                 }
             }
@@ -516,6 +523,13 @@ public class VActivityManagerService extends IActivityManager.Stub
 
     private ComponentName startServiceCommon(Intent service,
                                              boolean scheduleServiceArgs, int userId) {
+        String instanceName = IsolatedServiceRouting.takeInstanceName(service);
+        return startServiceCommon(service, scheduleServiceArgs, userId, instanceName);
+    }
+
+    private ComponentName startServiceCommon(Intent service,
+                                             boolean scheduleServiceArgs, int userId,
+                                             String instanceName) {
         ServiceInfo serviceInfo = resolveServiceInfo(service, userId);
         if (serviceInfo == null) {
             VLog.w(TAG, "startService unresolved: " + service + " user=" + userId);
@@ -524,12 +538,12 @@ public class VActivityManagerService extends IActivityManager.Stub
         VLog.i(TAG, "startService " + service + " resolved="
                 + ComponentUtils.toComponentName(serviceInfo) + " user=" + userId);
         final boolean isolatedProcess = isIsolatedProcess(serviceInfo);
-        // Isolated services commonly provide an app's anti-abuse identity and are often bound
-        // only once. Dropping that first BIND_AUTO_CREATE request leaves the app permanently
-        // without the service, so serialize this rare path instead of failing fast on contention.
+        // Isolated services and Gecko content/GPU services are one-shot bindings. Dropping their
+        // first BIND_AUTO_CREATE request leaves the caller without a child process, so serialize
+        // these narrow paths instead of failing fast on process-start contention.
         final ProcessRecord targetApp = isolatedProcess
-                ? startIsolatedServiceProcess(serviceInfo, userId)
-                : scheduleServiceArgs
+                ? startIsolatedServiceProcess(serviceInfo, userId, instanceName)
+                : scheduleServiceArgs || GuestServiceStartPolicy.shouldSerializeBinding(serviceInfo)
                 ? startProcessIfNeedLocked(ComponentUtils.getProcessName(serviceInfo), userId,
                 serviceInfo.packageName, false)
                 : tryStartProcessForBinding(ComponentUtils.getProcessName(serviceInfo), userId,
@@ -543,7 +557,7 @@ public class VActivityManagerService extends IActivityManager.Stub
         PendingServiceOperation startArgsOperation = null;
         boolean scheduleCreate = false;
         synchronized (this) {
-            ServiceRecord record = findRecordLocked(userId, serviceInfo);
+            ServiceRecord record = findRecordLocked(userId, serviceInfo, instanceName);
             if (record != null && (record.process != targetApp
                     || !isProcessEndpointActive(record.process))) {
                 VLog.w(TAG, "Discarding stale service record "
@@ -560,6 +574,7 @@ public class VActivityManagerService extends IActivityManager.Stub
                 record.activeSince = SystemClock.elapsedRealtime();
                 record.process = targetApp;
                 record.serviceInfo = serviceInfo;
+                record.setServiceInstanceName(instanceName);
                 final ServiceRecord ownedRecord = record;
                 record.setConnectionDeathCallback((binding, connection, lastConnection) ->
                         onConnectionDied(ownedRecord, binding, connection, lastConnection));
@@ -699,20 +714,21 @@ public class VActivityManagerService extends IActivityManager.Stub
     public int bindService(IBinder caller, IBinder token, Intent service, String resolvedType,
                            IServiceConnection connection, int flags, int userId) {
         enforceCallerUserOrHost(userId);
+        String instanceName = IsolatedServiceRouting.takeInstanceName(service);
         ServiceInfo serviceInfo = resolveServiceInfo(service, userId);
         if (serviceInfo == null) {
             return 0;
         }
         ServiceRecord r;
         synchronized (this) {
-            r = findRecordLocked(userId, serviceInfo);
+            r = findRecordLocked(userId, serviceInfo, instanceName);
         }
         if (r == null && (flags & Context.BIND_AUTO_CREATE) != 0) {
-            if (startServiceCommon(service, false, userId) == null) {
+            if (startServiceCommon(service, false, userId, instanceName) == null) {
                 return 0;
             }
             synchronized (this) {
-                r = findRecordLocked(userId, serviceInfo);
+                r = findRecordLocked(userId, serviceInfo, instanceName);
             }
         }
         if (r == null) {
@@ -1534,7 +1550,8 @@ public class VActivityManagerService extends IActivityManager.Stub
         return existing == null ? null : existing.owner();
     }
 
-    private ProcessRecord startIsolatedServiceProcess(ServiceInfo serviceInfo, int userId) {
+    private ProcessRecord startIsolatedServiceProcess(ServiceInfo serviceInfo, int userId,
+                                                      String instanceName) {
         PackageSetting setting = PackageCacheManager.getSetting(serviceInfo.packageName);
         ApplicationInfo info = VPackageManagerService.get().getApplicationInfo(
                 serviceInfo.packageName, 0, userId);
@@ -1542,7 +1559,7 @@ public class VActivityManagerService extends IActivityManager.Stub
             return null;
         }
         int vuid = VUserHandle.getUid(userId, setting.appId);
-        LogicalProcessKey key = isolatedServiceKey(vuid, serviceInfo);
+        LogicalProcessKey key = isolatedServiceKey(vuid, serviceInfo, instanceName);
         synchronized (this) {
             LogicalProcessOwnerRegistry.OwnerSnapshot<ProcessRecord> existing =
                     mIsolatedServiceOwners.find(key);
@@ -1946,9 +1963,12 @@ public class VActivityManagerService extends IActivityManager.Stub
         return new LogicalProcessKey(record.vuid, record.info.packageName, record.processName);
     }
 
-    private static LogicalProcessKey isolatedServiceKey(int vuid, ServiceInfo serviceInfo) {
+    static LogicalProcessKey isolatedServiceKey(int vuid, ServiceInfo serviceInfo,
+                                                String instanceName) {
+        String normalized = IsolatedServiceRouting.normalizeInstanceName(instanceName);
         return new LogicalProcessKey(vuid, serviceInfo.packageName,
-                serviceInfo.processName + "#" + serviceInfo.name);
+                serviceInfo.processName + "#" + serviceInfo.name
+                        + (normalized == null ? "" : "#instance=" + normalized));
     }
 
     private boolean isCurrentProcessOwner(ProcessRecord record) {

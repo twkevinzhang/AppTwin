@@ -13,6 +13,7 @@ import android.os.Looper;
 import android.system.Os;
 
 import com.lody.virtual.client.isolated.IIsolatedGuestWorker;
+import com.lody.virtual.client.isolated.IsolatedWorkerCallGate;
 import com.lody.virtual.client.env.VirtualRuntime;
 
 import java.io.BufferedReader;
@@ -238,11 +239,7 @@ public class StubIsolatedService extends Service {
         }
         FutureTask<T> task = new FutureTask<>(callable);
         mainHandler.post(task);
-        try {
-            return task.get();
-        } catch (Throwable error) {
-            throw new IllegalStateException(error);
-        }
+        return IsolatedWorkerCallGate.await(task);
     }
 
     private static boolean isIsolatedUid(int uid) {

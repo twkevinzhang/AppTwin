@@ -22,6 +22,19 @@ import static org.junit.Assert.assertTrue;
 public class ServiceRecordTest {
 
     @Test
+    public void serviceRecordsMatchComponentInstanceIdentityIndependently() {
+        ServiceRecord ordinary = new ServiceRecord(1);
+        ServiceRecord named = new ServiceRecord(2);
+        named.setServiceInstanceName("content-4");
+
+        assertTrue(ordinary.matchesServiceInstanceName(null));
+        assertTrue(ordinary.matchesServiceInstanceName(""));
+        assertFalse(ordinary.matchesServiceInstanceName("content-4"));
+        assertTrue(named.matchesServiceInstanceName("content-4"));
+        assertFalse(named.matchesServiceInstanceName("content-5"));
+    }
+
+    @Test
     public void sameFilterIntentRequestsOnBindOnlyOnceBeforePublication() {
         // VActivityManagerService coalesces filterEquals intents into this one record.
         ServiceRecord.IntentBindRecord binding = new ServiceRecord.IntentBindRecord();

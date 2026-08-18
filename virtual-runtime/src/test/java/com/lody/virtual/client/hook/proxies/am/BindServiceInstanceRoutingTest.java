@@ -43,4 +43,23 @@ public class BindServiceInstanceRoutingTest {
         assertNull(MethodProxies.BindService.replacePhysicalServiceCaller(args, "org.apptwin"));
         assertEquals(3, args.length);
     }
+
+    @Test
+    public void isolatedBindExtractsFrameworkInstanceName() {
+        Object[] args = {
+                new Object(), new Object(), new Object(), "resolved/type", new Object(), 1L,
+                "tab-instance-7", "org.mozilla.firefox", 0
+        };
+
+        assertEquals("tab-instance-7",
+                MethodProxies.BindIsolatedService.instanceName(args));
+    }
+
+    @Test
+    public void ordinaryOrEmptyIsolatedBindHasNoNamedInstance() {
+        assertNull(MethodProxies.BindIsolatedService.instanceName(
+                new Object[]{new Object(), new Object(), new Object(), null, new Object(), 1}));
+        assertNull(MethodProxies.BindIsolatedService.instanceName(
+                new Object[]{new Object(), new Object(), new Object(), null, new Object(), 1, ""}));
+    }
 }
