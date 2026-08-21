@@ -138,18 +138,29 @@ internal class AndroidMainOperations(private val application: Application) : Mai
     )
     private val gms = AndroidGmsOperations.production(application, groupStore)
 
-    override suspend fun refreshSnapshot(): MainRefreshSnapshot {
+    override suspend fun loadGroupSnapshot(): MainGroupSnapshot {
+        val groupSnapshot = groupStore.loadSnapshot()
+        return MainGroupSnapshot(
+            groups = groupSnapshot.groups,
+            operations = operationStore.listPending(),
+            dataWarnings = groupSnapshot.issues.map { issue ->
+                "Group ${issue.groupId}/${issue.metadataName} 無法讀取"
+            },
+        )
+    }
+
+    /** Kept for direct Android integration tests that need a complete one-shot snapshot. */
+    suspend fun refreshSnapshot(): MainRefreshSnapshot = refreshSnapshot(loadGroupSnapshot())
+
+    override suspend fun refreshSnapshot(groups: MainGroupSnapshot): MainRefreshSnapshot {
         val storage = readStorageStatus()
         val entries = runCatching(importer::listCloneableApps).getOrDefault(emptyList())
-        val groupSnapshot = groupStore.loadSnapshot()
-        groupSnapshot.groups.forEach { group ->
+        groups.groups.forEach { group ->
             runCatching { runtimeController.syncEnvironmentLabel(group) }
         }
         val activeRevisions = linkedMapOf<String, ActiveRevisionSummary?>()
-        val warnings = groupSnapshot.issues.map { issue ->
-            "Group ${issue.groupId}/${issue.metadataName} 無法讀取"
-        }.toMutableList()
-        val gmsCompatibility = groupSnapshot.groups.associate { group ->
+        val warnings = groups.dataWarnings.toMutableList()
+        val gmsCompatibility = groups.groups.associate { group ->
             group.id to runCatching { gms.snapshot(group.id) }.getOrElse { error ->
                 warnings += "Group ${group.id}/data/gms 無法讀取：${error.userMessage()}"
                 GmsGroupProductState(
@@ -184,7 +195,7 @@ internal class AndroidMainOperations(private val application: Application) : Mai
                 }
         }
         val permissions = buildMap {
-            groupSnapshot.groups.forEach { group ->
+            groups.groups.forEach { group ->
                 val userId = group.environmentBinding?.internalId ?: return@forEach
                 group.apps.forEach { app ->
                     val state = ClonePermissionState(
@@ -204,15 +215,15 @@ internal class AndroidMainOperations(private val application: Application) : Mai
             }
         }
         val clonePermissions = ClonePermissionPolicy.aggregate(
-            readClonePermissionRequirements(groupSnapshot.groups, entries, warnings),
+            readClonePermissionRequirements(groups.groups, entries, warnings),
         )
         return MainRefreshSnapshot(
             storage = storage,
             entries = entries,
-            groups = groupSnapshot.groups,
+            groups = groups.groups,
             activeRevisions = activeRevisions,
             dataWarnings = warnings,
-            operations = operationStore.listPending(),
+            operations = groups.operations,
             permissions = permissions,
             clonePermissions = clonePermissions,
             gmsCompatibility = gmsCompatibility,

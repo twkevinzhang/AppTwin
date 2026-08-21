@@ -218,6 +218,51 @@ class MainViewModelLifecycleTest {
     }
 
     @Test
+    fun `space cards are published before slow enrichment completes`() = runTest {
+        val dispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(dispatcher)
+        val enrichmentGate = CompletableDeferred<Unit>()
+        val packageName = "com.example.browser"
+        val operations = FakeOperations(
+            groups = listOf(group().copy(apps = listOf(GroupApp(packageName, addedAtEpochMillis = 2)))),
+            refreshGate = enrichmentGate,
+        )
+        val viewModel = viewModel(SavedStateHandle(), operations, dispatcher)
+
+        runCurrent()
+
+        assertEquals(listOf(GROUP_ID), viewModel.uiState.groups.map(GroupItem::groupId))
+        assertTrue(viewModel.uiState.isRefreshing)
+        assertEquals("正在同步", viewModel.uiState.groups.single().apps.singleOrNull()?.launchStatus)
+
+        enrichmentGate.complete(Unit)
+        advanceUntilIdle()
+
+        assertFalse(viewModel.uiState.isRefreshing)
+        assertEquals(listOf(GROUP_ID), viewModel.uiState.groups.map(GroupItem::groupId))
+    }
+
+    @Test
+    fun `enrichment failure keeps already published space cards`() = runTest {
+        val dispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(dispatcher)
+        val viewModel = viewModel(
+            SavedStateHandle(),
+            FakeOperations(
+                groups = listOf(group()),
+                refreshError = IllegalStateException("virtual runtime unavailable"),
+            ),
+            dispatcher,
+        )
+
+        advanceUntilIdle()
+
+        assertFalse(viewModel.uiState.isRefreshing)
+        assertEquals(listOf(GROUP_ID), viewModel.uiState.groups.map(GroupItem::groupId))
+        assertTrue(viewModel.uiState.message.orEmpty().contains("詳細資料失敗"))
+    }
+
+    @Test
     fun `late picker lookup cannot override newer navigation`() = runTest {
         val dispatcher = StandardTestDispatcher(testScheduler)
         Dispatchers.setMain(dispatcher)
@@ -337,6 +382,8 @@ class MainViewModelLifecycleTest {
         private val gmsReconcileError: Throwable? = null,
         private val refreshWarnings: List<String> = emptyList(),
         private val clonePermissions: List<ClonePermissionSummary> = emptyList(),
+        private val refreshGate: CompletableDeferred<Unit>? = null,
+        private val refreshError: Throwable? = null,
     ) : MainOperations {
         var reconcileStarted = false
         var refreshCalls = 0
@@ -345,17 +392,25 @@ class MainViewModelLifecycleTest {
         val gmsConsentGroups = mutableListOf<String>()
         val gmsEnableGroups = mutableListOf<String>()
 
-        override suspend fun refreshSnapshot(): MainRefreshSnapshot {
+        override suspend fun loadGroupSnapshot(): MainGroupSnapshot = MainGroupSnapshot(
+            groups = groups,
+            operations = emptyList(),
+            dataWarnings = loadIssues.map { "corrupt metadata" } + refreshWarnings,
+        )
+
+        override suspend fun refreshSnapshot(groups: MainGroupSnapshot): MainRefreshSnapshot {
             refreshCalls++
             val interceptor = currentCoroutineContext()[ContinuationInterceptor]
             refreshRanOnIoDispatcher = interceptor == expectedIoDispatcher
             refreshRanOnMainDispatcher = interceptor == Dispatchers.Main
+            refreshGate?.await()
+            refreshError?.let { throw it }
             return MainRefreshSnapshot(
                 storage = StorageStatus(false, 0, 0),
                 entries = emptyList<InstalledAppEntry>(),
-                groups = groups,
+                groups = groups.groups,
                 activeRevisions = emptyMap(),
-                dataWarnings = loadIssues.map { "corrupt metadata" } + refreshWarnings,
+                dataWarnings = groups.dataWarnings,
                 clonePermissions = clonePermissions,
             )
         }

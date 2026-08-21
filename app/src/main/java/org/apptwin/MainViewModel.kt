@@ -120,9 +120,17 @@ internal data class MainRefreshSnapshot(
     val gmsCompatibility: Map<String, GmsGroupProductState> = emptyMap(),
 )
 
+/** The durable data needed to draw the space cards without starting the virtual runtime. */
+internal data class MainGroupSnapshot(
+    val groups: List<Group>,
+    val operations: List<OperationRecord>,
+    val dataWarnings: List<String>,
+)
+
 /** Blocking application operations. MainViewModel always invokes these on its IO dispatcher. */
 internal interface MainOperations {
-    suspend fun refreshSnapshot(): MainRefreshSnapshot
+    suspend fun loadGroupSnapshot(): MainGroupSnapshot
+    suspend fun refreshSnapshot(groups: MainGroupSnapshot): MainRefreshSnapshot
     suspend fun findGroup(groupId: String): Group?
     suspend fun createGroup(name: String): Group
     suspend fun renameGroup(groupId: String, name: String): Group?
@@ -301,111 +309,170 @@ class MainViewModel internal constructor(
         val generation = ++refreshGeneration
         uiState = uiState.copy(isRefreshing = true)
         viewModelScope.launch {
-            val snapshot = runCatching {
-                withContext(ioDispatcher) { operations.refreshSnapshot() }
-            }.getOrElse { error ->
-                if (generation == refreshGeneration) {
-                    uiState = uiState.copy(isRefreshing = false)
-                    showMessage("重新整理失敗：${error.userMessage()}")
-                }
-                return@launch
+            val groups = loadAndPublishGroups(generation) ?: return@launch
+            applyFullRefresh(generation, groups)
+        }
+    }
+
+    private suspend fun loadAndPublishGroups(generation: Long): MainGroupSnapshot? {
+        val snapshot = runCatching {
+            withContext(ioDispatcher) { operations.loadGroupSnapshot() }
+        }.getOrElse { error ->
+            if (generation == refreshGeneration) {
+                uiState = uiState.copy(isRefreshing = false)
+                showMessage("讀取空間失敗：${error.userMessage()}")
             }
-            if (generation != refreshGeneration) return@launch
-            val entriesByPackage = snapshot.entries.associateBy(InstalledAppEntry::packageName)
-            val appItems = snapshot.entries.map { entry ->
-                val active = snapshot.activeRevisions[entry.packageName]
-                AppItem(
-                    entry = entry,
-                    isSynced = active?.versionCode == entry.versionCode,
-                    activeVersionCode = active?.versionCode,
-                    groupCount = snapshot.groups.count { it.contains(entry.packageName) },
-                    compatibility = if (
-                        GroupAppRuntimeSupport.compatibility(
-                            entry.packageName,
-                            entry.versionCode,
-                            android.os.Build.VERSION.SDK_INT,
-                        ) ==
-                        RuntimeCompatibility.VERIFIED
-                    ) {
-                        CompatibilityLevel.PARTIAL
-                    } else {
-                        CompatibilityLevel.UNTESTED
-                    },
-                )
+            return null
+        }
+        if (generation != refreshGeneration) return null
+        publishGroups(snapshot)
+        return snapshot
+    }
+
+    private suspend fun applyFullRefresh(generation: Long, groups: MainGroupSnapshot) {
+        val snapshot = runCatching {
+            withContext(ioDispatcher) { operations.refreshSnapshot(groups) }
+        }.getOrElse { error ->
+            if (generation == refreshGeneration) {
+                uiState = uiState.copy(isRefreshing = false)
+                showMessage("重新整理詳細資料失敗：${error.userMessage()}")
             }
-            val groupItems = snapshot.groups.sortedByDescending(Group::createdAtEpochMillis)
-                .map { group ->
-                    val spaceState = SpaceStatePolicy.assess(group, snapshot.operations)
-                    val cloneStates = spaceState.clones.associateBy { it.packageName }
-                    GroupItem(
-                        groupId = group.id,
-                        name = group.name,
-                        health = group.health,
-                        lifecycle = spaceState.lifecycle,
-                        gmsCompatibility = snapshot.gmsCompatibility[group.id],
-                        apps = group.apps.map { app ->
-                            val source = entriesByPackage[app.packageName]
-                            GroupAppItem(
-                                groupId = group.id,
-                                groupName = group.name,
-                                groupHealth = group.health,
-                                app = app,
-                                appLabel = source?.label ?: app.packageName,
-                                versionName = source?.versionName.orEmpty(),
-                                sourceInstalled = source != null,
-                                launchStatus = launchStatus(source?.versionCode),
-                                lifecycle = cloneStates.getValue(app.packageName).lifecycle,
-                                cameraGranted = snapshot.permissions["${group.id}:${app.packageName}"]
-                                    ?.cameraGranted == true,
-                                microphoneGranted = snapshot.permissions[
-                                    "${group.id}:${app.packageName}"
-                                ]?.microphoneGranted == true,
-                            )
-                        },
-                    )
-                }
-            val restoredPickerId = uiState.appPickerGroupId?.takeIf { selectedId ->
-                groupItems.any { it.groupId == selectedId }
-            }
-            val restoredSelectedId = uiState.selectedGroupId?.takeIf { selectedId ->
-                groupItems.any { it.groupId == selectedId }
-            }
-            if (restoredPickerId != uiState.appPickerGroupId) {
-                savedStateHandle[APP_PICKER_GROUP_KEY] = null
-            }
-            if (restoredSelectedId != uiState.selectedGroupId) {
-                savedStateHandle[SELECTED_GROUP_KEY] = null
-            }
-            val warningsChanged = snapshot.dataWarnings != uiState.dataWarnings
-            uiState = uiState.copy(
-                apps = appItems,
-                groups = groupItems,
-                selectedGroupId = restoredSelectedId,
-                appPickerGroupId = restoredPickerId,
-                isRefreshing = false,
-                allFilesGranted = snapshot.storage.granted,
-                downloadCount = snapshot.storage.downloadCount,
-                photoCount = snapshot.storage.photoCount,
-                clonePermissions = snapshot.clonePermissions,
-                dataWarnings = snapshot.dataWarnings,
+            return
+        }
+        if (generation != refreshGeneration) return
+        val entriesByPackage = snapshot.entries.associateBy(InstalledAppEntry::packageName)
+        val appItems = snapshot.entries.map { entry ->
+            val active = snapshot.activeRevisions[entry.packageName]
+            AppItem(
+                entry = entry,
+                isSynced = active?.versionCode == entry.versionCode,
+                activeVersionCode = active?.versionCode,
+                groupCount = snapshot.groups.count { it.contains(entry.packageName) },
+                compatibility = if (
+                    GroupAppRuntimeSupport.compatibility(
+                        entry.packageName,
+                        entry.versionCode,
+                        android.os.Build.VERSION.SDK_INT,
+                    ) == RuntimeCompatibility.VERIFIED
+                ) CompatibilityLevel.PARTIAL else CompatibilityLevel.UNTESTED,
             )
-            presentResolvedDeepLink(groupItems, waitForRefresh = false)
-            if (snapshot.dataWarnings.isNotEmpty() && warningsChanged) {
-                showMessage("偵測到 ${snapshot.dataWarnings.size} 筆資料完整性問題；原始資料已保留")
-            }
-            pendingLaunch?.let { target ->
-                val pending = groupItems.asSequence()
-                    .flatMap { it.apps.asSequence() }
-                    .firstOrNull { item ->
-                        item.app.packageName == target.packageName &&
-                            (target.groupId == null || item.groupId == target.groupId)
-                    }
-                if (pending != null) {
+        }
+        val groupItems = buildGroupItems(
+            groups = snapshot.groups,
+            operations = snapshot.operations,
+            entriesByPackage = entriesByPackage,
+            permissions = snapshot.permissions,
+            gmsCompatibility = snapshot.gmsCompatibility,
+            enrichmentComplete = true,
+        )
+        val warningsChanged = snapshot.dataWarnings != uiState.dataWarnings
+        updateSelectedGroups(groupItems)
+        uiState = uiState.copy(
+            apps = appItems,
+            groups = groupItems,
+            isRefreshing = false,
+            allFilesGranted = snapshot.storage.granted,
+            downloadCount = snapshot.storage.downloadCount,
+            photoCount = snapshot.storage.photoCount,
+            clonePermissions = snapshot.clonePermissions,
+            dataWarnings = snapshot.dataWarnings,
+        )
+        presentResolvedDeepLink(groupItems, waitForRefresh = false)
+        if (snapshot.dataWarnings.isNotEmpty() && warningsChanged) {
+            showMessage("偵測到 ${snapshot.dataWarnings.size} 筆資料完整性問題；原始資料已保留")
+        }
+        pendingLaunch?.let { target ->
+            groupItems.asSequence()
+                .flatMap { it.apps.asSequence() }
+                .firstOrNull { item ->
+                    item.app.packageName == target.packageName &&
+                        (target.groupId == null || item.groupId == target.groupId)
+                }
+                ?.let { pending ->
                     pendingLaunch = null
                     launchGroupApp(pending)
                 }
-            }
         }
+    }
+
+    private fun publishGroups(snapshot: MainGroupSnapshot) {
+        val groupItems = buildGroupItems(
+            groups = snapshot.groups,
+            operations = snapshot.operations,
+            entriesByPackage = emptyMap(),
+            permissions = emptyMap(),
+            gmsCompatibility = emptyMap(),
+            enrichmentComplete = false,
+        )
+        val warningsChanged = snapshot.dataWarnings != uiState.dataWarnings
+        updateSelectedGroups(groupItems)
+        uiState = uiState.copy(
+            groups = groupItems,
+            dataWarnings = snapshot.dataWarnings,
+            isRefreshing = true,
+        )
+        if (snapshot.dataWarnings.isNotEmpty() && warningsChanged) {
+            showMessage("偵測到 ${snapshot.dataWarnings.size} 筆資料完整性問題；原始資料已保留")
+        }
+    }
+
+    private fun updateSelectedGroups(groupItems: List<GroupItem>) {
+        val restoredPickerId = uiState.appPickerGroupId?.takeIf { selectedId ->
+            groupItems.any { it.groupId == selectedId }
+        }
+        val restoredSelectedId = uiState.selectedGroupId?.takeIf { selectedId ->
+            groupItems.any { it.groupId == selectedId }
+        }
+        if (restoredPickerId != uiState.appPickerGroupId) {
+            savedStateHandle[APP_PICKER_GROUP_KEY] = null
+        }
+        if (restoredSelectedId != uiState.selectedGroupId) {
+            savedStateHandle[SELECTED_GROUP_KEY] = null
+        }
+        uiState = uiState.copy(
+            selectedGroupId = restoredSelectedId,
+            appPickerGroupId = restoredPickerId,
+        )
+    }
+
+    private fun buildGroupItems(
+        groups: List<Group>,
+        operations: List<OperationRecord>,
+        entriesByPackage: Map<String, InstalledAppEntry>,
+        permissions: Map<String, ClonePermissionState>,
+        gmsCompatibility: Map<String, GmsGroupProductState>,
+        enrichmentComplete: Boolean,
+    ): List<GroupItem> = groups.sortedByDescending(Group::createdAtEpochMillis).map { group ->
+        val spaceState = SpaceStatePolicy.assess(group, operations)
+        val cloneStates = spaceState.clones.associateBy { it.packageName }
+        GroupItem(
+            groupId = group.id,
+            name = group.name,
+            health = group.health,
+            lifecycle = spaceState.lifecycle,
+            gmsCompatibility = gmsCompatibility[group.id],
+            apps = group.apps.map { app ->
+                val source = entriesByPackage[app.packageName]
+                GroupAppItem(
+                    groupId = group.id,
+                    groupName = group.name,
+                    groupHealth = group.health,
+                    app = app,
+                    appLabel = source?.label ?: app.packageName,
+                    versionName = source?.versionName.orEmpty(),
+                    sourceInstalled = source != null,
+                    launchStatus = if (enrichmentComplete) {
+                        launchStatus(source?.versionCode)
+                    } else {
+                        "正在同步"
+                    },
+                    lifecycle = cloneStates.getValue(app.packageName).lifecycle,
+                    cameraGranted = permissions["${group.id}:${app.packageName}"]?.cameraGranted == true,
+                    microphoneGranted = permissions["${group.id}:${app.packageName}"]
+                        ?.microphoneGranted == true,
+                )
+            },
+        )
     }
 
     fun createGroup(name: String) {
@@ -709,19 +776,19 @@ class MainViewModel internal constructor(
     }
 
     private fun reconcileAndRefresh() {
+        val generation = ++refreshGeneration
         uiState = uiState.copy(isRefreshing = true)
         viewModelScope.launch {
+            // Do not make the home screen wait for recovery work or GMS network reconciliation.
+            // The index is durable local metadata and is safe to present while enrichment continues.
+            loadAndPublishGroups(generation) ?: return@launch
             val groupResult = withContext(ioDispatcher) {
                 runCatching { operations.reconcileGroups() }
             }
-            val (appRemovalResult, applicationOperationResult, gmsResult) =
-                withContext(ioDispatcher) {
-                    Triple(
-                        runCatching { operations.reconcileAppRemovals() },
-                        runCatching { operations.reconcileApplicationOperations() },
-                        runCatching { operations.reconcileGms() },
-                    )
-                }
+            val (appRemovalResult, applicationOperationResult) = withContext(ioDispatcher) {
+                runCatching { operations.reconcileAppRemovals() } to
+                    runCatching { operations.reconcileApplicationOperations() }
+            }
             val notices = buildList {
                 groupResult.onSuccess { result ->
                     if (result.loadIssues.isNotEmpty()) {
@@ -736,17 +803,19 @@ class MainViewModel internal constructor(
                 applicationOperationResult.onFailure { error ->
                     add("部分分身空間作業需要處理：${error.userMessage()}")
                 }
-                gmsResult.onFailure { error ->
-                    add("Google 服務相容資料需要處理：${error.userMessage()}")
-                }
-                gmsResult.onSuccess { result ->
-                    if (result.cloudMessagingRepairFailures.isNotEmpty()) {
-                        add("Google 背景通知服務需要重試")
-                    }
+            }
+            if (notices.isNotEmpty()) appendMessage(notices.joinToString("\n"))
+            val refreshedGroups = loadAndPublishGroups(generation) ?: return@launch
+            applyFullRefresh(generation, refreshedGroups)
+            if (generation != refreshGeneration) return@launch
+            val gmsResult = withContext(ioDispatcher) { runCatching { operations.reconcileGms() } }
+            gmsResult.onFailure { error ->
+                appendMessage("Google 服務相容資料需要處理：${error.userMessage()}")
+            }.onSuccess { result ->
+                if (result.cloudMessagingRepairFailures.isNotEmpty()) {
+                    appendMessage("Google 背景通知服務需要重試")
                 }
             }
-            if (notices.isNotEmpty()) showMessage(notices.joinToString("\n"))
-            refresh()
         }
     }
 
@@ -792,6 +861,10 @@ class MainViewModel internal constructor(
         uiState = uiState.copy(message = message, messageId = uiState.messageId + 1)
     }
 
+    private fun appendMessage(message: String) {
+        showMessage(listOfNotNull(uiState.message, message).joinToString("\n"))
+    }
+
     private fun presentResolvedDeepLink(
         groups: List<GroupItem>,
         waitForRefresh: Boolean,
@@ -802,7 +875,7 @@ class MainViewModel internal constructor(
             .flatMap { it.apps.asSequence() }
             .filter { (it.groupId to it.app.packageName) in identitySet }
             .toList()
-        if (candidates.isEmpty() && waitForRefresh) return
+        if (waitForRefresh) return
 
         resolvingDeepLinkUri = null
         resolvedDeepLinkIdentities = null
