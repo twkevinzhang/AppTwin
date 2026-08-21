@@ -13,11 +13,21 @@ import com.lody.virtual.helper.utils.VLog;
 import java.util.IdentityHashMap;
 import java.util.Map;
 
-/** Keeps the per-Group microG cloud-messaging transport runnable in the background. */
+/**
+ * Keeps narrowly selected virtual processes runnable while Android has no physical visibility
+ * into their guest-to-guest Binder dependencies.
+ *
+ * <p>The virtual activity manager routes Firefox's Gecko child-service bindings in-process. The
+ * OS therefore sees tab/GPU/media/utility stub processes as cached even while the foreground
+ * guest activity needs them. Keeping their matching host stub service bound prevents the freezer
+ * from killing a synchronous Gecko Binder transaction. The binding is released with the guest
+ * process generation, so it does not retain a closed child process.</p>
+ */
 final class GmsBackgroundKeepAlive {
     private static final String TAG = GmsBackgroundKeepAlive.class.getSimpleName();
     private static final String GMS_PACKAGE = "com.google.android.gms";
     private static final String GMS_PERSISTENT_PROCESS = "com.google.android.gms:persistent";
+    private static final String FIREFOX_PACKAGE = "org.mozilla.firefox";
     private static final String STUB_CLASS = StubKeepAliveService.class.getName();
 
     private final Context context;
@@ -38,13 +48,15 @@ final class GmsBackgroundKeepAlive {
         ServiceConnection connection = new ServiceConnection() {
             @Override
             public void onServiceConnected(ComponentName name, IBinder service) {
-                VLog.i(TAG, "gms-push-retained user=" + process.userId
+                VLog.i(TAG, "guest-process-retained package=" + process.info.packageName
+                        + " process=" + process.processName + " user=" + process.userId
                         + " slot=" + process.vpid + " generation=" + process.generation);
             }
 
             @Override
             public void onServiceDisconnected(ComponentName name) {
-                VLog.w(TAG, "gms-push-disconnected user=" + process.userId
+                VLog.w(TAG, "guest-process-disconnected package=" + process.info.packageName
+                        + " process=" + process.processName + " user=" + process.userId
                         + " slot=" + process.vpid + " generation=" + process.generation);
             }
         };
@@ -53,7 +65,8 @@ final class GmsBackgroundKeepAlive {
         try {
             bound = context.bindService(intent, connection, bindingFlags());
         } catch (RuntimeException error) {
-            VLog.e(TAG, "Unable to retain microG push process slot=" + process.vpid
+            VLog.e(TAG, "Unable to retain guest process package=" + process.info.packageName
+                    + " process=" + process.processName + " slot=" + process.vpid
                     + " error=" + error);
             bound = false;
         }
@@ -77,12 +90,23 @@ final class GmsBackgroundKeepAlive {
 
     static boolean shouldRetain(String packageName, String processName, int vpid,
             boolean isolatedWorker) {
-        return !isolatedWorker
-                && vpid >= 0
-                && vpid < VASettings.STUB_COUNT
-                && GMS_PACKAGE.equals(packageName)
+        if (isolatedWorker || vpid < 0 || vpid >= VASettings.STUB_COUNT) {
+            return false;
+        }
+        return (GMS_PACKAGE.equals(packageName)
                 && (GMS_PACKAGE.equals(processName)
-                    || GMS_PERSISTENT_PROCESS.equals(processName));
+                    || GMS_PERSISTENT_PROCESS.equals(processName)))
+                || isFirefoxGeckoChildProcess(packageName, processName);
+    }
+
+    static boolean isFirefoxGeckoChildProcess(String packageName, String processName) {
+        if (!FIREFOX_PACKAGE.equals(packageName) || processName == null) {
+            return false;
+        }
+        return processName.startsWith(FIREFOX_PACKAGE + ":tab")
+                || processName.startsWith(FIREFOX_PACKAGE + ":gpu")
+                || processName.equals(FIREFOX_PACKAGE + ":media")
+                || processName.startsWith(FIREFOX_PACKAGE + ":utility");
     }
 
     static int bindingFlags() {
