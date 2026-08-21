@@ -1,5 +1,21 @@
 import com.google.firebase.crashlytics.buildtools.gradle.CrashlyticsExtension
 
+val appVersionName = providers.gradleProperty("APP_VERSION_NAME")
+    .orElse("0.1.0-m0")
+    .get()
+val appVersionCode = providers.gradleProperty("APP_VERSION_CODE")
+    .map(String::toInt)
+    .orElse(1)
+    .get()
+
+val releaseSigningValues = listOf(
+    "KEYSTORE_PATH",
+    "KEYSTORE_PASSWORD",
+    "KEY_ALIAS",
+    "KEY_PASSWORD",
+).associateWith { providers.environmentVariable(it).orNull }
+val hasReleaseSigning = releaseSigningValues.values.all { !it.isNullOrBlank() }
+
 plugins {
     id("com.android.application")
     id("com.google.gms.google-services")
@@ -21,8 +37,8 @@ android {
         applicationId = "org.apptwin"
         minSdk = 26
         targetSdk = 36
-        versionCode = 1
-        versionName = "0.1.0-m0"
+        versionCode = appVersionCode
+        versionName = appVersionName
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
@@ -34,6 +50,17 @@ android {
             // Pixel Android 17 rejects targets below 28 and letterboxes legacy activities.
             // Keep the probe isolated from the target 36 product while meeting that floor.
             targetSdk = 28
+        }
+    }
+
+    signingConfigs {
+        if (hasReleaseSigning) {
+            create("release") {
+                storeFile = file(requireNotNull(releaseSigningValues.getValue("KEYSTORE_PATH")))
+                storePassword = requireNotNull(releaseSigningValues.getValue("KEYSTORE_PASSWORD"))
+                keyAlias = requireNotNull(releaseSigningValues.getValue("KEY_ALIAS"))
+                keyPassword = requireNotNull(releaseSigningValues.getValue("KEY_PASSWORD"))
+            }
         }
     }
 
@@ -52,6 +79,9 @@ android {
         }
         release {
             isMinifyEnabled = false
+            if (hasReleaseSigning) {
+                signingConfig = signingConfigs.getByName("release")
+            }
             configure<CrashlyticsExtension> {
                 mappingFileUploadEnabled = false
                 nativeSymbolUploadEnabled = false
