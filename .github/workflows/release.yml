@@ -1,0 +1,112 @@
+name: Release APK
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+
+jobs:
+  release:
+    name: Build and release Runtime Probe APK
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Derive version from tag
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          tag="$GITHUB_REF_NAME"
+          if [[ ! "$tag" =~ ^v([0-9]+)\.([0-9]+)\.([0-9]+)$ ]]; then
+            echo "::error::Tag must use vMAJOR.MINOR.PATCH, for example v0.0.7"
+            exit 1
+          fi
+
+          major="${BASH_REMATCH[1]}"
+          minor="${BASH_REMATCH[2]}"
+          patch="${BASH_REMATCH[3]}"
+          if (( minor >= 1000 || patch >= 1000 )); then
+            echo "::error::Minor and patch versions must be below 1000"
+            exit 1
+          fi
+
+          version_name="${tag#v}"
+          version_code=$((major * 1000000 + minor * 1000 + patch))
+          if (( version_code < 1 || version_code > 2100000000 )); then
+            echo "::error::Calculated versionCode is invalid: $version_code"
+            exit 1
+          fi
+
+          echo "APP_VERSION_NAME=$version_name" >> "$GITHUB_ENV"
+          echo "APP_VERSION_CODE=$version_code" >> "$GITHUB_ENV"
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+          cache: gradle
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install Android SDK and NDK packages
+        shell: bash
+        run: sdkmanager --install 'platforms;android-36' 'build-tools;36.0.0' 'ndk;29.0.13846066'
+
+      - name: Make Gradle wrapper executable
+        run: chmod +x ./gradlew
+
+      - name: Decode release keystore
+        env:
+          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          for secret_name in KEYSTORE_BASE64 KEYSTORE_PASSWORD KEY_ALIAS KEY_PASSWORD; do
+            if [[ -z "${!secret_name}" ]]; then
+              echo "::error::$secret_name repository secret is required for a signed release"
+              exit 1
+            fi
+          done
+          printf '%s' "$KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/apptwin-release.jks"
+
+      - name: Build Runtime Probe release APK
+        env:
+          KEYSTORE_PATH: ${{ runner.temp }}/apptwin-release.jks
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+        run: |
+          ./gradlew :app:assembleRuntimeProbeRelease \
+            -PAPP_VERSION_NAME="$APP_VERSION_NAME" \
+            -PAPP_VERSION_CODE="$APP_VERSION_CODE"
+
+      - name: Prepare versioned APK
+        shell: bash
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          apks=(app/build/outputs/apk/runtimeProbe/release/*.apk)
+          if (( ${#apks[@]} != 1 )); then
+            echo "::error::Expected one Runtime Probe release APK, found ${#apks[@]}"
+            printf '%s\n' "${apks[@]}"
+            exit 1
+          fi
+          mkdir -p dist
+          cp "${apks[0]}" "dist/apptwin-${GITHUB_REF_NAME}.apk"
+
+      - name: Upload APK to GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/apptwin-*.apk
+          generate_release_notes: true
+          fail_on_unmatched_files: true
