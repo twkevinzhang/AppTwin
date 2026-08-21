@@ -948,7 +948,8 @@ class MethodProxies {
             IServiceConnection conn = (IServiceConnection) args[4];
             int flags = serviceBindFlags(args[5]);
             int userId = VUserHandle.myUserId();
-            if (isServerProcess()) {
+            boolean serverOwnedCall = isServerProcess();
+            if (serverOwnedCall) {
                 userId = service.getIntExtra("_VA_|_user_id_", VUserHandle.USER_NULL);
             }
             if (userId == VUserHandle.USER_NULL) {
@@ -957,13 +958,19 @@ class MethodProxies {
             ServiceInfo serviceInfo = VirtualCore.get().resolveServiceInfo(service, userId);
             if (serviceInfo != null) {
                 prepareVirtualServiceIntent(service, args);
+                // AccountManager and other runtime services bind from the server process. That
+                // process has no guest VClient binding, so resolving getAppPkg() would use its
+                // default VUID and can incorrectly cross a guest Group boundary. The wearable
+                // fallback is a guest-only policy; keep it off server-owned routing.
+                String callerPackage = serverOwnedCall ? null : getAppPkg();
                 if (GmsServiceBindingPolicy.shouldRejectUnavailableWearableBinding(
-                        getAppPkg(), service.getAction(), serviceInfo.packageName)) {
+                        serverOwnedCall, callerPackage, service.getAction(),
+                        serviceInfo.packageName)) {
                     // The virtual Wearable service cannot publish a useful Binder without a
                     // physical companion. Report bind failure so optional clients can continue
                     // through their supported no-Wear fallback instead of waiting indefinitely.
                     VLog.i("VA-GmsRoute", "reject unavailable wearable binding caller=%s",
-                            getAppPkg());
+                            callerPackage);
                     return 0;
                 }
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {

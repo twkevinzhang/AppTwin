@@ -9,6 +9,15 @@ final class GmsServiceBindingPolicy {
     }
 
     static boolean shouldRejectUnavailableWearableBinding(
+            boolean serverOwnedCall,
+            String callerPackage,
+            String action,
+            String servicePackage) {
+        return !serverOwnedCall && shouldRejectUnavailableWearableBinding(
+                callerPackage, action, servicePackage);
+    }
+
+    static boolean shouldRejectUnavailableWearableBinding(
             String callerPackage,
             String action,
             String servicePackage) {
