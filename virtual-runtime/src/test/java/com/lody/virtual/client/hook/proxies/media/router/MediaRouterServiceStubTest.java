@@ -31,6 +31,7 @@ public class MediaRouterServiceStubTest {
         assertNotNull(invocationStub.getMethodProxy("registerClientAsUser"));
         assertNotNull(invocationStub.getMethodProxy("registerRouter2"));
         assertNotNull(invocationStub.getMethodProxy("registerManager"));
+        assertNotNull(invocationStub.getMethodProxy("getSystemRoutes"));
         assertNull(invocationStub.getMethodProxy("unregisterRouter2"));
         assertNull(invocationStub.getMethodProxy("setDiscoveryRequestWithRouter2"));
         assertNull(invocationStub.getMethodProxy("unrelatedMethod"));
@@ -60,6 +61,39 @@ public class MediaRouterServiceStubTest {
     }
 
     @Test
+    public void getSystemRoutesRewritesOnlyCallerPackageArgument() throws Exception {
+        MediaRouterServiceStub.ReplaceSystemRoutesCallerPackageMethodProxy proxy =
+                new MediaRouterServiceStub.ReplaceSystemRoutesCallerPackageMethodProxy(
+                        () -> HOST_PACKAGE);
+        Method method = FakeMediaRouterService.class.getMethod("getSystemRoutes",
+                String.class, String.class, boolean.class);
+        String attributionTag = "cast-discovery";
+        Object[] args = {"com.google.android.youtube", attributionTag, true};
+
+        assertTrue(proxy.beforeCall(null, method, args));
+
+        assertEquals(HOST_PACKAGE, args[0]);
+        assertSame(attributionTag, args[1]);
+        assertEquals(true, args[2]);
+    }
+
+    @Test
+    public void getSystemRoutesRewriteRejectsUnexpectedCallerPackage() throws Exception {
+        MediaRouterServiceStub.ReplaceSystemRoutesCallerPackageMethodProxy proxy =
+                new MediaRouterServiceStub.ReplaceSystemRoutesCallerPackageMethodProxy(
+                        () -> HOST_PACKAGE);
+        Method method = FakeMediaRouterService.class.getMethod("getSystemRoutes",
+                String.class, String.class, boolean.class);
+        Object[] args = {42, "cast-discovery", true};
+
+        assertTrue(proxy.beforeCall(null, method, args));
+
+        assertEquals(42, args[0]);
+        assertEquals("cast-discovery", args[1]);
+        assertEquals(true, args[2]);
+    }
+
+    @Test
     public void registrationRewriteRejectsUnexpectedSignatureWithoutChangingArguments() {
         Object router = new Object();
         Object[] missingPackage = {router};
@@ -79,6 +113,9 @@ public class MediaRouterServiceStubTest {
     public interface FakeMediaRouterService {
         void registerRouter2(Object router, String packageName, String attributionTag,
                 Object options, int flags);
+
+        void getSystemRoutes(String packageName, String attributionTag,
+                boolean shouldIncludeNonSystemRoutes);
     }
 
     /** Avoids calling Android framework utility stubs from local JVM tests. */

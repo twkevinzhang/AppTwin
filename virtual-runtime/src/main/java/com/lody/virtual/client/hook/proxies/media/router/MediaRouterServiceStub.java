@@ -21,6 +21,7 @@ import mirror.android.media.IMediaRouterService;
 public class MediaRouterServiceStub extends BinderInvocationProxy {
 
     private static final int REGISTRATION_PACKAGE_INDEX = 1;
+    private static final int SYSTEM_ROUTES_CALLER_PACKAGE_INDEX = 0;
 
     public MediaRouterServiceStub() {
         super(IMediaRouterService.Stub.asInterface, Context.MEDIA_ROUTER_SERVICE);
@@ -36,6 +37,7 @@ public class MediaRouterServiceStub extends BinderInvocationProxy {
         addMethodProxy(new ReplaceRegistrationPackageMethodProxy("registerClientAsUser"));
         addMethodProxy(new ReplaceRegistrationPackageMethodProxy("registerRouter2"));
         addMethodProxy(new ReplaceRegistrationPackageMethodProxy("registerManager"));
+        addMethodProxy(new ReplaceSystemRoutesCallerPackageMethodProxy());
     }
 
     interface HostPackageProvider {
@@ -72,6 +74,27 @@ public class MediaRouterServiceStub extends BinderInvocationProxy {
             }
             args[packageIndex] = hostPackage;
             return true;
+        }
+    }
+
+    static final class ReplaceSystemRoutesCallerPackageMethodProxy extends StaticMethodProxy {
+
+        private final HostPackageProvider hostPackageProvider;
+
+        ReplaceSystemRoutesCallerPackageMethodProxy() {
+            this(MethodProxy::getHostPkg);
+        }
+
+        ReplaceSystemRoutesCallerPackageMethodProxy(HostPackageProvider hostPackageProvider) {
+            super("getSystemRoutes");
+            this.hostPackageProvider = hostPackageProvider;
+        }
+
+        @Override
+        public boolean beforeCall(Object who, Method method, Object... args) {
+            ReplaceRegistrationPackageMethodProxy.replacePackageArgument(args,
+                    SYSTEM_ROUTES_CALLER_PACKAGE_INDEX, hostPackageProvider.getHostPackage());
+            return super.beforeCall(who, method, args);
         }
     }
 }
