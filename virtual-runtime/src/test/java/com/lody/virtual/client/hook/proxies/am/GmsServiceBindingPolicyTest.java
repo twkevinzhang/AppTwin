@@ -38,4 +38,13 @@ public class GmsServiceBindingPolicyTest {
                 GmsServiceBindingPolicy.WEARABLE_BIND_ACTION,
                 GmsServiceBindingPolicy.GMS_PACKAGE));
     }
+
+    @Test
+    public void allowsServerOwnedBindingWithoutResolvingGuestCallerPackage() {
+        assertFalse(GmsServiceBindingPolicy.shouldRejectUnavailableWearableBinding(
+                true,
+                null,
+                GmsServiceBindingPolicy.WEARABLE_BIND_ACTION,
+                GmsServiceBindingPolicy.GMS_PACKAGE));
+    }
 }
