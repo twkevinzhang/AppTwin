@@ -278,6 +278,8 @@ fun AppTwinApp(
                                     state = state,
                                     onOpenSpace = viewModel::openGroup,
                                     onCreateGroup = { showCreateGroup = true },
+                                    onLaunch = viewModel::launchGroupApp,
+                                    onAddApp = viewModel::openAppPicker,
                                 )
                                 else -> SettingsScreen(
                                     state = state,
