@@ -27,6 +27,8 @@ import androidx.compose.material.icons.filled.Build
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Error
+import androidx.compose.material.icons.filled.ExpandLess
+import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.HourglassTop
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.MoreVert
@@ -81,7 +83,14 @@ fun HomeScreen(
     state: MainUiState,
     onOpenSpace: (String) -> Unit,
     onCreateGroup: () -> Unit,
+    onLaunch: (GroupAppItem) -> Unit = {},
+    onAddApp: (String) -> Unit = {},
 ) {
+    var collapsedGroupIds by rememberSaveable { mutableStateOf(emptyList<String>()) }
+    val visibleGroupIds = state.groups.map(GroupItem::groupId).toSet()
+    val allExpanded = state.groups.isNotEmpty() &&
+        collapsedGroupIds.none { it in visibleGroupIds }
+
     Column(modifier = Modifier.fillMaxSize()) {
         if (state.dataWarnings.isNotEmpty()) {
             DataIntegrityWarning(
@@ -100,6 +109,27 @@ fun HomeScreen(
                     verticalArrangement = Arrangement.spacedBy(18.dp),
                 ) {
                     item { HomeSummary(groupCount = state.groups.size) }
+                    item {
+                        TextButton(
+                            modifier = Modifier.testTag("expand-all-spaces"),
+                            onClick = {
+                                collapsedGroupIds = if (allExpanded) {
+                                    state.groups.map(GroupItem::groupId)
+                                } else {
+                                    emptyList()
+                                }
+                            },
+                        ) {
+                            Icon(
+                                if (allExpanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
+                                contentDescription = null,
+                            )
+                            Text(
+                                if (allExpanded) "全部收合" else "全部展開",
+                                modifier = Modifier.padding(start = 8.dp),
+                            )
+                        }
+                    }
                     items(
                         items = state.groups.chunked(spaceColumns),
                         key = { row -> row.joinToString(":", transform = GroupItem::groupId) },
@@ -110,12 +140,23 @@ fun HomeScreen(
                         ) {
                             rowItems.forEach { item ->
                                 Box(modifier = Modifier.weight(1f)) {
-                                    SpaceSummaryCard(
+                                    ExpandableSpaceCard(
                                         item = item,
+                                        expanded = item.groupId !in collapsedGroupIds,
                                         isBusy = state.busyGroupId == item.groupId ||
                                             state.uninstallingAppKey
                                                 ?.startsWith("${item.groupId}:") == true,
-                                        onClick = { onOpenSpace(item.groupId) },
+                                        launchingAppKey = state.launchingAppKey,
+                                        onToggleExpanded = {
+                                            collapsedGroupIds = if (item.groupId in collapsedGroupIds) {
+                                                collapsedGroupIds - item.groupId
+                                            } else {
+                                                collapsedGroupIds + item.groupId
+                                            }
+                                        },
+                                        onManage = { onOpenSpace(item.groupId) },
+                                        onLaunch = onLaunch,
+                                        onAddApp = { onAddApp(item.groupId) },
                                     )
                                 }
                             }
@@ -714,17 +755,19 @@ private fun HomeSummary(groupCount: Int) {
 }
 
 @Composable
-private fun SpaceSummaryCard(
+private fun ExpandableSpaceCard(
     item: GroupItem,
+    expanded: Boolean,
     isBusy: Boolean,
-    onClick: () -> Unit,
+    launchingAppKey: String?,
+    onToggleExpanded: () -> Unit,
+    onManage: () -> Unit,
+    onLaunch: (GroupAppItem) -> Unit,
+    onAddApp: () -> Unit,
 ) {
     Card(
         modifier = Modifier
-            .fillMaxWidth()
-            .testTag("space-card-${item.groupId}"),
-        onClick = onClick,
-        enabled = !isBusy,
+            .fillMaxWidth(),
         colors = CardDefaults.cardColors(
             containerColor = MaterialTheme.colorScheme.surfaceContainer,
         ),
@@ -764,23 +807,167 @@ private fun SpaceSummaryCard(
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
-                if (isBusy) CircularProgressIndicator(modifier = Modifier.size(24.dp), strokeWidth = 2.dp)
+                if (isBusy) {
+                    CircularProgressIndicator(modifier = Modifier.size(24.dp), strokeWidth = 2.dp)
+                } else {
+                    IconButton(
+                        modifier = Modifier.testTag("space-expand-${item.groupId}"),
+                        onClick = onToggleExpanded,
+                    ) {
+                        Icon(
+                            if (expanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
+                            contentDescription = if (expanded) {
+                                "收合 ${item.name}"
+                            } else {
+                                "展開 ${item.name}"
+                            },
+                        )
+                    }
+                    IconButton(
+                        modifier = Modifier.testTag("space-manage-${item.groupId}"),
+                        onClick = onManage,
+                    ) {
+                        Icon(Icons.Default.MoreVert, contentDescription = "管理 ${item.name}")
+                    }
+                }
             }
             SpaceStatusChip(lifecycle = item.lifecycle)
-            Text(
+            if (expanded) {
                 if (item.apps.isEmpty()) {
-                    "尚未加入 App，點一下開始設定"
+                    Button(
+                        modifier = Modifier
+                            .padding(top = 16.dp)
+                            .testTag("home-add-app-${item.groupId}"),
+                        onClick = onAddApp,
+                        enabled = item.lifecycle == SpaceLifecycleState.READY && !isBusy,
+                    ) {
+                        Icon(Icons.Default.Add, contentDescription = null)
+                        Text("加入 App", modifier = Modifier.padding(start = 8.dp))
+                    }
                 } else {
-                    item.apps.take(4).joinToString(" · ") { it.appLabel } +
-                        if (item.apps.size > 4) " · …" else ""
-                },
-                modifier = Modifier.padding(top = 10.dp),
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis,
-            )
+                    HomeAppGrid(
+                        modifier = Modifier.padding(top = 16.dp),
+                        apps = item.apps,
+                        launchingAppKey = launchingAppKey,
+                        enabled = item.lifecycle == SpaceLifecycleState.READY && !isBusy,
+                        onLaunch = onLaunch,
+                    )
+                }
+            }
         }
+    }
+}
+
+@Composable
+private fun HomeAppGrid(
+    modifier: Modifier,
+    apps: List<GroupAppItem>,
+    launchingAppKey: String?,
+    enabled: Boolean,
+    onLaunch: (GroupAppItem) -> Unit,
+) {
+    BoxWithConstraints(modifier = modifier.fillMaxWidth()) {
+        val columns = when {
+            maxWidth >= 760.dp -> 6
+            maxWidth >= 560.dp -> 4
+            else -> 3
+        }
+        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            apps.chunked(columns).forEach { rowApps ->
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    rowApps.forEach { app ->
+                        Box(modifier = Modifier.weight(1f)) {
+                            HomeAppTile(
+                                app = app,
+                                isLaunching = launchingAppKey == app.launchKey,
+                                enabled = enabled && launchingAppKey == null,
+                                onLaunch = { onLaunch(app) },
+                            )
+                        }
+                    }
+                    repeat(columns - rowApps.size) { Spacer(Modifier.weight(1f)) }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun HomeAppTile(
+    app: GroupAppItem,
+    isLaunching: Boolean,
+    enabled: Boolean,
+    onLaunch: () -> Unit,
+) {
+    val launchEnabled = enabled && app.sourceInstalled && !isLaunching
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .aspectRatio(0.82f)
+            .clip(MaterialTheme.shapes.medium)
+            .semantics {
+                stateDescription = when {
+                    isLaunching -> "開啟中"
+                    !app.sourceInstalled -> "原始 App 已移除"
+                    !enabled -> "暫時無法操作"
+                    else -> "可操作"
+                }
+            }
+            .testTag("home-app-tile-${app.launchKey}")
+            .clickable(enabled = launchEnabled, role = Role.Button, onClickLabel = "開啟 ${app.appLabel}（${app.groupName}）") {
+                onLaunch()
+            }
+            .padding(horizontal = 6.dp, vertical = 10.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center,
+    ) {
+        Box(contentAlignment = Alignment.Center) {
+            AppIcon(packageName = app.app.packageName, size = 52.dp)
+            if (isLaunching) {
+                Box(
+                    modifier = Modifier
+                        .size(52.dp)
+                        .clip(MaterialTheme.shapes.medium)
+                        .background(MaterialTheme.colorScheme.scrim.copy(alpha = 0.52f)),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(24.dp),
+                        strokeWidth = 2.dp,
+                        color = MaterialTheme.colorScheme.onPrimary,
+                    )
+                }
+            }
+        }
+        Text(
+            app.appLabel,
+            modifier = Modifier.padding(top = 8.dp),
+            style = MaterialTheme.typography.labelLarge,
+            fontWeight = FontWeight.Medium,
+            textAlign = TextAlign.Center,
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis,
+        )
+        Text(
+            when {
+                !app.sourceInstalled -> "原始 App 已移除"
+                isLaunching -> "開啟中…"
+                app.lifecycle == CloneLifecycleState.READY -> app.launchStatus
+                else -> cloneLifecycleLabel(app.lifecycle)
+            },
+            style = MaterialTheme.typography.labelSmall,
+            color = if (!app.sourceInstalled) {
+                MaterialTheme.colorScheme.error
+            } else {
+                MaterialTheme.colorScheme.onSurfaceVariant
+            },
+            textAlign = TextAlign.Center,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
     }
 }
 

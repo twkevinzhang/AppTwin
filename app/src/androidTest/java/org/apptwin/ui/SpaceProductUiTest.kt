@@ -29,20 +29,78 @@ class SpaceProductUiTest {
     val composeRule = createComposeRule()
 
     @Test
-    fun homeShowsSpaceSummaryAndOpensSelectedSpace() {
-        var openedId: String? = null
-        composeRule.setContent {
-            AppTwinTheme {
-                HomeScreen(
-                    state = defaultState,
-                    onOpenSpace = { openedId = it },
-                    onCreateGroup = {},
-                )
-            }
-        }
+    fun homeInitiallyExpandsEverySpace() {
+        setHome(state = multiSpaceState)
 
-        composeRule.onNodeWithTag("space-card-$spaceId").assertIsDisplayed().performClick()
-        composeRule.runOnIdle { assertEquals(spaceId, openedId) }
+        composeRule.onNodeWithTag("home-app-tile-${app.launchKey}").assertIsDisplayed()
+        composeRule.onNodeWithTag("home-app-tile-${secondApp.launchKey}").assertIsDisplayed()
+    }
+
+    @Test
+    fun homeCanCollapseAndExpandOneSpaceWithoutHidingOtherSpaces() {
+        setHome(state = multiSpaceState)
+
+        composeRule.onNodeWithTag("space-expand-$spaceId").performClick()
+
+        composeRule.onNodeWithTag("home-app-tile-${app.launchKey}").assertDoesNotExist()
+        composeRule.onNodeWithTag("home-app-tile-${secondApp.launchKey}").assertIsDisplayed()
+
+        composeRule.onNodeWithTag("space-expand-$spaceId").performClick()
+
+        composeRule.onNodeWithTag("home-app-tile-${app.launchKey}").assertIsDisplayed()
+    }
+
+    @Test
+    fun homeCanCollapseAndExpandAllSpaces() {
+        setHome(state = multiSpaceState)
+
+        composeRule.onNodeWithTag("expand-all-spaces").performClick()
+
+        composeRule.onNodeWithTag("home-app-tile-${app.launchKey}").assertDoesNotExist()
+        composeRule.onNodeWithTag("home-app-tile-${secondApp.launchKey}").assertDoesNotExist()
+
+        composeRule.onNodeWithTag("expand-all-spaces").performClick()
+
+        composeRule.onNodeWithTag("home-app-tile-${app.launchKey}").assertIsDisplayed()
+        composeRule.onNodeWithTag("home-app-tile-${secondApp.launchKey}").assertIsDisplayed()
+    }
+
+    @Test
+    fun homeLaunchesTheExactGroupAppFromItsSpace() {
+        var launched: GroupAppItem? = null
+        setHome(state = multiSpaceState, onLaunch = { launched = it })
+
+        composeRule.onNodeWithTag("home-app-tile-${secondApp.launchKey}").performClick()
+
+        composeRule.runOnIdle { assertEquals(secondApp, launched) }
+    }
+
+    @Test
+    fun homeEmptySpaceAddsAppToThatSpace() {
+        var addAppGroupId: String? = null
+        val emptySpace = space.copy(
+            groupId = emptySpaceId,
+            name = "空白空間",
+            apps = emptyList(),
+        )
+        setHome(
+            state = MainUiState(isRefreshing = false, groups = listOf(emptySpace)),
+            onAddApp = { addAppGroupId = it },
+        )
+
+        composeRule.onNodeWithTag("home-add-app-$emptySpaceId").performClick()
+
+        composeRule.runOnIdle { assertEquals(emptySpaceId, addAppGroupId) }
+    }
+
+    @Test
+    fun homeManageEntryKeepsOpeningTheSelectedSpace() {
+        var openedId: String? = null
+        setHome(state = multiSpaceState, onOpenSpace = { openedId = it })
+
+        composeRule.onNodeWithTag("space-manage-$secondSpaceId").performClick()
+
+        composeRule.runOnIdle { assertEquals(secondSpaceId, openedId) }
     }
 
     @Test
@@ -125,8 +183,29 @@ class SpaceProductUiTest {
         }
     }
 
+    private fun setHome(
+        state: MainUiState,
+        onOpenSpace: (String) -> Unit = {},
+        onLaunch: (GroupAppItem) -> Unit = {},
+        onAddApp: (String) -> Unit = {},
+    ) {
+        composeRule.setContent {
+            AppTwinTheme {
+                HomeScreen(
+                    state = state,
+                    onOpenSpace = onOpenSpace,
+                    onCreateGroup = {},
+                    onLaunch = onLaunch,
+                    onAddApp = onAddApp,
+                )
+            }
+        }
+    }
+
     private companion object {
         const val spaceId = "22222222-2222-2222-2222-222222222222"
+        const val secondSpaceId = "33333333-3333-3333-3333-333333333333"
+        const val emptySpaceId = "44444444-4444-4444-4444-444444444444"
         val app = GroupAppItem(
             groupId = spaceId,
             groupName = "工作",
@@ -148,5 +227,29 @@ class SpaceProductUiTest {
             apps = listOf(app),
         )
         val defaultState = MainUiState(isRefreshing = false, groups = listOf(space))
+        val secondApp = GroupAppItem(
+            groupId = secondSpaceId,
+            groupName = "私人",
+            groupHealth = GroupHealth.HEALTHY,
+            app = GroupApp(
+                packageName = "com.example.chat",
+                addedAtEpochMillis = 456L,
+                state = GroupAppState.ENABLED,
+            ),
+            appLabel = "測試聊天",
+            versionName = "3.0",
+            sourceInstalled = true,
+            launchStatus = "可啟動",
+        )
+        val secondSpace = GroupItem(
+            groupId = secondSpaceId,
+            name = "私人",
+            health = GroupHealth.HEALTHY,
+            apps = listOf(secondApp),
+        )
+        val multiSpaceState = MainUiState(
+            isRefreshing = false,
+            groups = listOf(space, secondSpace),
+        )
     }
 }
