@@ -171,6 +171,28 @@ class VirtualRuntimeController internal constructor(
         }
     }
 
+    /**
+     * Resets one clone to first-launch state without removing its Group membership or installed
+     * package binding. Shared virtual SD card files are intentionally retained because they are
+     * scoped to the Space's virtual user and can belong to another clone.
+     */
+    fun clearAppStorage(binding: EnvironmentBinding, packageName: String) {
+        require(binding.internalId > 0) { "預設引擎環境不可清除分身資料" }
+        val core = VirtualCore.get()
+        core.waitForEngine()
+        check(environmentExists(binding)) { "群組環境已損毀" }
+        check(core.clearPackageRuntimeStateAsUser(binding.internalId, packageName)) {
+            "無法清除 $packageName 的分身資料"
+        }
+        check(core.isAppInstalledAsUser(binding.internalId, packageName)) {
+            "$packageName 的分身套件在清除後遺失"
+        }
+        Log.i(
+            TAG,
+            "group-app-storage-cleared package=$packageName environmentId=${binding.internalId}",
+        )
+    }
+
     private fun deleteGuestPrivateData(environmentId: Int, packageName: String) {
         listOf(
             VEnvironment.getDataUserPackageDirectory(environmentId, packageName),

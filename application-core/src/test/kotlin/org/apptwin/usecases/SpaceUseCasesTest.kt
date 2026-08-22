@@ -114,6 +114,38 @@ class SpaceUseCasesTest {
         )
     }
 
+    @Test
+    fun `clear clone storage retains clone membership and reports runtime failures`() {
+        val fixture = Fixture()
+        val space = fixture.createSpace()
+        fixture.store.addApp(space.id, PACKAGE, 10L)
+        var cleared: Pair<EnvironmentBinding, String>? = null
+        val useCase = ClearCloneStorageUseCase(fixture.store) { binding, packageName ->
+            cleared = binding to packageName
+        }
+
+        assertEquals(ClearCloneStorageResult.Cleared, useCase.execute(space.id, PACKAGE))
+        assertEquals(requireNotNull(space.environmentBinding) to PACKAGE, cleared)
+        assertTrue(requireNotNull(fixture.store.find(space.id)).contains(PACKAGE))
+
+        val failed = ClearCloneStorageUseCase(fixture.store) { _, _ -> error("storage unavailable") }
+            .execute(space.id, PACKAGE)
+        assertTrue(failed is ClearCloneStorageResult.Failed)
+        assertTrue(requireNotNull(fixture.store.find(space.id)).contains(PACKAGE))
+    }
+
+    @Test
+    fun `clear clone storage rejects absent and unavailable targets without invoking runtime`() {
+        val fixture = Fixture()
+        val space = fixture.createSpace()
+        var invoked = false
+        val useCase = ClearCloneStorageUseCase(fixture.store) { _, _ -> invoked = true }
+
+        assertEquals(ClearCloneStorageResult.CloneNotFound, useCase.execute(space.id, PACKAGE))
+        assertEquals(ClearCloneStorageResult.SpaceNotFound, useCase.execute("missing", PACKAGE))
+        assertFalse(invoked)
+    }
+
     private fun tracker(store: TestOperationStore) = OperationTracker(
         store,
         idFactory = { UUID.randomUUID().toString() },

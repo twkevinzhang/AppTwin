@@ -25,6 +25,8 @@ interface IAppManager {
     boolean installPackageAsUser(int userId, String packageName);
     boolean uninstallPackageAsUser(String packageName, int userId);
     boolean uninstallPackage(String packageName);
+    /** Clears one installed guest package's mutable state without removing its user binding. */
+    boolean clearPackageRuntimeStateAsUser(int userId, String packageName);
     boolean clearPackageAsUser(int userId, String packageName);
     boolean clearPackage(String packageName);
     List<InstalledAppInfo> getInstalledApps(int flags);

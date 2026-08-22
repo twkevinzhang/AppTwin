@@ -1,5 +1,9 @@
 package org.apptwin.ui
 
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.junit4.createComposeRule
@@ -86,6 +90,51 @@ class HomeScreenUninstallTest {
     }
 
     @Test
+    fun clearStorageDialogPreservesSharedFilesAndLocksActionsWhileClearing() {
+        var cleared: GroupAppItem? = null
+        composeRule.setContent {
+            var clearingStorageAppKey by remember { mutableStateOf<String?>(null) }
+            AppTwinTheme {
+                SpaceDetailScreen(
+                    state = uiState,
+                    space = uiState.groups.single(),
+                    onLaunch = {},
+                    onAddApp = {},
+                    onRenameSpace = { _, _ -> },
+                    onDeleteSpace = {},
+                    onUninstallApp = {},
+                    onCreateShortcut = {},
+                    onRepairApp = {},
+                    clearingStorageAppKey = clearingStorageAppKey,
+                    onClearStorage = {
+                        cleared = it
+                        clearingStorageAppKey = it.launchKey
+                    },
+                    onSetPermission = { _, _, _ -> },
+                )
+            }
+        }
+
+        composeRule.onNodeWithTag(tileTag).performTouchInput { longClick() }
+        composeRule.onNodeWithTag(clearStorageActionTag, useUnmergedTree = true).performClick()
+
+        composeRule.onNodeWithTag("clear-storage-dialog").assertIsDisplayed()
+        composeRule.onNodeWithText(
+            "將先停止此分身 App，接著永久刪除登入、App 資料、快取及該分身可歸屬的私有外部檔案。",
+        ).assertIsDisplayed()
+        composeRule.onNodeWithText(
+            "同一空間內與其他分身共用的檔案不會清除。手機上的原始 App 和其他分身空間不受影響；此操作無法復原。",
+        ).assertIsDisplayed()
+        composeRule.onNodeWithTag("confirm-clear-storage").performClick()
+
+        composeRule.runOnIdle { assertEquals(appItem, cleared) }
+        composeRule.onNodeWithTag("clear-storage-progress").assertIsDisplayed()
+        composeRule.onNodeWithTag("confirm-clear-storage").assertIsNotEnabled()
+        composeRule.onNodeWithTag("cancel-clear-storage").assertIsNotEnabled()
+        composeRule.onNodeWithTag(tileTag).assertIsNotEnabled()
+    }
+
+    @Test
     fun metadataWarningRemainsVisibleWhenNoValidGroupCanBeLoaded() {
         composeRule.setContent {
             AppTwinTheme {
@@ -157,5 +206,6 @@ class HomeScreenUninstallTest {
         )
         val tileTag = "group-app-tile-${appItem.launchKey}"
         val uninstallActionTag = "uninstall-app-${appItem.launchKey}"
+        val clearStorageActionTag = "clear-storage-app-${appItem.launchKey}"
     }
 }

@@ -37,6 +37,7 @@ import androidx.compose.material.icons.filled.Cloud
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -52,6 +53,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -180,6 +182,8 @@ fun SpaceDetailScreen(
     onUninstallApp: (GroupAppItem) -> Unit,
     onCreateShortcut: (GroupAppItem) -> Unit,
     onRepairApp: (GroupAppItem) -> Unit,
+    clearingStorageAppKey: String? = null,
+    onClearStorage: (GroupAppItem) -> Unit = {},
     onSetPermission: (GroupAppItem, String, Boolean) -> Unit,
     onEnableGms: (String, Boolean) -> Unit = { _, _ -> },
     onDisableGms: (String) -> Unit = {},
@@ -188,11 +192,13 @@ fun SpaceDetailScreen(
     var showRename by rememberSaveable(space.groupId) { mutableStateOf(false) }
     var showDelete by rememberSaveable(space.groupId) { mutableStateOf(false) }
     var uninstallTargetKey by rememberSaveable(space.groupId) { mutableStateOf<String?>(null) }
+    var clearStorageTargetKey by rememberSaveable(space.groupId) { mutableStateOf<String?>(null) }
     var permissionTargetKey by rememberSaveable(space.groupId) { mutableStateOf<String?>(null) }
     var showGmsConsent by rememberSaveable(space.groupId) { mutableStateOf(false) }
     var showGmsDisable by rememberSaveable(space.groupId) { mutableStateOf(false) }
     var showGmsReset by rememberSaveable(space.groupId) { mutableStateOf(false) }
     val uninstallTarget = space.apps.firstOrNull { it.launchKey == uninstallTargetKey }
+    val clearStorageTarget = space.apps.firstOrNull { it.launchKey == clearStorageTargetKey }
     val permissionTarget = space.apps.firstOrNull { it.launchKey == permissionTargetKey }
 
     LazyColumn(
@@ -237,6 +243,7 @@ fun SpaceDetailScreen(
                     uninstallingAppKey = state.uninstallingAppKey,
                     shortcutAppKey = state.shortcutAppKey,
                     repairingAppKey = state.repairingAppKey,
+                    clearingStorageAppKey = clearingStorageAppKey,
                     enabled = space.lifecycle == SpaceLifecycleState.READY &&
                         state.busyGroupId == null &&
                         state.launchingAppKey == null &&
@@ -245,6 +252,7 @@ fun SpaceDetailScreen(
                     onUninstall = { uninstallTargetKey = it.launchKey },
                     onCreateShortcut = onCreateShortcut,
                     onRepair = onRepairApp,
+                    onClearStorage = { clearStorageTargetKey = it.launchKey },
                     onManagePermissions = { permissionTargetKey = it.launchKey },
                     onAddApp = { onAddApp(space.groupId) },
                 )
@@ -399,6 +407,74 @@ fun SpaceDetailScreen(
                 TextButton(
                     modifier = Modifier.testTag("cancel-uninstall-app"),
                     onClick = { uninstallTargetKey = null },
+                ) { Text("取消") }
+            },
+        )
+    }
+
+    clearStorageTarget?.let { app ->
+        val isClearingStorage = clearingStorageAppKey == app.launchKey
+        var clearStorageWasInProgress by rememberSaveable(app.launchKey) { mutableStateOf(false) }
+        LaunchedEffect(isClearingStorage) {
+            if (isClearingStorage) {
+                clearStorageWasInProgress = true
+            } else if (clearStorageWasInProgress) {
+                clearStorageWasInProgress = false
+                clearStorageTargetKey = null
+            }
+        }
+        AlertDialog(
+            modifier = Modifier.testTag("clear-storage-dialog"),
+            onDismissRequest = {
+                if (!isClearingStorage) clearStorageTargetKey = null
+            },
+            icon = {
+                Icon(
+                    Icons.Default.Error,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.error,
+                )
+            },
+            title = { Text("清除「${app.appLabel}」的儲存空間？") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Text(
+                        "將先停止此分身 App，接著永久刪除登入、App 資料、快取及該分身可歸屬的私有外部檔案。",
+                    )
+                    Text(
+                        "同一空間內與其他分身共用的檔案不會清除。手機上的原始 App 和其他分身空間不受影響；此操作無法復原。",
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            },
+            confirmButton = {
+                Button(
+                    modifier = Modifier.testTag("confirm-clear-storage"),
+                    enabled = !isClearingStorage,
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = MaterialTheme.colorScheme.error,
+                        contentColor = MaterialTheme.colorScheme.onError,
+                    ),
+                    onClick = { onClearStorage(app) },
+                ) {
+                    if (isClearingStorage) {
+                        CircularProgressIndicator(
+                            modifier = Modifier
+                                .size(18.dp)
+                                .testTag("clear-storage-progress"),
+                            color = MaterialTheme.colorScheme.onError,
+                            strokeWidth = 2.dp,
+                        )
+                        Spacer(modifier = Modifier.size(8.dp))
+                    }
+                    Text(if (isClearingStorage) "清除中…" else "清除儲存空間")
+                }
+            },
+            dismissButton = {
+                TextButton(
+                    modifier = Modifier.testTag("cancel-clear-storage"),
+                    enabled = !isClearingStorage,
+                    onClick = { clearStorageTargetKey = null },
                 ) { Text("取消") }
             },
         )
@@ -1023,11 +1099,13 @@ private fun AppGrid(
     uninstallingAppKey: String?,
     shortcutAppKey: String?,
     repairingAppKey: String?,
+    clearingStorageAppKey: String?,
     enabled: Boolean,
     onLaunch: (GroupAppItem) -> Unit,
     onUninstall: (GroupAppItem) -> Unit,
     onCreateShortcut: (GroupAppItem) -> Unit,
     onRepair: (GroupAppItem) -> Unit,
+    onClearStorage: (GroupAppItem) -> Unit,
     onManagePermissions: (GroupAppItem) -> Unit,
     onAddApp: () -> Unit,
 ) {
@@ -1045,11 +1123,13 @@ private fun AppGrid(
                     isUninstalling = uninstallingAppKey == app.launchKey,
                     isCreatingShortcut = shortcutAppKey == app.launchKey,
                     isRepairing = repairingAppKey == app.launchKey,
+                    isClearingStorage = clearingStorageAppKey == app.launchKey,
                     enabled = enabled && launchingAppKey == null,
                     onClick = { onLaunch(app) },
                     onUninstall = { onUninstall(app) },
                     onCreateShortcut = { onCreateShortcut(app) },
                     onRepair = { onRepair(app) },
+                    onClearStorage = { onClearStorage(app) },
                     onManagePermissions = { onManagePermissions(app) },
                 )
             }
@@ -1078,15 +1158,17 @@ private fun AppGridTile(
     isUninstalling: Boolean,
     isCreatingShortcut: Boolean,
     isRepairing: Boolean,
+    isClearingStorage: Boolean,
     enabled: Boolean,
     onClick: () -> Unit,
     onUninstall: () -> Unit,
     onCreateShortcut: () -> Unit,
     onRepair: () -> Unit,
+    onClearStorage: () -> Unit,
     onManagePermissions: () -> Unit,
 ) {
     var menuExpanded by remember(app.launchKey) { mutableStateOf(false) }
-    val busy = isLaunching || isUninstalling || isCreatingShortcut || isRepairing
+    val busy = isLaunching || isUninstalling || isCreatingShortcut || isRepairing || isClearingStorage
     val launchEnabled = enabled && app.sourceInstalled && !busy
     val menuEnabled = enabled && !busy
     Box(modifier = Modifier.fillMaxWidth()) {
@@ -1101,6 +1183,7 @@ private fun AppGridTile(
                         isLaunching -> "開啟中"
                         isCreatingShortcut -> "建立捷徑中"
                         isRepairing -> "重新同步中"
+                        isClearingStorage -> "清除儲存空間中"
                         !app.sourceInstalled -> "原始 App 已移除"
                         !enabled -> "暫時無法操作"
                         else -> "可操作"
@@ -1151,6 +1234,7 @@ private fun AppGridTile(
                     isUninstalling -> "移除中…"
                     isCreatingShortcut -> "建立捷徑中…"
                     isRepairing -> "重新同步中…"
+                    isClearingStorage -> "清除儲存空間中…"
                     !app.sourceInstalled -> "原始 App 已移除"
                     isLaunching -> "開啟中…"
                     app.lifecycle == CloneLifecycleState.READY -> app.launchStatus
@@ -1200,6 +1284,27 @@ private fun AppGridTile(
                 onClick = {
                     menuExpanded = false
                     onCreateShortcut()
+                },
+            )
+            DropdownMenuItem(
+                modifier = Modifier.testTag("clear-storage-app-${app.launchKey}"),
+                text = {
+                    Text(
+                        "清除儲存空間",
+                        color = MaterialTheme.colorScheme.error,
+                    )
+                },
+                leadingIcon = {
+                    Icon(
+                        Icons.Default.Delete,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.error,
+                    )
+                },
+                enabled = menuEnabled,
+                onClick = {
+                    menuExpanded = false
+                    onClearStorage()
                 },
             )
             DropdownMenuItem(

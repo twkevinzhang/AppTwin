@@ -998,6 +998,23 @@ public class VAppManagerService extends IAppManager.Stub {
         return false;
     }
 
+    /**
+     * Clears all mutable state owned by one package/user pair without changing its installed
+     * bit. In particular, this deliberately excludes the user-wide shared virtual SD card: apps
+     * in one virtual user share it, so deleting it here could erase another clone's media.
+     */
+    @Override
+    public synchronized boolean clearPackageRuntimeStateAsUser(
+            int userId, String packageName) throws RemoteException {
+        com.lody.virtual.server.VirtualUserAccessPolicy.enforceCallerUserOrHost(userId);
+        if (!VUserManagerService.get().exists(userId)) return false;
+        PackageSetting setting = PackageCacheManager.getSetting(packageName);
+        if (setting == null || !ArrayUtils.contains(getPackageInstalledUsersInternal(packageName), userId)) {
+            return false;
+        }
+        return clearPackageRuntimeState(packageName, userId);
+    }
+
     @Override
     public boolean clearPackage(String packageName) throws RemoteException {
         com.lody.virtual.server.VirtualUserAccessPolicy.enforceHost();
@@ -1127,6 +1144,11 @@ public class VAppManagerService extends IAppManager.Stub {
     }
 
     private boolean clearTrustedResidualState(String packageName, int userId) {
+        return clearPackageRuntimeState(packageName, userId);
+    }
+
+    /** Clears package-owned runtime state while preserving PackageSetting installed metadata. */
+    private boolean clearPackageRuntimeState(String packageName, int userId) {
         try {
             VUserManagerService.get().bumpPackagePendingIntentGenerationOrThrow(
                     packageName, userId);

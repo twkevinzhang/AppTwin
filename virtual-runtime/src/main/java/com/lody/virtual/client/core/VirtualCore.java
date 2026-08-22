@@ -414,6 +414,18 @@ public final class VirtualCore {
         }
     }
 
+    /**
+     * Removes mutable guest state for one installed package while retaining its virtual-user
+     * package binding. The package can therefore be launched again without being re-added.
+     */
+    public boolean clearPackageRuntimeStateAsUser(int userId, String packageName) {
+        try {
+            return getService().clearPackageRuntimeStateAsUser(userId, packageName);
+        } catch (RemoteException e) {
+            return VirtualRuntime.crash(e);
+        }
+    }
+
     public void addVisibleOutsidePackage(String pkg) {
         try {
             getService().addVisibleOutsidePackage(pkg);
