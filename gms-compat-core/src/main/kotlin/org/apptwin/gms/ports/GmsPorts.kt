@@ -17,11 +17,27 @@ fun interface ActiveGmsReleasePort {
     fun current(): TrustedGmsManifest?
 }
 
+enum class CloudMessagingState {
+    DISABLED,
+    STARTING,
+    CONNECTED,
+    DEGRADED,
+    UNKNOWN,
+}
+
+data class CloudMessagingHealth(
+    val state: CloudMessagingState = CloudMessagingState.UNKNOWN,
+    val lastConnectedAtMillis: Long? = null,
+    val retryAttempt: Int = 0,
+    val failureCode: String? = null,
+)
+
 data class GmsRuntimeObservation(
     val groupId: GmsGroupId,
     val installed: Boolean,
     val releaseId: String? = null,
     val privateStatePresent: Boolean = false,
+    val cloudMessaging: CloudMessagingHealth = CloudMessagingHealth(),
 ) {
     init {
         require(installed || releaseId == null) { "absent runtime must not report a release" }

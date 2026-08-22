@@ -31,7 +31,15 @@ import org.apptwin.permissions.ClonePermissionSummary
 import org.apptwin.permissions.ClonePermissionTarget
 import org.apptwin.permissions.ClonePermissionVirtualScope
 import org.apptwin.runtime.RuntimeLaunchResult
+import org.apptwin.gms.GmsGroupProductState
 import org.apptwin.gms.GmsStartupResult
+import org.apptwin.gms.model.GmsDesiredState
+import org.apptwin.gms.model.GmsGroupId
+import org.apptwin.gms.model.GmsNetworkConsent
+import org.apptwin.gms.model.GmsObservedState
+import org.apptwin.gms.model.GmsProfile
+import org.apptwin.gms.ports.CloudMessagingHealth
+import org.apptwin.gms.ports.CloudMessagingState
 import org.apptwin.gms.usecases.GmsLifecycleResult
 import org.apptwin.gms.usecases.GmsReconciliationResult
 import org.junit.After
@@ -341,6 +349,38 @@ class MainViewModelLifecycleTest {
     }
 
     @Test
+    fun `GMS reconciliation publishes current cloud messaging health`() = runTest {
+        val dispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(dispatcher)
+        val productState = GmsGroupProductState(
+            profile = GmsProfile(
+                groupId = GmsGroupId(GROUP_ID),
+                desiredState = GmsDesiredState.ENABLED,
+                observedState = GmsObservedState.READY_PARTIAL,
+                networkConsent = GmsNetworkConsent.GRANTED,
+                observedReleaseId = "microg-v0.3.15.250932",
+            ),
+            capabilities = emptyList(),
+            cloudMessaging = CloudMessagingHealth(CloudMessagingState.CONNECTED),
+        )
+        val viewModel = viewModel(
+            SavedStateHandle(),
+            FakeOperations(
+                groups = listOf(group()),
+                gmsStartupProductStates = mapOf(GROUP_ID to productState),
+            ),
+            dispatcher,
+        )
+
+        advanceUntilIdle()
+
+        assertEquals(
+            CloudMessagingState.CONNECTED,
+            viewModel.uiState.groups.single().gmsCompatibility?.cloudMessaging?.state,
+        )
+    }
+
+    @Test
     fun `refresh exposes aggregated clone permissions in settings state`() = runTest {
         val dispatcher = StandardTestDispatcher(testScheduler)
         Dispatchers.setMain(dispatcher)
@@ -381,6 +421,7 @@ class MainViewModelLifecycleTest {
         private val diagnostics: String? = null,
         private val deepLinkCandidates: List<Pair<String, String>>? = null,
         private val gmsReconcileError: Throwable? = null,
+        private val gmsStartupProductStates: Map<String, GmsGroupProductState> = emptyMap(),
         private val refreshWarnings: List<String> = emptyList(),
         private val clonePermissions: List<ClonePermissionSummary> = emptyList(),
         private val refreshGate: CompletableDeferred<Unit>? = null,
@@ -464,7 +505,8 @@ class MainViewModelLifecycleTest {
                     terminalFailures = emptyList(),
                     releaseMismatches = emptyList(),
                 ),
-                profiles = emptyList(),
+                profiles = gmsStartupProductStates.values.map(GmsGroupProductState::profile),
+                productStates = gmsStartupProductStates,
             )
         }
         override suspend fun grantGmsConsent(groupId: String) {

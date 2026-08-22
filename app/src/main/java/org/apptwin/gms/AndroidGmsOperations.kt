@@ -9,6 +9,8 @@ import org.apptwin.gms.model.GmsGroupId
 import org.apptwin.gms.model.GmsNetworkConsent
 import org.apptwin.gms.model.GmsProfile
 import org.apptwin.gms.ports.ActiveGmsReleasePort
+import org.apptwin.gms.ports.CloudMessagingHealth
+import org.apptwin.gms.ports.CloudMessagingState
 import org.apptwin.gms.ports.GmsRuntimeMutationResult
 import org.apptwin.gms.ports.GmsRuntimeObservation
 import org.apptwin.gms.ports.GmsRuntimePort
@@ -26,6 +28,7 @@ import org.apptwin.gms.usecases.ResetGmsUseCase
 data class GmsGroupProductState(
     val profile: GmsProfile,
     val capabilities: List<GmsCapabilityAssessment>,
+    val cloudMessaging: CloudMessagingHealth = CloudMessagingHealth(),
     val hasDataWarning: Boolean = false,
 )
 
@@ -33,6 +36,7 @@ data class GmsStartupResult(
     val reconciliation: GmsReconciliationResult,
     val profiles: List<GmsProfile>,
     val cloudMessagingRepairFailures: List<String> = emptyList(),
+    val productStates: Map<String, GmsGroupProductState> = emptyMap(),
 )
 
 /**
@@ -96,18 +100,33 @@ internal class AndroidGmsOperations(
                     }
                 }
             }
-        return GmsStartupResult(reconciliation, evaluated, failures)
+        val productStates = groupIds.associateWith(::snapshot)
+        return GmsStartupResult(
+            reconciliation = reconciliation,
+            profiles = productStates.values.map(GmsGroupProductState::profile),
+            cloudMessagingRepairFailures = failures,
+            productStates = productStates,
+        )
     }
 
     fun snapshot(groupId: String): GmsGroupProductState {
         val id = GmsGroupId(groupId)
-        val profile = profiles.find(id) ?: GmsProfile.disabled(id)
+        val profile = runCatching { evaluateProfile.execute(id) }
+            .getOrElse { profiles.find(id) ?: GmsProfile.disabled(id) }
+        val cloudMessaging = runCatching { runtime.observe(id).cloudMessaging }
+            .getOrElse {
+                CloudMessagingHealth(
+                    state = CloudMessagingState.UNKNOWN,
+                    failureCode = "CLOUD_MESSAGING_OBSERVE_RETRYABLE",
+                )
+            }
         val capabilities = GmsCapability.entries.map { capability ->
             evaluateCapability.execute(id, capability)
         }
         return GmsGroupProductState(
             profile = profile,
             capabilities = capabilities,
+            cloudMessaging = cloudMessaging,
             hasDataWarning = issues.list().any { it.groupId == groupId },
         )
     }

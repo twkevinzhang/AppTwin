@@ -330,6 +330,10 @@ public class VAppManagerService extends IAppManager.Stub {
                 new TrustedGmsSuspensionCoordinator.Operations() {
                     @Override
                     public void killProcesses() {
+                        if (com.lody.virtual.server.pm.parser.TrustedSignatureOverridePolicy
+                                .TRUSTED_PACKAGE.equals(packageName)) {
+                            activityManager.stopTrustedGmsCloudMessagingForUser(userId);
+                        }
                         activityManager.killAppByPkg(packageName, userId);
                     }
 

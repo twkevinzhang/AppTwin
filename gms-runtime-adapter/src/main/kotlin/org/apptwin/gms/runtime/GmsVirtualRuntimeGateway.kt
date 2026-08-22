@@ -1,18 +1,17 @@
 package org.apptwin.gms.runtime
 
-import android.content.ComponentName
-import android.content.Intent
-import android.os.Handler
-import android.os.Looper
 import com.lody.virtual.client.core.VirtualCore
 import com.lody.virtual.client.ipc.VActivityManager
 import com.lody.virtual.os.VEnvironment
 import com.lody.virtual.os.VirtualExternalStorageLayout
+import com.lody.virtual.remote.TrustedGmsCloudMessagingState
 import com.lody.virtual.remote.TrustedPackageProvenance
 import android.content.pm.PackageInfo
 import android.os.Build
 import java.io.File
 import java.nio.file.Path
+import org.apptwin.gms.ports.CloudMessagingHealth
+import org.apptwin.gms.ports.CloudMessagingState
 
 fun interface GmsGroupBindingResolver {
     /** Returns null for an unknown/deleted Group. Android's real user 0 is never a valid binding. */
@@ -31,6 +30,7 @@ interface GmsVirtualRuntimeGateway {
     fun installedVersionCode(userId: Int): Long?
     fun hasPrivateState(userId: Int): Boolean
     fun hasBackgroundOwnership(userId: Int): Boolean
+    fun observeCloudMessaging(userId: Int): CloudMessagingHealth
     fun installTrusted(
         userId: Int,
         apk: Path,
@@ -38,6 +38,7 @@ interface GmsVirtualRuntimeGateway {
     ): RuntimeEngineResult
     fun preparePrivateState(userId: Int): RuntimeEngineResult
     fun provisionCloudMessaging(userId: Int): RuntimeEngineResult
+    fun stopCloudMessaging(userId: Int): RuntimeEngineResult
     fun suspendPreservingData(userId: Int): RuntimeEngineResult
     fun uninstallAndClear(userId: Int): RuntimeEngineResult
 }
@@ -81,6 +82,11 @@ class VirtualCoreGmsRuntimeGateway(
     override fun hasBackgroundOwnership(userId: Int): Boolean =
         core.hasTrustedGmsBackgroundStateForUser(userId)
 
+    override fun observeCloudMessaging(userId: Int): CloudMessagingHealth =
+        observeTrustedCloudMessaging {
+            VActivityManager.get().getTrustedGmsCloudMessagingState(userId)
+        }
+
     override fun installTrusted(
         userId: Int,
         apk: Path,
@@ -101,32 +107,20 @@ class VirtualCoreGmsRuntimeGateway(
     }.getOrElse { RuntimeEngineResult.Retryable("PRIVATE_STATE_PREPARE_RETRYABLE") }
 
     override fun provisionCloudMessaging(userId: Int): RuntimeEngineResult = runCatching {
-        val component = ComponentName(GMS_PACKAGE, PROVISION_SERVICE)
-        val intent = Intent()
-            .setComponent(component)
-            .putExtra("checkin_enabled", true)
-            .putExtra("gcm_enabled", true)
-        if (VActivityManager.get().startService(null, intent, null, userId) == component) {
-            val scheduled = Handler(Looper.getMainLooper()).postDelayed(
-                {
-                    VActivityManager.get().startService(
-                        null,
-                        Intent().setComponent(ComponentName(GMS_PACKAGE, MCS_SERVICE)),
-                        null,
-                        userId,
-                    )
-                },
-                MCS_START_DELAY_MILLIS,
-            )
-            if (scheduled) {
-                RuntimeEngineResult.Success
-            } else {
-                RuntimeEngineResult.Retryable("CLOUD_MESSAGING_PROVISION_RETRYABLE")
-            }
+        if (VActivityManager.get().ensureTrustedGmsCloudMessagingForUser(userId)) {
+            RuntimeEngineResult.Success
         } else {
             RuntimeEngineResult.Retryable("CLOUD_MESSAGING_PROVISION_RETRYABLE")
         }
     }.getOrElse { RuntimeEngineResult.Retryable("CLOUD_MESSAGING_PROVISION_RETRYABLE") }
+
+    override fun stopCloudMessaging(userId: Int): RuntimeEngineResult = runCatching {
+        if (VActivityManager.get().stopTrustedGmsCloudMessagingForUser(userId)) {
+            RuntimeEngineResult.Success
+        } else {
+            RuntimeEngineResult.Retryable("CLOUD_MESSAGING_STOP_RETRYABLE")
+        }
+    }.getOrElse { RuntimeEngineResult.Retryable("CLOUD_MESSAGING_STOP_RETRYABLE") }
 
     override fun suspendPreservingData(userId: Int): RuntimeEngineResult = runCatching {
         if (core.suspendTrustedGmsPackageForUser(userId)) {
@@ -175,13 +169,52 @@ class VirtualCoreGmsRuntimeGateway(
 
     private companion object {
         const val GMS_PACKAGE = "com.google.android.gms"
-        const val PROVISION_SERVICE = "org.microg.gms.provision.ProvisionService"
-        const val MCS_SERVICE = "org.microg.gms.gcm.McsService"
-        const val MCS_START_DELAY_MILLIS = 5_000L
         const val COMPANION_PACKAGE = "com.android.vending"
         const val COMPANION_VERSION_CODE = 84_022_630L
         val TRUSTED_PACKAGES = listOf(GMS_PACKAGE, COMPANION_PACKAGE)
     }
+}
+
+internal fun observeTrustedCloudMessaging(
+    readState: () -> TrustedGmsCloudMessagingState?,
+): CloudMessagingHealth = runCatching {
+    trustedCloudMessagingHealth(readState())
+}.getOrElse {
+    CloudMessagingHealth(
+        state = CloudMessagingState.UNKNOWN,
+        failureCode = "CLOUD_MESSAGING_OBSERVE_RETRYABLE",
+    )
+}
+
+internal fun trustedCloudMessagingHealth(
+    state: TrustedGmsCloudMessagingState?,
+): CloudMessagingHealth {
+    if (state == null) {
+        return CloudMessagingHealth(
+            state = CloudMessagingState.UNKNOWN,
+            failureCode = "CLOUD_MESSAGING_STATE_UNAVAILABLE",
+        )
+    }
+    val mappedState = when (state.phase) {
+        TrustedGmsCloudMessagingState.PHASE_DISABLED -> CloudMessagingState.DISABLED
+        TrustedGmsCloudMessagingState.PHASE_STARTING -> CloudMessagingState.STARTING
+        TrustedGmsCloudMessagingState.PHASE_CONNECTED -> if (
+            state.processAlive && state.bindingAlive
+        ) {
+            CloudMessagingState.CONNECTED
+        } else {
+            CloudMessagingState.DEGRADED
+        }
+        TrustedGmsCloudMessagingState.PHASE_DEGRADED -> CloudMessagingState.DEGRADED
+        TrustedGmsCloudMessagingState.PHASE_UNKNOWN -> CloudMessagingState.UNKNOWN
+        else -> CloudMessagingState.UNKNOWN
+    }
+    return CloudMessagingHealth(
+        state = mappedState,
+        lastConnectedAtMillis = state.lastConnectedAtMillis.takeIf { it > 0L },
+        retryAttempt = state.retryAttempt.coerceAtLeast(0),
+        failureCode = state.failureCode,
+    )
 }
 
 internal fun trustedBundleVersionCode(

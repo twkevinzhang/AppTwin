@@ -15,6 +15,7 @@ import org.apptwin.gms.operations.GmsOperationKind
 import org.apptwin.gms.operations.GmsOperationPhase
 import org.apptwin.gms.operations.GmsOperationStore
 import org.apptwin.gms.ports.ActiveGmsReleasePort
+import org.apptwin.gms.ports.CloudMessagingState
 import org.apptwin.gms.ports.GmsCapabilityEvidenceRepository
 import org.apptwin.gms.ports.GmsProfileRepository
 import org.apptwin.gms.ports.GmsResetMode
@@ -75,7 +76,8 @@ class GmsLifecycleCoordinator(
         if (profile.desiredState == GmsDesiredState.ENABLED &&
             profile.observedState == GmsObservedState.READY_PARTIAL &&
             profile.observedReleaseId == targetRelease &&
-            observation.satisfies(GmsDesiredState.ENABLED, targetRelease)
+            observation.satisfies(GmsDesiredState.ENABLED, targetRelease) &&
+            observation.cloudMessaging.state == CloudMessagingState.CONNECTED
         ) {
             return GmsLifecycleResult.AlreadySatisfied(profile)
         }

@@ -6,6 +6,8 @@ import org.apptwin.gms.artifacts.GmsArtifactKind
 import org.apptwin.gms.artifacts.TrustedGmsManifest
 import org.apptwin.gms.model.GmsDesiredState
 import org.apptwin.gms.model.GmsGroupId
+import org.apptwin.gms.ports.CloudMessagingHealth
+import org.apptwin.gms.ports.CloudMessagingState
 import org.apptwin.gms.ports.GmsResetMode
 import org.apptwin.gms.ports.GmsRuntimeMutationResult
 import org.apptwin.gms.ports.GmsRuntimeObservation
@@ -91,7 +93,11 @@ class AndroidGmsRuntimeAdapter private constructor(
     override fun observe(groupId: GmsGroupId): GmsRuntimeObservation = try {
         val userId = bindings.virtualUserId(groupId.value)
         if (userId == null || userId <= 0 || !engine.isVirtualUserPresent(userId)) {
-            GmsRuntimeObservation(groupId, installed = false)
+            GmsRuntimeObservation(
+                groupId = groupId,
+                installed = false,
+                cloudMessaging = CloudMessagingHealth(CloudMessagingState.DISABLED),
+            )
         } else {
             observeBound(groupId, userId)
         }
@@ -116,7 +122,9 @@ class AndroidGmsRuntimeAdapter private constructor(
         if (before.satisfies(GmsDesiredState.ENABLED, release.release.releaseId)) {
             provisionCloudMessaging(binding)?.let { return it }
             if (!receipts.contains(receipt)) receipts.record(receipt)
-            return GmsRuntimeMutationResult.AlreadySatisfied(before)
+            val refreshed = observeForMutation(groupId, binding)
+                ?: return GmsRuntimeMutationResult.RetryableFailure("RUNTIME_OBSERVE_RETRYABLE")
+            return GmsRuntimeMutationResult.AlreadySatisfied(refreshed)
         }
         return enableBound(groupId, binding, release, receipt)
     }
@@ -133,6 +141,7 @@ class AndroidGmsRuntimeAdapter private constructor(
         val receipt = receipt(groupId, binding, operationId, ACTION_DISABLE, null)
         val before = observeForMutation(groupId, binding)
             ?: return GmsRuntimeMutationResult.RetryableFailure("RUNTIME_OBSERVE_RETRYABLE")
+        stopCloudMessaging(binding)?.let { return it }
         val backgroundBefore = backgroundForMutation(binding)
             ?: return GmsRuntimeMutationResult.RetryableFailure("RUNTIME_OBSERVE_RETRYABLE")
         if (
@@ -140,7 +149,9 @@ class AndroidGmsRuntimeAdapter private constructor(
             before.satisfies(GmsDesiredState.DISABLED, null) &&
             !backgroundBefore
         ) {
-            return GmsRuntimeMutationResult.AlreadySatisfied(before)
+            val refreshed = observeForMutation(groupId, binding)
+                ?: return GmsRuntimeMutationResult.RetryableFailure("RUNTIME_OBSERVE_RETRYABLE")
+            return GmsRuntimeMutationResult.AlreadySatisfied(refreshed)
         }
         return when (val suspended = safeEngine { engine.suspendPreservingData(binding) }) {
             RuntimeEngineResult.Success -> terminal(
@@ -188,8 +199,16 @@ class AndroidGmsRuntimeAdapter private constructor(
             before.satisfies(target, releaseId)
         }
         if (receipts.contains(receipt) && replayReachedTarget) {
-            return GmsRuntimeMutationResult.AlreadySatisfied(before)
+            if (mode == GmsResetMode.REENABLE_ACTIVE_RELEASE) {
+                provisionCloudMessaging(binding)?.let { return it }
+            } else {
+                stopCloudMessaging(binding)?.let { return it }
+            }
+            val refreshed = observeForMutation(groupId, binding)
+                ?: return GmsRuntimeMutationResult.RetryableFailure("RUNTIME_OBSERVE_RETRYABLE")
+            return GmsRuntimeMutationResult.AlreadySatisfied(refreshed)
         }
+        stopCloudMessaging(binding)?.let { return it }
         when (val removed = safeEngine { engine.uninstallAndClear(binding) }) {
             RuntimeEngineResult.Success -> Unit
             is RuntimeEngineResult.Rejected -> return GmsRuntimeMutationResult.Rejected(removed.code)
@@ -254,6 +273,14 @@ class AndroidGmsRuntimeAdapter private constructor(
             is RuntimeEngineResult.Rejected -> GmsRuntimeMutationResult.Rejected(provisioned.code)
             is RuntimeEngineResult.Retryable ->
                 GmsRuntimeMutationResult.RetryableFailure(provisioned.code)
+        }
+
+    private fun stopCloudMessaging(userId: Int): GmsRuntimeMutationResult? =
+        when (val stopped = safeEngine { engine.stopCloudMessaging(userId) }) {
+            RuntimeEngineResult.Success -> null
+            is RuntimeEngineResult.Rejected -> GmsRuntimeMutationResult.Rejected(stopped.code)
+            is RuntimeEngineResult.Retryable ->
+                GmsRuntimeMutationResult.RetryableFailure(stopped.code)
         }
 
     private fun terminal(
@@ -332,6 +359,7 @@ class AndroidGmsRuntimeAdapter private constructor(
         val privateState = engine.hasPrivateState(userId)
         val packageInstalled = engine.isInstalled(userId)
         val version = if (packageInstalled) engine.installedVersionCode(userId) else null
+        val cloudMessaging = engine.observeCloudMessaging(userId)
         return GmsRuntimeObservation(
             groupId = groupId,
             installed = packageInstalled,
@@ -341,6 +369,7 @@ class AndroidGmsRuntimeAdapter private constructor(
                 null
             },
             privateStatePresent = privateState,
+            cloudMessaging = cloudMessaging,
         )
     }
 

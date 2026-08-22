@@ -11,6 +11,8 @@ import org.apptwin.gms.operations.GmsOperationKind
 import org.apptwin.gms.operations.GmsOperationPhase
 import org.apptwin.gms.operations.GmsOperationStore
 import org.apptwin.gms.ports.ActiveGmsReleasePort
+import org.apptwin.gms.ports.CloudMessagingHealth
+import org.apptwin.gms.ports.CloudMessagingState
 import org.apptwin.gms.ports.GmsProfileRepository
 import org.apptwin.gms.ports.GmsResetMode
 import org.apptwin.gms.ports.GmsRuntimeMutationResult
@@ -52,6 +54,35 @@ class GmsLifecycleUseCasesTest {
         assertTrue(fixture.runtime.states.getValue(groupA).installed)
         assertFalse(fixture.runtime.states.containsKey(groupB))
         assertEquals(1, fixture.runtime.calls.count { it.startsWith("enable:") })
+    }
+
+    @Test
+    fun `installed runtime with starting cloud messaging is reconciled instead of called connected`() {
+        val fixture = Fixture()
+        fixture.grantConsent(groupA)
+        fixture.profiles.save(
+            fixture.profiles.find(groupA)!!.copy(
+                desiredState = GmsDesiredState.ENABLED,
+                observedState = GmsObservedState.READY_PARTIAL,
+                observedReleaseId = "release-1",
+            ),
+        )
+        fixture.runtime.states[groupA] = GmsRuntimeObservation(
+            groupId = groupA,
+            installed = true,
+            releaseId = "release-1",
+            privateStatePresent = true,
+            cloudMessaging = CloudMessagingHealth(CloudMessagingState.STARTING),
+        )
+
+        val result = fixture.coordinator.enable(groupA)
+
+        assertTrue(result is GmsLifecycleResult.Completed)
+        assertEquals(1, fixture.runtime.calls.count { it.startsWith("enable:") })
+        assertEquals(
+            CloudMessagingState.CONNECTED,
+            fixture.runtime.states.getValue(groupA).cloudMessaging.state,
+        )
     }
 
     @Test
@@ -304,7 +335,13 @@ class GmsLifecycleUseCasesTest {
         ): GmsRuntimeMutationResult {
             calls += "enable:${groupId.value}:$operationId"
             results.pollFirst()?.let { return it }
-            val target = GmsRuntimeObservation(groupId, true, release.release.releaseId, true)
+            val target = GmsRuntimeObservation(
+                groupId,
+                true,
+                release.release.releaseId,
+                true,
+                CloudMessagingHealth(CloudMessagingState.CONNECTED),
+            )
             if (states[groupId] == target) return GmsRuntimeMutationResult.AlreadySatisfied(target)
             states[groupId] = target
             return GmsRuntimeMutationResult.Applied(target)
@@ -339,6 +376,7 @@ class GmsLifecycleUseCasesTest {
                     true,
                     requireNotNull(release).release.releaseId,
                     true,
+                    CloudMessagingHealth(CloudMessagingState.CONNECTED),
                 )
             }
             if (mode == GmsResetMode.DISABLE_AFTER_RESET) states.remove(groupId) else states[groupId] = target

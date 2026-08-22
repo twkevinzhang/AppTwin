@@ -25,6 +25,7 @@ import com.lody.virtual.remote.BadgerInfo;
 import com.lody.virtual.remote.PendingIntentData;
 import com.lody.virtual.remote.PendingResultData;
 import com.lody.virtual.remote.PreparedActivityLaunch;
+import com.lody.virtual.remote.TrustedGmsCloudMessagingState;
 import com.lody.virtual.remote.VParceledListSlice;
 import com.lody.virtual.server.IActivityManager;
 import com.lody.virtual.server.interfaces.IProcessObserver;
@@ -130,6 +131,38 @@ public class VActivityManager {
             getService().cancelPreparedActivityLaunch(launchId);
         } catch (RemoteException e) {
             VirtualRuntime.crash(e);
+        }
+    }
+
+    public boolean ensureTrustedGmsCloudMessagingForUser(int userId) {
+        try {
+            return getService().ensureTrustedGmsCloudMessagingForUser(userId);
+        } catch (RemoteException e) {
+            return VirtualRuntime.crash(e);
+        }
+    }
+
+    public boolean stopTrustedGmsCloudMessagingForUser(int userId) {
+        try {
+            return getService().stopTrustedGmsCloudMessagingForUser(userId);
+        } catch (RemoteException e) {
+            return VirtualRuntime.crash(e);
+        }
+    }
+
+    public void reconcileTrustedGmsCloudMessaging() {
+        try {
+            getService().reconcileTrustedGmsCloudMessaging();
+        } catch (RemoteException e) {
+            VirtualRuntime.crash(e);
+        }
+    }
+
+    public TrustedGmsCloudMessagingState getTrustedGmsCloudMessagingState(int userId) {
+        try {
+            return getService().getTrustedGmsCloudMessagingState(userId);
+        } catch (RemoteException e) {
+            return VirtualRuntime.crash(e);
         }
     }
 

@@ -9,6 +9,8 @@ import org.apptwin.gms.artifacts.GmsReleaseIdentity
 import org.apptwin.gms.artifacts.TrustedGmsArtifact
 import org.apptwin.gms.artifacts.TrustedGmsManifest
 import org.apptwin.gms.model.GmsGroupId
+import org.apptwin.gms.ports.CloudMessagingHealth
+import org.apptwin.gms.ports.CloudMessagingState
 import org.apptwin.gms.ports.GmsResetMode
 import org.apptwin.gms.ports.GmsRuntimeMutationResult
 import org.apptwin.microg.artifact.ArtifactSourceException
@@ -72,12 +74,17 @@ class AndroidGmsRuntimeAdapterTest {
     fun `already enabled runtime repairs cloud messaging provisioning`() {
         val fixture = Fixture()
         fixture.adapter.ensureEnabled(groupA, release(), operationA)
+        fixture.engine.state(11).cloudMessaging =
+            CloudMessagingHealth(CloudMessagingState.CONNECTED, lastConnectedAtMillis = 123L)
         fixture.engine.cloudMessagingUsers.clear()
 
         val result = fixture.adapter.ensureEnabled(groupA, release(), operationB)
 
         assertTrue(result is GmsRuntimeMutationResult.AlreadySatisfied)
         assertEquals(listOf(11), fixture.engine.cloudMessagingUsers)
+        val observation = (result as GmsRuntimeMutationResult.AlreadySatisfied).observation
+        assertEquals(CloudMessagingState.STARTING, observation.cloudMessaging.state)
+        assertFalse(observation.cloudMessaging.state == CloudMessagingState.CONNECTED)
     }
 
     @Test
@@ -158,7 +165,27 @@ class AndroidGmsRuntimeAdapterTest {
         assertEquals("account-checkin-token-b", fixture.engine.state(12).dataSentinel)
         assertTrue(fixture.engine.hasBackgroundOwnership(12))
         assertEquals(listOf(11), fixture.engine.suspendUsers)
+        assertEquals(listOf(11), fixture.engine.stopCloudMessagingUsers)
+        assertEquals(CloudMessagingState.DISABLED, fixture.engine.state(11).cloudMessaging.state)
         assertTrue(fixture.engine.uninstallUsers.isEmpty())
+    }
+
+    @Test
+    fun `disable stop failure is fail closed and does not suspend runtime`() {
+        val fixture = Fixture()
+        fixture.adapter.ensureEnabled(groupA, release(), operationA)
+        fixture.engine.stopCloudMessagingResults +=
+            RuntimeEngineResult.Retryable("CLOUD_MESSAGING_STOP_RETRYABLE")
+
+        val result = fixture.adapter.ensureDisabled(groupA, operationB)
+
+        assertEquals(
+            GmsRuntimeMutationResult.RetryableFailure("CLOUD_MESSAGING_STOP_RETRYABLE"),
+            result,
+        )
+        assertEquals(listOf(11), fixture.engine.stopCloudMessagingUsers)
+        assertTrue(fixture.engine.suspendUsers.isEmpty())
+        assertTrue(fixture.engine.state(11).installed)
     }
 
     @Test
@@ -395,6 +422,8 @@ class AndroidGmsRuntimeAdapterTest {
             var jobs: Boolean = false,
             var notifications: Boolean = false,
             var pendingIntents: Boolean = false,
+            var cloudMessaging: CloudMessagingHealth =
+                CloudMessagingHealth(CloudMessagingState.DISABLED),
             val packages: MutableSet<String> = mutableSetOf(),
         )
 
@@ -405,6 +434,8 @@ class AndroidGmsRuntimeAdapterTest {
         val installUsers = mutableListOf<Int>()
         val cloudMessagingUsers = mutableListOf<Int>()
         val cloudMessagingResults = ArrayDeque<RuntimeEngineResult>()
+        val stopCloudMessagingUsers = mutableListOf<Int>()
+        val stopCloudMessagingResults = ArrayDeque<RuntimeEngineResult>()
         val suspendUsers = mutableListOf<Int>()
         val uninstallUsers = mutableListOf<Int>()
         val provenances = mutableListOf<TrustedPackageProvenance>()
@@ -430,6 +461,10 @@ class AndroidGmsRuntimeAdapterTest {
         override fun hasBackgroundOwnership(userId: Int): Boolean {
             if (throwOnObservation) error("raw path and token")
             return state(userId).run { jobs || notifications || pendingIntents }
+        }
+        override fun observeCloudMessaging(userId: Int): CloudMessagingHealth {
+            if (throwOnObservation) error("raw binder detail")
+            return state(userId).cloudMessaging
         }
         override fun installTrusted(
             userId: Int,
@@ -457,7 +492,21 @@ class AndroidGmsRuntimeAdapterTest {
         }
         override fun provisionCloudMessaging(userId: Int): RuntimeEngineResult {
             cloudMessagingUsers += userId
-            return cloudMessagingResults.pollFirst() ?: RuntimeEngineResult.Success
+            val result = cloudMessagingResults.pollFirst() ?: RuntimeEngineResult.Success
+            if (result == RuntimeEngineResult.Success) {
+                state(userId).cloudMessaging =
+                    CloudMessagingHealth(CloudMessagingState.STARTING)
+            }
+            return result
+        }
+        override fun stopCloudMessaging(userId: Int): RuntimeEngineResult {
+            stopCloudMessagingUsers += userId
+            val result = stopCloudMessagingResults.pollFirst() ?: RuntimeEngineResult.Success
+            if (result == RuntimeEngineResult.Success) {
+                state(userId).cloudMessaging =
+                    CloudMessagingHealth(CloudMessagingState.DISABLED)
+            }
+            return result
         }
         override fun suspendPreservingData(userId: Int): RuntimeEngineResult {
             suspendUsers += userId
@@ -469,6 +518,7 @@ class AndroidGmsRuntimeAdapterTest {
                 jobs = false
                 notifications = false
                 pendingIntents = false
+                cloudMessaging = CloudMessagingHealth(CloudMessagingState.DISABLED)
             }
             return RuntimeEngineResult.Success
         }
@@ -483,6 +533,7 @@ class AndroidGmsRuntimeAdapterTest {
                 jobs = false
                 notifications = false
                 pendingIntents = false
+                cloudMessaging = CloudMessagingHealth(CloudMessagingState.DISABLED)
             }
             return RuntimeEngineResult.Success
         }

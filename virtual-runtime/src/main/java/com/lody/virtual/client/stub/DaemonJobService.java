@@ -9,6 +9,7 @@ import android.content.ComponentName;
 import android.content.Context;
 import android.os.Build;
 
+import com.lody.virtual.client.ipc.VActivityManager;
 import com.lody.virtual.server.pm.PrivilegeAppOptimizer;
 
 import java.util.concurrent.TimeUnit;
@@ -19,10 +20,19 @@ import java.util.concurrent.TimeUnit;
 @TargetApi(Build.VERSION_CODES.LOLLIPOP)
 public class DaemonJobService extends JobService {
 
+    static final long PERIODIC_INTERVAL_MILLIS = TimeUnit.MINUTES.toMillis(15);
+
     @Override
     public boolean onStartJob(JobParameters params) {
-        PrivilegeAppOptimizer.notifyBootFinish();
-        return true;
+        try {
+            PrivilegeAppOptimizer.notifyBootFinish();
+            VActivityManager.get().reconcileTrustedGmsCloudMessaging();
+        } catch (Throwable ignored) {
+            // A later persisted run retries after the engine service is available again.
+        }
+        // Maintenance above is synchronous. Returning true without calling jobFinished() leaves
+        // JobScheduler believing the job is still running and prevents reliable future recovery.
+        return runsAsynchronously();
     }
 
     @Override
@@ -45,12 +55,17 @@ public class DaemonJobService extends JobService {
             JobInfo jobInfo = new JobInfo.Builder(1, new ComponentName(context, DaemonJobService.class))
                     .setRequiresCharging(false)
                     .setRequiredNetworkType(JobInfo.NETWORK_TYPE_ANY)
-                    .setPeriodic(TimeUnit.MINUTES.toMillis(15))
+                    .setPeriodic(PERIODIC_INTERVAL_MILLIS)
+                    .setPersisted(true)
                     .build();
 
             jobScheduler.schedule(jobInfo);
         } catch (Exception ex) {
             ex.printStackTrace();
         }
+    }
+
+    static boolean runsAsynchronously() {
+        return false;
     }
 }

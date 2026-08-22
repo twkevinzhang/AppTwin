@@ -11,7 +11,9 @@ import com.lody.virtual.client.stub.VASettings;
 import com.lody.virtual.helper.utils.VLog;
 
 import java.util.IdentityHashMap;
+import java.util.HashSet;
 import java.util.Map;
+import java.util.Set;
 
 /**
  * Keeps narrowly selected virtual processes runnable while Android has no physical visibility
@@ -32,9 +34,21 @@ final class GmsBackgroundKeepAlive {
 
     private final Context context;
     private final Map<ProcessRecord, ServiceConnection> connections = new IdentityHashMap<>();
+    private final Set<ProcessRecord> connectedProcesses = new HashSet<>();
+    private Listener listener;
+
+    interface Listener {
+        void onGmsBindingConnected(int userId, long processGeneration);
+
+        void onGmsBindingDisconnected(int userId, long processGeneration);
+    }
 
     GmsBackgroundKeepAlive(Context context) {
         this.context = context.getApplicationContext();
+    }
+
+    synchronized void setListener(Listener listener) {
+        this.listener = listener;
     }
 
     synchronized boolean retain(ProcessRecord process) {
@@ -48,16 +62,24 @@ final class GmsBackgroundKeepAlive {
         ServiceConnection connection = new ServiceConnection() {
             @Override
             public void onServiceConnected(ComponentName name, IBinder service) {
+                synchronized (GmsBackgroundKeepAlive.this) {
+                    connectedProcesses.add(process);
+                }
                 VLog.i(TAG, "guest-process-retained package=" + process.info.packageName
                         + " process=" + process.processName + " user=" + process.userId
                         + " slot=" + process.vpid + " generation=" + process.generation);
+                notifyConnected(process);
             }
 
             @Override
             public void onServiceDisconnected(ComponentName name) {
+                synchronized (GmsBackgroundKeepAlive.this) {
+                    connectedProcesses.remove(process);
+                }
                 VLog.w(TAG, "guest-process-disconnected package=" + process.info.packageName
                         + " process=" + process.processName + " user=" + process.userId
                         + " slot=" + process.vpid + " generation=" + process.generation);
+                notifyDisconnected(process);
             }
         };
         Intent intent = new Intent().setComponent(componentName(context, process.vpid));
@@ -76,8 +98,13 @@ final class GmsBackgroundKeepAlive {
         return bound;
     }
 
-    synchronized void release(ProcessRecord process) {
-        ServiceConnection connection = connections.remove(process);
+    void release(ProcessRecord process) {
+        final ServiceConnection connection;
+        final boolean wasConnected;
+        synchronized (this) {
+            connection = connections.remove(process);
+            wasConnected = connectedProcesses.remove(process);
+        }
         if (connection == null) {
             return;
         }
@@ -86,6 +113,21 @@ final class GmsBackgroundKeepAlive {
         } catch (IllegalArgumentException ignored) {
             // Android already discarded the binding with the dead guest process.
         }
+        if (wasConnected) {
+            // Notify outside the keep-alive monitor. The supervisor refresh path observes this
+            // object's binding state while holding its own lock, so calling back under both
+            // monitors would create a lock-order inversion during concurrent process teardown.
+            notifyDisconnected(process);
+        }
+    }
+
+    synchronized boolean isPersistentBindingAlive(int userId) {
+        for (ProcessRecord process : connectedProcesses) {
+            if (process.userId == userId && isGmsPersistentProcess(process)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     static boolean shouldRetain(String packageName, String processName, int vpid,
@@ -107,6 +149,32 @@ final class GmsBackgroundKeepAlive {
                 || processName.startsWith(FIREFOX_PACKAGE + ":gpu")
                 || processName.equals(FIREFOX_PACKAGE + ":media")
                 || processName.startsWith(FIREFOX_PACKAGE + ":utility");
+    }
+
+    private static boolean isGmsPersistentProcess(ProcessRecord process) {
+        return process != null && process.info != null
+                && GMS_PACKAGE.equals(process.info.packageName)
+                && GMS_PERSISTENT_PROCESS.equals(process.processName);
+    }
+
+    private void notifyConnected(ProcessRecord process) {
+        Listener current;
+        synchronized (this) {
+            current = listener;
+        }
+        if (current != null && isGmsPersistentProcess(process)) {
+            current.onGmsBindingConnected(process.userId, process.generation);
+        }
+    }
+
+    private void notifyDisconnected(ProcessRecord process) {
+        Listener current;
+        synchronized (this) {
+            current = listener;
+        }
+        if (current != null && isGmsPersistentProcess(process)) {
+            current.onGmsBindingDisconnected(process.userId, process.generation);
+        }
     }
 
     static int bindingFlags() {

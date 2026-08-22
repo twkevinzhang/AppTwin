@@ -11,6 +11,7 @@ import android.os.IBinder;
 
 import com.lody.virtual.client.core.VirtualCore;
 import com.lody.virtual.client.env.Constants;
+import com.lody.virtual.client.ipc.VActivityManager;
 
 import java.io.File;
 
@@ -97,6 +98,12 @@ public class DaemonService extends Service {
 
 	@Override
 	public int onStartCommand(Intent intent, int flags, int startId) {
+		try {
+			VActivityManager.get().reconcileTrustedGmsCloudMessaging();
+		} catch (Throwable ignored) {
+			// BinderProvider can still be initializing. Its post-startup reconciliation and the
+			// persisted daemon job provide independent retries.
+		}
 		return START_STICKY;
 	}
 
