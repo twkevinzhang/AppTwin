@@ -35,6 +35,7 @@ import org.apptwin.spaces.CloneLifecycleState
 import org.apptwin.spaces.SpaceLifecycleState
 import org.apptwin.spaces.SpaceStatePolicy
 import org.apptwin.usecases.ClearCloneStorageResult
+import org.apptwin.usecases.ClearSpaceStorageResult
 
 enum class MainDestination { HOME, SETTINGS }
 
@@ -88,6 +89,7 @@ data class MainUiState(
     val launchingAppKey: String? = null,
     val uninstallingAppKey: String? = null,
     val clearingStorageAppKey: String? = null,
+    val clearingStorageGroupId: String? = null,
     val shortcutAppKey: String? = null,
     val repairingAppKey: String? = null,
     val allFilesGranted: Boolean = false,
@@ -141,6 +143,7 @@ internal interface MainOperations {
     suspend fun launchGroupApp(item: GroupAppItem): RuntimeLaunchResult
     suspend fun uninstallGroupApp(item: GroupAppItem): GroupAppRemovalResult
     suspend fun clearGroupAppStorage(item: GroupAppItem): ClearCloneStorageResult
+    suspend fun clearGroupStorage(groupId: String): ClearSpaceStorageResult
     suspend fun createShortcut(item: GroupAppItem): ShortcutCreationResult
     suspend fun exportDiagnostics(): String
     suspend fun repairClone(item: GroupAppItem): RepairExecutionResult
@@ -509,7 +512,12 @@ class MainViewModel internal constructor(
     }
 
     fun deleteGroup(groupId: String) {
-        if (uiState.busyGroupId != null || uiState.uninstallingAppKey != null) return
+        if (
+            uiState.busyGroupId != null ||
+            uiState.uninstallingAppKey != null ||
+            uiState.clearingStorageAppKey != null ||
+            uiState.clearingStorageGroupId != null
+        ) return
         uiState = uiState.copy(busyGroupId = groupId)
         viewModelScope.launch {
             val result = runCatching {
@@ -548,7 +556,11 @@ class MainViewModel internal constructor(
     }
 
     fun selectApp(app: AppItem) {
-        if (uiState.uninstallingAppKey != null || uiState.busyPackageName != null) return
+        if (
+            uiState.uninstallingAppKey != null ||
+            uiState.busyPackageName != null ||
+            uiState.clearingStorageGroupId != null
+        ) return
         val groupId = uiState.appPickerGroupId ?: return
         uiState = uiState.copy(busyPackageName = app.entry.packageName)
         viewModelScope.launch {
@@ -567,7 +579,12 @@ class MainViewModel internal constructor(
     }
 
     fun launchGroupApp(item: GroupAppItem) {
-        if (uiState.launchingAppKey != null || uiState.uninstallingAppKey != null) return
+        if (
+            uiState.launchingAppKey != null ||
+            uiState.uninstallingAppKey != null ||
+            uiState.clearingStorageAppKey != null ||
+            uiState.clearingStorageGroupId != null
+        ) return
         if (item.groupHealth != GroupHealth.HEALTHY) {
             showMessage(
                 if (item.groupHealth == GroupHealth.DAMAGED) {
@@ -601,6 +618,7 @@ class MainViewModel internal constructor(
         if (
             uiState.uninstallingAppKey != null ||
             uiState.launchingAppKey != null ||
+            uiState.clearingStorageGroupId != null ||
             uiState.busyGroupId != null ||
             uiState.busyPackageName != null
         ) return
@@ -627,6 +645,7 @@ class MainViewModel internal constructor(
     fun clearGroupAppStorage(item: GroupAppItem) {
         if (
             uiState.clearingStorageAppKey != null ||
+            uiState.clearingStorageGroupId != null ||
             uiState.uninstallingAppKey != null ||
             uiState.launchingAppKey != null ||
             uiState.busyGroupId != null ||
@@ -647,6 +666,55 @@ class MainViewModel internal constructor(
                     showMessage("「${item.groupName}」目前無法清除資料")
                 is ClearCloneStorageResult.Failed ->
                     showMessage("清除資料失敗：${result.error.userMessage()}")
+            }
+            refresh()
+        }
+    }
+
+    fun clearAllGroupAppData(groupId: String) {
+        val group = uiState.groups.firstOrNull { it.groupId == groupId }
+            ?: run {
+                showMessage("找不到這個分身空間")
+                return
+            }
+        if (
+            uiState.clearingStorageGroupId != null ||
+            uiState.clearingStorageAppKey != null ||
+            uiState.uninstallingAppKey != null ||
+            uiState.launchingAppKey != null ||
+            uiState.busyGroupId != null ||
+            uiState.busyPackageName != null ||
+            uiState.gmsBusyGroupId != null
+        ) return
+        uiState = uiState.copy(clearingStorageGroupId = groupId)
+        viewModelScope.launch {
+            val result = runCatching {
+                withContext(ioDispatcher) { operations.clearGroupStorage(groupId) }
+            }.getOrElse(ClearSpaceStorageResult::Failed)
+            uiState = uiState.copy(clearingStorageGroupId = null)
+            when (result) {
+                is ClearSpaceStorageResult.Cleared -> {
+                    val message = if (result.clearedCloneCount == 0) {
+                        "「${group.name}」內沒有可清除的 App 資料"
+                    } else {
+                        "已清除「${group.name}」中 ${result.clearedCloneCount} 個 App 的分身資料"
+                    }
+                    showMessage(message)
+                }
+                is ClearSpaceStorageResult.PartiallyCleared -> {
+                    val appLabel = group.apps.firstOrNull {
+                        it.app.packageName == result.failedPackageName
+                    }?.appLabel ?: result.failedPackageName
+                    showMessage(
+                        "已清除「${group.name}」中 ${result.clearedCloneCount} 個 App 的分身資料；" +
+                            "清除 $appLabel 時失敗：${result.error.userMessage()}",
+                    )
+                }
+                ClearSpaceStorageResult.SpaceNotFound -> showMessage("找不到這個分身空間")
+                ClearSpaceStorageResult.SpaceUnavailable ->
+                    showMessage("「${group.name}」目前無法清除資料")
+                is ClearSpaceStorageResult.Failed ->
+                    showMessage("清除「${group.name}」的 App 資料失敗：${result.error.userMessage()}")
             }
             refresh()
         }
@@ -864,7 +932,11 @@ class MainViewModel internal constructor(
         actionLabel: String,
         action: suspend () -> GmsLifecycleResult,
     ) {
-        if (uiState.gmsBusyGroupId != null || uiState.busyGroupId != null) return
+        if (
+            uiState.gmsBusyGroupId != null ||
+            uiState.busyGroupId != null ||
+            uiState.clearingStorageGroupId != null
+        ) return
         uiState = uiState.copy(gmsBusyGroupId = groupId)
         viewModelScope.launch {
             val result = runCatching { withContext(ioDispatcher) { action() } }

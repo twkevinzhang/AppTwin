@@ -94,13 +94,35 @@ class SpaceProductUiTest {
     }
 
     @Test
-    fun homeManageEntryKeepsOpeningTheSelectedSpace() {
-        var openedId: String? = null
-        setHome(state = multiSpaceState, onOpenSpace = { openedId = it })
+    fun homeManageMenuShowsSpaceActionsAndDoesNotNavigate() {
+        var clearAllGroupId: String? = null
+        setHome(state = multiSpaceState, onClearAllAppData = { clearAllGroupId = it })
 
         composeRule.onNodeWithTag("space-manage-$secondSpaceId").performClick()
 
-        composeRule.runOnIdle { assertEquals(secondSpaceId, openedId) }
+        composeRule.onNodeWithText("重新命名空間").assertIsDisplayed()
+        composeRule.onNodeWithText("啟用 Google 服務").assertIsDisplayed()
+        composeRule.onNodeWithText("清除空間所有 App 資料").performClick()
+        composeRule.onNodeWithTag("clear-all-space-data-dialog").assertIsDisplayed()
+        composeRule.onNodeWithTag("confirm-clear-all-space-data").performClick()
+
+        composeRule.runOnIdle { assertEquals(secondSpaceId, clearAllGroupId) }
+    }
+
+    @Test
+    fun homeAppLongPressShowsTheSameAppActionsWithoutLaunching() {
+        var launched: GroupAppItem? = null
+        setHome(state = defaultState, onLaunch = { launched = it })
+
+        composeRule.onNodeWithTag("home-app-tile-${app.launchKey}")
+            .performTouchInput { longClick() }
+
+        composeRule.runOnIdle { assertEquals(null, launched) }
+        composeRule.onNodeWithText("空間權限").assertIsDisplayed()
+        composeRule.onNodeWithText("重新同步 App").assertIsDisplayed()
+        composeRule.onNodeWithText("建立桌面捷徑").assertIsDisplayed()
+        composeRule.onNodeWithText("清除儲存空間").assertIsDisplayed()
+        composeRule.onNodeWithText("解除安裝").assertIsDisplayed()
     }
 
     @Test
@@ -188,6 +210,7 @@ class SpaceProductUiTest {
         onOpenSpace: (String) -> Unit = {},
         onLaunch: (GroupAppItem) -> Unit = {},
         onAddApp: (String) -> Unit = {},
+        onClearAllAppData: (String) -> Unit = {},
     ) {
         composeRule.setContent {
             AppTwinTheme {
@@ -197,6 +220,7 @@ class SpaceProductUiTest {
                     onCreateGroup = {},
                     onLaunch = onLaunch,
                     onAddApp = onAddApp,
+                    onClearAllAppData = onClearAllAppData,
                 )
             }
         }

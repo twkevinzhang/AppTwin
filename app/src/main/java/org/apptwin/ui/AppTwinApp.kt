@@ -140,17 +140,13 @@ fun AppTwinApp(
     val pickerGroup = state.appPickerGroupId?.let { selectedId ->
         state.groups.firstOrNull { it.groupId == selectedId }
     }
-    val selectedSpace = state.selectedGroupId?.let { selectedId ->
-        state.groups.firstOrNull { it.groupId == selectedId }
-    }
-
     BackHandler(
-        enabled = state.pendingDeepLink != null || pickerGroup != null || selectedSpace != null,
+        enabled = state.pendingDeepLink != null || pickerGroup != null,
     ) {
         when {
             state.pendingDeepLink != null -> viewModel.closeDeepLink()
             pickerGroup != null -> viewModel.closeAppPicker()
-            else -> viewModel.closeGroup()
+            else -> Unit
         }
     }
 
@@ -177,7 +173,7 @@ fun AppTwinApp(
             BoxWithConstraints {
                 val useNavigationRail = maxWidth >= 720.dp
                 Row(modifier = Modifier.fillMaxSize()) {
-                    if (useNavigationRail && pickerGroup == null && selectedSpace == null) {
+                    if (useNavigationRail && pickerGroup == null) {
                         AppNavigationRail(
                             selected = state.destination,
                             onSelect = viewModel::navigate,
@@ -188,15 +184,9 @@ fun AppTwinApp(
                         topBar = {
                             CenterAlignedTopAppBar(
                                 navigationIcon = {
-                                    if (pickerGroup != null || selectedSpace != null) {
+                                    if (pickerGroup != null) {
                                         IconButton(
-                                            onClick = {
-                                                if (pickerGroup != null) {
-                                                    viewModel.closeAppPicker()
-                                                } else {
-                                                    viewModel.closeGroup()
-                                                }
-                                            },
+                                            onClick = viewModel::closeAppPicker,
                                         ) {
                                             Icon(
                                                 Icons.AutoMirrored.Filled.ArrowBack,
@@ -209,7 +199,6 @@ fun AppTwinApp(
                                     Text(
                                         when {
                                             pickerGroup != null -> "加入 App"
-                                            selectedSpace != null -> selectedSpace.name
                                             state.destination == MainDestination.HOME -> "AppTwin"
                                             else -> "設定"
                                         },
@@ -218,7 +207,7 @@ fun AppTwinApp(
                             )
                         },
                         bottomBar = {
-                            if (!useNavigationRail && pickerGroup == null && selectedSpace == null) {
+                            if (!useNavigationRail && pickerGroup == null) {
                                 AppNavigationBar(
                                     selected = state.destination,
                                     onSelect = viewModel::navigate,
@@ -228,8 +217,7 @@ fun AppTwinApp(
                         floatingActionButton = {
                             if (
                                 state.destination == MainDestination.HOME &&
-                                pickerGroup == null &&
-                                selectedSpace == null
+                                pickerGroup == null
                             ) {
                                 ExtendedFloatingActionButton(
                                     onClick = { showCreateGroup = true },
@@ -249,7 +237,8 @@ fun AppTwinApp(
                                 state.busyPackageName != null ||
                                 state.busyGroupId != null ||
                                 state.launchingAppKey != null ||
-                                state.uninstallingAppKey != null
+                                state.uninstallingAppKey != null ||
+                                state.clearingStorageGroupId != null
                             ) {
                                 LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
                             }
@@ -259,29 +248,21 @@ fun AppTwinApp(
                                     group = pickerGroup,
                                     onSelect = viewModel::selectApp,
                                 )
-                                selectedSpace != null -> SpaceDetailScreen(
+                                state.destination == MainDestination.HOME -> HomeScreen(
                                     state = state,
-                                    space = selectedSpace,
-                                    onLaunch = { viewModel.launchGroupApp(it) },
+                                    onCreateGroup = { showCreateGroup = true },
+                                    onLaunch = viewModel::launchGroupApp,
                                     onAddApp = viewModel::openAppPicker,
                                     onRenameSpace = viewModel::renameGroup,
-                                    onDeleteSpace = viewModel::deleteGroup,
+                                    onEnableGms = viewModel::enableGms,
+                                    onDisableGms = viewModel::disableGms,
+                                    onClearAllAppData = viewModel::clearAllGroupAppData,
                                     onUninstallApp = viewModel::uninstallGroupApp,
                                     onCreateShortcut = viewModel::createShortcut,
                                     onRepairApp = viewModel::repairClone,
                                     clearingStorageAppKey = state.clearingStorageAppKey,
                                     onClearStorage = viewModel::clearGroupAppStorage,
                                     onSetPermission = onSetClonePermission,
-                                    onEnableGms = viewModel::enableGms,
-                                    onDisableGms = viewModel::disableGms,
-                                    onResetGms = viewModel::resetGms,
-                                )
-                                state.destination == MainDestination.HOME -> HomeScreen(
-                                    state = state,
-                                    onOpenSpace = viewModel::openGroup,
-                                    onCreateGroup = { showCreateGroup = true },
-                                    onLaunch = viewModel::launchGroupApp,
-                                    onAddApp = viewModel::openAppPicker,
                                 )
                                 else -> SettingsScreen(
                                     state = state,

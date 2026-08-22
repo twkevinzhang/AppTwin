@@ -18,6 +18,7 @@ import org.apptwin.groups.EnvironmentBinding
 import org.apptwin.groups.Group
 import org.apptwin.groups.GroupAppRemovalResult
 import org.apptwin.usecases.ClearCloneStorageResult
+import org.apptwin.usecases.ClearSpaceStorageResult
 import org.apptwin.groups.GroupHealth
 import org.apptwin.groups.GroupApp
 import org.apptwin.groups.GroupMetadataKind
@@ -406,6 +407,58 @@ class MainViewModelLifecycleTest {
         assertEquals(listOf(permission), viewModel.uiState.clonePermissions)
     }
 
+    @Test
+    fun `clear space storage exposes busy state and completed clone count`() = runTest {
+        val dispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(dispatcher)
+        val clearGate = CompletableDeferred<Unit>()
+        val operations = FakeOperations(
+            groups = listOf(group().copy(apps = listOf(GroupApp("com.example.chat", 2L)))),
+            clearGroupStorageGate = clearGate,
+            clearGroupStorageResult = ClearSpaceStorageResult.Cleared(1),
+        )
+        val viewModel = viewModel(SavedStateHandle(), operations, dispatcher)
+        advanceUntilIdle()
+        viewModel.clearAllGroupAppData(GROUP_ID)
+        runCurrent()
+
+        assertEquals(GROUP_ID, viewModel.uiState.clearingStorageGroupId)
+        assertEquals(listOf(GROUP_ID), operations.clearedGroupIds)
+        viewModel.clearAllGroupAppData(GROUP_ID)
+        assertEquals(listOf(GROUP_ID), operations.clearedGroupIds)
+
+        clearGate.complete(Unit)
+        advanceUntilIdle()
+
+        assertEquals(null, viewModel.uiState.clearingStorageGroupId)
+        assertEquals("已清除「工作」中 1 個 App 的分身資料", viewModel.uiState.message)
+    }
+
+    @Test
+    fun `clear space storage reports a non-atomic partial failure`() = runTest {
+        val dispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(dispatcher)
+        val packageName = "com.example.chat"
+        val operations = FakeOperations(
+            groups = listOf(group().copy(apps = listOf(GroupApp(packageName, 2L)))),
+            clearGroupStorageResult = ClearSpaceStorageResult.PartiallyCleared(
+                clearedCloneCount = 1,
+                failedPackageName = packageName,
+                error = IllegalStateException("storage unavailable"),
+            ),
+        )
+        val viewModel = viewModel(SavedStateHandle(), operations, dispatcher)
+        advanceUntilIdle()
+
+        viewModel.clearAllGroupAppData(GROUP_ID)
+        advanceUntilIdle()
+
+        assertEquals(
+            "已清除「工作」中 1 個 App 的分身資料；清除 $packageName 時失敗：storage unavailable",
+            viewModel.uiState.message,
+        )
+    }
+
     private fun viewModel(
         savedState: SavedStateHandle,
         operations: MainOperations,
@@ -426,6 +479,9 @@ class MainViewModelLifecycleTest {
         private val clonePermissions: List<ClonePermissionSummary> = emptyList(),
         private val refreshGate: CompletableDeferred<Unit>? = null,
         private val refreshError: Throwable? = null,
+        private val clearGroupStorageGate: CompletableDeferred<Unit>? = null,
+        private val clearGroupStorageResult: ClearSpaceStorageResult =
+            ClearSpaceStorageResult.Cleared(0),
     ) : MainOperations {
         var reconcileStarted = false
         var refreshCalls = 0
@@ -433,6 +489,7 @@ class MainViewModelLifecycleTest {
         var refreshRanOnMainDispatcher = false
         val gmsConsentGroups = mutableListOf<String>()
         val gmsEnableGroups = mutableListOf<String>()
+        val clearedGroupIds = mutableListOf<String>()
 
         override suspend fun loadGroupSnapshot(): MainGroupSnapshot = MainGroupSnapshot(
             groups = groups,
@@ -472,6 +529,11 @@ class MainViewModelLifecycleTest {
             error("unused")
         override suspend fun clearGroupAppStorage(item: GroupAppItem): ClearCloneStorageResult =
             error("unused")
+        override suspend fun clearGroupStorage(groupId: String): ClearSpaceStorageResult {
+            clearedGroupIds += groupId
+            clearGroupStorageGate?.await()
+            return clearGroupStorageResult
+        }
         override suspend fun createShortcut(item: GroupAppItem): ShortcutCreationResult =
             error("unused")
         override suspend fun exportDiagnostics(): String = diagnostics ?: error("unused")

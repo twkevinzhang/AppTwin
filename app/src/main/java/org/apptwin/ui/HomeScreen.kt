@@ -84,12 +84,29 @@ import org.apptwin.gms.ports.CloudMessagingState
 @Composable
 fun HomeScreen(
     state: MainUiState,
-    onOpenSpace: (String) -> Unit,
+    @Suppress("UNUSED_PARAMETER") onOpenSpace: (String) -> Unit = {},
     onCreateGroup: () -> Unit,
     onLaunch: (GroupAppItem) -> Unit = {},
     onAddApp: (String) -> Unit = {},
+    onRenameSpace: (String, String) -> Unit = { _, _ -> },
+    onEnableGms: (String, Boolean) -> Unit = { _, _ -> },
+    onDisableGms: (String) -> Unit = {},
+    onClearAllAppData: (String) -> Unit = {},
+    onUninstallApp: (GroupAppItem) -> Unit = {},
+    onCreateShortcut: (GroupAppItem) -> Unit = {},
+    onRepairApp: (GroupAppItem) -> Unit = {},
+    clearingStorageAppKey: String? = null,
+    onClearStorage: (GroupAppItem) -> Unit = {},
+    onSetPermission: (GroupAppItem, String, Boolean) -> Unit = { _, _, _ -> },
 ) {
     var collapsedGroupIds by rememberSaveable { mutableStateOf(emptyList<String>()) }
+    var renameGroupId by rememberSaveable { mutableStateOf<String?>(null) }
+    var clearAllGroupId by rememberSaveable { mutableStateOf<String?>(null) }
+    var uninstallTargetKey by rememberSaveable { mutableStateOf<String?>(null) }
+    var clearStorageTargetKey by rememberSaveable { mutableStateOf<String?>(null) }
+    var permissionTargetKey by rememberSaveable { mutableStateOf<String?>(null) }
+    var gmsConsentGroupId by rememberSaveable { mutableStateOf<String?>(null) }
+    var gmsDisableGroupId by rememberSaveable { mutableStateOf<String?>(null) }
     val visibleGroupIds = state.groups.map(GroupItem::groupId).toSet()
     val allExpanded = state.groups.isNotEmpty() &&
         collapsedGroupIds.none { it in visibleGroupIds }
@@ -147,9 +164,13 @@ fun HomeScreen(
                                         item = item,
                                         expanded = item.groupId !in collapsedGroupIds,
                                         isBusy = state.busyGroupId == item.groupId ||
+                                            state.clearingStorageGroupId == item.groupId ||
                                             state.uninstallingAppKey
                                                 ?.startsWith("${item.groupId}:") == true,
                                         launchingAppKey = state.launchingAppKey,
+                                        uninstallingAppKey = state.uninstallingAppKey,
+                                        shortcutAppKey = state.shortcutAppKey,
+                                        repairingAppKey = state.repairingAppKey,
                                         onToggleExpanded = {
                                             collapsedGroupIds = if (item.groupId in collapsedGroupIds) {
                                                 collapsedGroupIds - item.groupId
@@ -157,9 +178,21 @@ fun HomeScreen(
                                                 collapsedGroupIds + item.groupId
                                             }
                                         },
-                                        onManage = { onOpenSpace(item.groupId) },
                                         onLaunch = onLaunch,
                                         onAddApp = { onAddApp(item.groupId) },
+                                        onRename = { renameGroupId = item.groupId },
+                                        onEnableGms = { grantConsent ->
+                                            if (grantConsent) gmsConsentGroupId = item.groupId
+                                            else onEnableGms(item.groupId, false)
+                                        },
+                                        onDisableGms = { gmsDisableGroupId = item.groupId },
+                                        onClearAllAppData = { clearAllGroupId = item.groupId },
+                                        onUninstall = { uninstallTargetKey = it.launchKey },
+                                        onCreateShortcut = onCreateShortcut,
+                                        onRepair = onRepairApp,
+                                        onClearStorage = { clearStorageTargetKey = it.launchKey },
+                                        onManagePermissions = { permissionTargetKey = it.launchKey },
+                                        clearingStorageAppKey = clearingStorageAppKey,
                                     )
                                 }
                             }
@@ -170,6 +203,228 @@ fun HomeScreen(
             }
         }
     }
+
+    val renamedGroup = state.groups.firstOrNull { it.groupId == renameGroupId }
+    val clearAllGroup = state.groups.firstOrNull { it.groupId == clearAllGroupId }
+    val consentGroup = state.groups.firstOrNull { it.groupId == gmsConsentGroupId }
+    val disableGroup = state.groups.firstOrNull { it.groupId == gmsDisableGroupId }
+    val allApps = state.groups.flatMap(GroupItem::apps)
+    val uninstallTarget = allApps.firstOrNull { it.launchKey == uninstallTargetKey }
+    val clearStorageTarget = allApps.firstOrNull { it.launchKey == clearStorageTargetKey }
+    val permissionTarget = allApps.firstOrNull { it.launchKey == permissionTargetKey }
+
+    renamedGroup?.let { group ->
+        RenameGroupDialog(
+            group = group,
+            onDismiss = { renameGroupId = null },
+            onConfirm = { name ->
+                onRenameSpace(group.groupId, name)
+                renameGroupId = null
+            },
+        )
+    }
+    consentGroup?.let { group ->
+        GmsEnableConsentDialog(
+            group = group,
+            onDismiss = { gmsConsentGroupId = null },
+            onConfirm = {
+                onEnableGms(group.groupId, true)
+                gmsConsentGroupId = null
+            },
+        )
+    }
+    disableGroup?.let { group ->
+        GmsDisableDialog(
+            onDismiss = { gmsDisableGroupId = null },
+            onConfirm = {
+                onDisableGms(group.groupId)
+                gmsDisableGroupId = null
+            },
+        )
+    }
+    clearAllGroup?.let { group ->
+        val isClearing = state.clearingStorageGroupId == group.groupId
+        var clearWasInProgress by rememberSaveable(group.groupId) { mutableStateOf(false) }
+        LaunchedEffect(isClearing) {
+            if (isClearing) {
+                clearWasInProgress = true
+            } else if (clearWasInProgress) {
+                clearWasInProgress = false
+                clearAllGroupId = null
+            }
+        }
+        ClearAllSpaceDataDialog(
+            group = group,
+            isClearing = isClearing,
+            onDismiss = {
+                if (state.clearingStorageGroupId != group.groupId) clearAllGroupId = null
+            },
+            onConfirm = { onClearAllAppData(group.groupId) },
+        )
+    }
+    uninstallTarget?.let { app ->
+        UninstallAppDialog(
+            app = app,
+            onDismiss = { uninstallTargetKey = null },
+            onConfirm = {
+                onUninstallApp(app)
+                uninstallTargetKey = null
+            },
+        )
+    }
+    clearStorageTarget?.let { app ->
+        ClearAppStorageDialog(
+            app = app,
+            isClearingStorage = clearingStorageAppKey == app.launchKey,
+            onDismiss = { if (clearingStorageAppKey != app.launchKey) clearStorageTargetKey = null },
+            onConfirm = { onClearStorage(app) },
+        )
+    }
+    permissionTarget?.let { app ->
+        ClonePermissionDialog(
+            app = app,
+            onDismiss = { permissionTargetKey = null },
+            onSetPermission = { permission, granted -> onSetPermission(app, permission, granted) },
+        )
+    }
+}
+
+@Composable
+private fun GmsEnableConsentDialog(
+    group: GroupItem,
+    onDismiss: () -> Unit,
+    onConfirm: () -> Unit,
+) {
+    AlertDialog(
+        modifier = Modifier.testTag("gms-consent-dialog"),
+        onDismissRequest = onDismiss,
+        icon = { Icon(Icons.Default.Cloud, contentDescription = null) },
+        title = { Text("啟用 Google 服務相容功能？") },
+        text = {
+            Text(
+                "此功能由 microG 提供，並非 Google 官方服務。啟用後，只有「${group.name}」會連線至 Google 的裝置註冊、帳號及推播端點；帳號、token 與資料不會與其他空間共用。",
+            )
+        },
+        confirmButton = {
+            Button(modifier = Modifier.testTag("confirm-gms-consent"), onClick = onConfirm) {
+                Text("同意並啟用")
+            }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("取消") } },
+    )
+}
+
+@Composable
+private fun GmsDisableDialog(onDismiss: () -> Unit, onConfirm: () -> Unit) {
+    AlertDialog(
+        modifier = Modifier.testTag("gms-disable-dialog"),
+        onDismissRequest = onDismiss,
+        title = { Text("停用相容功能？") },
+        text = { Text("將停止此空間的 microG 背景服務；既有相容服務資料會保留，之後可重新啟用。") },
+        confirmButton = {
+            Button(modifier = Modifier.testTag("confirm-gms-disable"), onClick = onConfirm) {
+                Text("停用")
+            }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("取消") } },
+    )
+}
+
+@Composable
+private fun ClearAllSpaceDataDialog(
+    group: GroupItem,
+    isClearing: Boolean,
+    onDismiss: () -> Unit,
+    onConfirm: () -> Unit,
+) {
+    AlertDialog(
+        modifier = Modifier.testTag("clear-all-space-data-dialog"),
+        onDismissRequest = onDismiss,
+        icon = { Icon(Icons.Default.Delete, contentDescription = null, tint = MaterialTheme.colorScheme.error) },
+        title = { Text("清除「${group.name}」的所有 App 資料？") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Text("將依序停止並永久清除這個空間中 ${group.apps.size} 個分身 App 的登入、App 資料、快取與各自私有外部檔案。")
+                Text(
+                    "App 本體、此空間與共用檔案，以及 Google/microG 資料都會保留。若中途失敗，已完成清除的 App 無法還原。",
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        },
+        confirmButton = {
+            Button(
+                modifier = Modifier.testTag("confirm-clear-all-space-data"),
+                enabled = !isClearing,
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = MaterialTheme.colorScheme.error,
+                    contentColor = MaterialTheme.colorScheme.onError,
+                ),
+                onClick = onConfirm,
+            ) { Text(if (isClearing) "清除中…" else "清除全部資料") }
+        },
+        dismissButton = {
+            TextButton(enabled = !isClearing, onClick = onDismiss) { Text("取消") }
+        },
+    )
+}
+
+@Composable
+private fun UninstallAppDialog(app: GroupAppItem, onDismiss: () -> Unit, onConfirm: () -> Unit) {
+    AlertDialog(
+        modifier = Modifier.testTag("uninstall-app-dialog"),
+        onDismissRequest = onDismiss,
+        icon = { Icon(Icons.Default.Delete, contentDescription = null, tint = MaterialTheme.colorScheme.error) },
+        title = { Text("解除安裝「${app.appLabel}」？") },
+        text = {
+            Text(
+                "只會從「${app.groupName}」移除此分身 App，並永久刪除它在此空間的登入與所有資料。手機上的原始 App 和其他分身空間不受影響；此操作無法復原。",
+            )
+        },
+        confirmButton = { Button(modifier = Modifier.testTag("confirm-uninstall-app"), onClick = onConfirm) { Text("解除安裝") } },
+        dismissButton = { TextButton(modifier = Modifier.testTag("cancel-uninstall-app"), onClick = onDismiss) { Text("取消") } },
+    )
+}
+
+@Composable
+private fun ClearAppStorageDialog(
+    app: GroupAppItem,
+    isClearingStorage: Boolean,
+    onDismiss: () -> Unit,
+    onConfirm: () -> Unit,
+) {
+    AlertDialog(
+        modifier = Modifier.testTag("clear-storage-dialog"),
+        onDismissRequest = onDismiss,
+        icon = { Icon(Icons.Default.Error, contentDescription = null, tint = MaterialTheme.colorScheme.error) },
+        title = { Text("清除「${app.appLabel}」的儲存空間？") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Text("將先停止此分身 App，接著永久刪除登入、App 資料、快取及該分身可歸屬的私有外部檔案。")
+                Text(
+                    "同一空間內與其他分身共用的檔案不會清除。手機上的原始 App 和其他分身空間不受影響；此操作無法復原。",
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        },
+        confirmButton = {
+            Button(
+                modifier = Modifier.testTag("confirm-clear-storage"),
+                enabled = !isClearingStorage,
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = MaterialTheme.colorScheme.error,
+                    contentColor = MaterialTheme.colorScheme.onError,
+                ),
+                onClick = onConfirm,
+            ) { Text(if (isClearingStorage) "清除中…" else "清除儲存空間") }
+        },
+        dismissButton = {
+            TextButton(
+                modifier = Modifier.testTag("cancel-clear-storage"),
+                enabled = !isClearingStorage,
+                onClick = onDismiss,
+            ) { Text("取消") }
+        },
+    )
 }
 
 @Composable
@@ -868,11 +1123,27 @@ private fun ExpandableSpaceCard(
     expanded: Boolean,
     isBusy: Boolean,
     launchingAppKey: String?,
+    uninstallingAppKey: String?,
+    shortcutAppKey: String?,
+    repairingAppKey: String?,
     onToggleExpanded: () -> Unit,
-    onManage: () -> Unit,
     onLaunch: (GroupAppItem) -> Unit,
     onAddApp: () -> Unit,
+    onRename: () -> Unit,
+    onEnableGms: (requiresConsent: Boolean) -> Unit,
+    onDisableGms: () -> Unit,
+    onClearAllAppData: () -> Unit,
+    onUninstall: (GroupAppItem) -> Unit,
+    onCreateShortcut: (GroupAppItem) -> Unit,
+    onRepair: (GroupAppItem) -> Unit,
+    onClearStorage: (GroupAppItem) -> Unit,
+    onManagePermissions: (GroupAppItem) -> Unit,
+    clearingStorageAppKey: String?,
 ) {
+    var menuExpanded by rememberSaveable(item.groupId) { mutableStateOf(false) }
+    val gmsState = item.gmsCompatibility
+    val gmsEnabled = gmsState?.profile?.desiredState == GmsDesiredState.ENABLED
+    val gmsActionEnabled = !isBusy && gmsState?.hasDataWarning != true
     Card(
         modifier = Modifier
             .fillMaxWidth(),
@@ -931,11 +1202,26 @@ private fun ExpandableSpaceCard(
                             },
                         )
                     }
-                    IconButton(
-                        modifier = Modifier.testTag("space-manage-${item.groupId}"),
-                        onClick = onManage,
-                    ) {
-                        Icon(Icons.Default.MoreVert, contentDescription = "管理 ${item.name}")
+                    Box {
+                        IconButton(
+                            modifier = Modifier.testTag("space-manage-${item.groupId}"),
+                            onClick = { menuExpanded = true },
+                        ) {
+                            Icon(Icons.Default.MoreVert, contentDescription = "管理 ${item.name}")
+                        }
+                        SpaceManagementMenu(
+                            item = item,
+                            expanded = menuExpanded,
+                            gmsEnabled = gmsEnabled,
+                            gmsActionEnabled = gmsActionEnabled,
+                            gmsRequiresConsent =
+                                gmsState?.profile?.networkConsent != GmsNetworkConsent.GRANTED,
+                            onDismiss = { menuExpanded = false },
+                            onRename = onRename,
+                            onEnableGms = onEnableGms,
+                            onDisableGms = onDisableGms,
+                            onClearAllAppData = onClearAllAppData,
+                        )
                     }
                 }
             }
@@ -957,8 +1243,17 @@ private fun ExpandableSpaceCard(
                         modifier = Modifier.padding(top = 16.dp),
                         apps = item.apps,
                         launchingAppKey = launchingAppKey,
+                        uninstallingAppKey = uninstallingAppKey,
+                        shortcutAppKey = shortcutAppKey,
+                        repairingAppKey = repairingAppKey,
+                        clearingStorageAppKey = clearingStorageAppKey,
                         enabled = item.lifecycle == SpaceLifecycleState.READY && !isBusy,
                         onLaunch = onLaunch,
+                        onUninstall = onUninstall,
+                        onCreateShortcut = onCreateShortcut,
+                        onRepair = onRepair,
+                        onClearStorage = onClearStorage,
+                        onManagePermissions = onManagePermissions,
                     )
                 }
             }
@@ -967,12 +1262,73 @@ private fun ExpandableSpaceCard(
 }
 
 @Composable
+private fun SpaceManagementMenu(
+    item: GroupItem,
+    expanded: Boolean,
+    gmsEnabled: Boolean,
+    gmsActionEnabled: Boolean,
+    gmsRequiresConsent: Boolean,
+    onDismiss: () -> Unit,
+    onRename: () -> Unit,
+    onEnableGms: (requiresConsent: Boolean) -> Unit,
+    onDisableGms: () -> Unit,
+    onClearAllAppData: () -> Unit,
+) {
+    DropdownMenu(expanded = expanded, onDismissRequest = onDismiss) {
+        DropdownMenuItem(
+            modifier = Modifier.testTag("rename-space-${item.groupId}"),
+            text = { Text("重新命名空間") },
+            leadingIcon = { Icon(Icons.Default.Edit, contentDescription = null) },
+            onClick = {
+                onDismiss()
+                onRename()
+            },
+        )
+        DropdownMenuItem(
+            modifier = Modifier.testTag("gms-toggle-space-${item.groupId}"),
+            text = { Text(if (gmsEnabled) "停用 Google 服務" else "啟用 Google 服務") },
+            leadingIcon = { Icon(Icons.Default.Cloud, contentDescription = null) },
+            enabled = gmsActionEnabled,
+            onClick = {
+                onDismiss()
+                if (gmsEnabled) onDisableGms() else onEnableGms(gmsRequiresConsent)
+            },
+        )
+        DropdownMenuItem(
+            modifier = Modifier.testTag("clear-all-space-data-${item.groupId}"),
+            text = { Text("清除空間所有 App 資料", color = MaterialTheme.colorScheme.error) },
+            leadingIcon = {
+                Icon(
+                    Icons.Default.Delete,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.error,
+                )
+            },
+            enabled = item.apps.isNotEmpty(),
+            onClick = {
+                onDismiss()
+                onClearAllAppData()
+            },
+        )
+    }
+}
+
+@Composable
 private fun HomeAppGrid(
     modifier: Modifier,
     apps: List<GroupAppItem>,
     launchingAppKey: String?,
+    uninstallingAppKey: String?,
+    shortcutAppKey: String?,
+    repairingAppKey: String?,
+    clearingStorageAppKey: String?,
     enabled: Boolean,
     onLaunch: (GroupAppItem) -> Unit,
+    onUninstall: (GroupAppItem) -> Unit,
+    onCreateShortcut: (GroupAppItem) -> Unit,
+    onRepair: (GroupAppItem) -> Unit,
+    onClearStorage: (GroupAppItem) -> Unit,
+    onManagePermissions: (GroupAppItem) -> Unit,
 ) {
     BoxWithConstraints(modifier = modifier.fillMaxWidth()) {
         val columns = when {
@@ -987,12 +1343,25 @@ private fun HomeAppGrid(
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
                     rowApps.forEach { app ->
-                        Box(modifier = Modifier.weight(1f)) {
-                            HomeAppTile(
+                        Box(
+                            modifier = Modifier
+                                .weight(1f)
+                                .testTag("home-app-tile-${app.launchKey}"),
+                        ) {
+                            AppGridTile(
                                 app = app,
                                 isLaunching = launchingAppKey == app.launchKey,
+                                isUninstalling = uninstallingAppKey == app.launchKey,
+                                isCreatingShortcut = shortcutAppKey == app.launchKey,
+                                isRepairing = repairingAppKey == app.launchKey,
+                                isClearingStorage = clearingStorageAppKey == app.launchKey,
                                 enabled = enabled && launchingAppKey == null,
-                                onLaunch = { onLaunch(app) },
+                                onClick = { onLaunch(app) },
+                                onUninstall = { onUninstall(app) },
+                                onCreateShortcut = { onCreateShortcut(app) },
+                                onRepair = { onRepair(app) },
+                                onClearStorage = { onClearStorage(app) },
+                                onManagePermissions = { onManagePermissions(app) },
                             )
                         }
                     }

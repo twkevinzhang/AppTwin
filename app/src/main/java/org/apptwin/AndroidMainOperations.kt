@@ -83,6 +83,8 @@ import org.apptwin.usecases.CloneSourcePreparationResult
 import org.apptwin.usecases.CloneSourcePreparer
 import org.apptwin.usecases.ClearCloneStorageResult
 import org.apptwin.usecases.ClearCloneStorageUseCase
+import org.apptwin.usecases.ClearSpaceStorageResult
+import org.apptwin.usecases.ClearSpaceStorageUseCase
 import org.apptwin.usecases.LaunchCloneAppResult
 import org.apptwin.usecases.LaunchCloneAppUseCase
 import com.lody.virtual.client.ipc.VPackageManager
@@ -102,6 +104,10 @@ internal class AndroidMainOperations(private val application: Application) : Mai
         operations = operationTracker,
     )
     private val clearCloneStorage = ClearCloneStorageUseCase(
+        store = groupStore,
+        runtime = runtimeController::clearAppStorage,
+    )
+    private val clearSpaceStorage = ClearSpaceStorageUseCase(
         store = groupStore,
         runtime = runtimeController::clearAppStorage,
     )
@@ -315,6 +321,9 @@ internal class AndroidMainOperations(private val application: Application) : Mai
 
     override suspend fun clearGroupAppStorage(item: GroupAppItem): ClearCloneStorageResult =
         clearCloneStorage.execute(item.groupId, item.app.packageName)
+
+    override suspend fun clearGroupStorage(groupId: String): ClearSpaceStorageResult =
+        clearSpaceStorage.execute(groupId)
 
     override suspend fun createShortcut(item: GroupAppItem): ShortcutCreationResult =
         shortcutPublisher.requestPin(item)
