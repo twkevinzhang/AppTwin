@@ -9,9 +9,10 @@ import android.content.pm.ApplicationInfo;
 import android.content.pm.PackageManager;
 import android.content.res.TypedArray;
 import android.graphics.Bitmap;
-import android.graphics.drawable.BitmapDrawable;
 import android.graphics.drawable.Drawable;
 import android.os.Build;
+
+import com.lody.virtual.helper.utils.DrawableUtils;
 
 import mirror.com.android.internal.R_Hide;
 
@@ -47,11 +48,8 @@ public final class ActivityFixer {
 			if (intent != null && activity.isTaskRoot()) {
 				try {
 					String label = TaskDescriptionPolicy.RECENT_TASK_LABEL;
-					Bitmap icon = null;
 					Drawable drawable = applicationInfo.loadIcon(pm);
-					if (drawable instanceof BitmapDrawable) {
-						icon = ((BitmapDrawable) drawable).getBitmap();
-					}
+					Bitmap icon = DrawableUtils.drawableToBitMap(drawable);
 					activity.setTaskDescription(new ActivityManager.TaskDescription(label, icon));
 				} catch (Throwable e) {
 					e.printStackTrace();

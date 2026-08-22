@@ -50,6 +50,10 @@ class CloneRecentTaskDescriptionE2eTest {
                     "guest task must expose the AppTwin recent-task label:\n$dump",
                     GUEST_TASK_DESCRIPTION.containsMatchIn(dump),
                 )
+                assertTrue(
+                    "guest task must expose a non-empty guest icon:\n$dump",
+                    GUEST_TASK_ICON.containsMatchIn(dump),
+                )
             }
         } finally {
             assertNotNull("E2E Space cleanup must succeed", operations.deleteGroup(group.id))
@@ -85,6 +89,11 @@ class CloneRecentTaskDescriptionE2eTest {
         const val POLL_INTERVAL_MILLIS = 100L
         val GUEST_TASK_DESCRIPTION = Regex(
             "${Regex.escape(STUB_ACTIVITY_PREFIX)}.*?taskDescription: label=\\\"AppTwin\\\"",
+            RegexOption.DOT_MATCHES_ALL,
+        )
+        val GUEST_TASK_ICON = Regex(
+            "${Regex.escape(STUB_ACTIVITY_PREFIX)}.*?taskDescription: label=\\\"AppTwin\\\" " +
+                "(?=[^\\n]*(?:icon=(?!null)|iconResource=/(?!0)|iconFilename=(?!null)))[^\\n]*",
             RegexOption.DOT_MATCHES_ALL,
         )
     }
