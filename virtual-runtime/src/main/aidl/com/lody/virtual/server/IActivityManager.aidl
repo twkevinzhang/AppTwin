@@ -7,6 +7,7 @@ import com.lody.virtual.remote.PendingIntentData;
 import com.lody.virtual.remote.PendingResultData;
 import com.lody.virtual.remote.BadgerInfo;
 import com.lody.virtual.remote.PreparedActivityLaunch;
+import com.lody.virtual.remote.TrustedGmsCloudMessagingState;
 import android.content.Intent;
 import android.content.pm.ActivityInfo;
 import android.app.Notification;
@@ -122,4 +123,12 @@ interface IActivityManager {
     boolean awaitPreparedActivityLaunch(String launchId, long timeoutMs);
 
     void cancelPreparedActivityLaunch(String launchId);
+
+    boolean ensureTrustedGmsCloudMessagingForUser(int userId);
+
+    boolean stopTrustedGmsCloudMessagingForUser(int userId);
+
+    void reconcileTrustedGmsCloudMessaging();
+
+    TrustedGmsCloudMessagingState getTrustedGmsCloudMessagingState(int userId);
 }

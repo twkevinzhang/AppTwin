@@ -843,6 +843,15 @@ class MainViewModel internal constructor(
             gmsResult.onFailure { error ->
                 appendMessage("Google 服務相容資料需要處理：${error.userMessage()}")
             }.onSuccess { result ->
+                if (result.productStates.isNotEmpty()) {
+                    val updatedGroups = uiState.groups.map { group ->
+                        result.productStates[group.groupId]?.let { productState ->
+                            group.copy(gmsCompatibility = productState)
+                        } ?: group
+                    }
+                    updateSelectedGroups(updatedGroups)
+                    uiState = uiState.copy(groups = updatedGroups)
+                }
                 if (result.cloudMessagingRepairFailures.isNotEmpty()) {
                     appendMessage("Google 背景通知服務需要重試")
                 }

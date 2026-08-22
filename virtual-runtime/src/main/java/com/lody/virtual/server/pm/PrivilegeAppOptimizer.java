@@ -58,10 +58,18 @@ public class PrivilegeAppOptimizer {
     }
 
     public static void notifyBootFinish() {
-        for (String pkg : Constants.PRIVILEGE_APP) {
-            try {
-                PrivilegeAppOptimizer.get().performOptimize(pkg, 0);
-            } catch (Throwable ignored) {
+        VUserManagerService userManager = VUserManagerService.get();
+        VAppManagerService appManager = VAppManagerService.get();
+        if (userManager == null || appManager == null) return;
+        for (int userId : userManager.getUserIds()) {
+            if (userId < 0) continue;
+            for (String pkg : Constants.PRIVILEGE_APP) {
+                try {
+                    if (appManager.isAppInstalledAsUser(userId, pkg)) {
+                        PrivilegeAppOptimizer.get().performOptimize(pkg, userId);
+                    }
+                } catch (Throwable ignored) {
+                }
             }
         }
     }

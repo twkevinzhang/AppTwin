@@ -18,6 +18,8 @@ import org.apptwin.gms.model.GmsGroupId
 import org.apptwin.gms.model.GmsNetworkConsent
 import org.apptwin.gms.model.GmsObservedState
 import org.apptwin.gms.model.GmsProfile
+import org.apptwin.gms.ports.CloudMessagingHealth
+import org.apptwin.gms.ports.CloudMessagingState
 import org.apptwin.groups.GroupHealth
 import org.apptwin.ui.theme.AppTwinTheme
 import org.junit.Assert.assertEquals
@@ -52,7 +54,10 @@ class GmsCompatibilityUiTest {
 
         composeRule.onNodeWithText("由 microG 提供，並非 Google 官方服務")
             .assertIsDisplayed()
+        composeRule.onNodeWithText("Google 服務").assertIsDisplayed()
         composeRule.onNodeWithText("已啟用").assertIsDisplayed()
+        composeRule.onNodeWithText("背景通知").assertIsDisplayed()
+        composeRule.onNodeWithText("已連線").assertIsDisplayed()
         composeRule.onNodeWithText("停用").assertIsDisplayed()
         composeRule.onNodeWithText("重設資料").assertIsDisplayed()
 
@@ -120,6 +125,40 @@ class GmsCompatibilityUiTest {
         composeRule.onNodeWithText("永久重設").performClick()
 
         composeRule.runOnIdle { assertEquals(groupId to false, reset) }
+    }
+
+    @Test
+    fun backgroundNotificationShowsDisabledState() {
+        assertCloudMessagingStatus(CloudMessagingState.DISABLED, "已停用")
+    }
+
+    @Test
+    fun backgroundNotificationShowsStartingState() {
+        assertCloudMessagingStatus(CloudMessagingState.STARTING, "連線中")
+    }
+
+    @Test
+    fun backgroundNotificationShowsConnectedState() {
+        assertCloudMessagingStatus(CloudMessagingState.CONNECTED, "已連線")
+    }
+
+    @Test
+    fun backgroundNotificationShowsDegradedState() {
+        assertCloudMessagingStatus(CloudMessagingState.DEGRADED, "需要處理")
+    }
+
+    @Test
+    fun backgroundNotificationShowsUnknownState() {
+        assertCloudMessagingStatus(CloudMessagingState.UNKNOWN, "未知")
+    }
+
+    private fun assertCloudMessagingStatus(state: CloudMessagingState, expected: String) {
+        setContent(spaceOverride = enabledSpaceWithCloudMessaging(state))
+
+        composeRule.onNodeWithTag("gms-services-status").assertIsDisplayed()
+        composeRule.onNodeWithTag("gms-cloud-messaging-status").assertIsDisplayed()
+        composeRule.onNodeWithText("背景通知").assertIsDisplayed()
+        composeRule.onNodeWithText(expected).assertIsDisplayed()
     }
 
     private fun setContent(
@@ -193,6 +232,7 @@ class GmsCompatibilityUiTest {
                     },
                 )
             },
+            cloudMessaging = CloudMessagingHealth(CloudMessagingState.DISABLED),
         )
         val space = GroupItem(
             groupId = groupId,
@@ -209,7 +249,15 @@ class GmsCompatibilityUiTest {
                     networkConsent = GmsNetworkConsent.GRANTED,
                     observedReleaseId = "microg-v0.3.15.250932",
                 ),
+                cloudMessaging = CloudMessagingHealth(CloudMessagingState.CONNECTED),
             ),
         )
+
+        fun enabledSpaceWithCloudMessaging(state: CloudMessagingState): GroupItem =
+            enabledSpace.copy(
+                gmsCompatibility = requireNotNull(enabledSpace.gmsCompatibility).copy(
+                    cloudMessaging = CloudMessagingHealth(state),
+                ),
+            )
     }
 }

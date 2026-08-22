@@ -54,6 +54,7 @@ import com.lody.virtual.remote.BadgerInfo;
 import com.lody.virtual.remote.PendingIntentData;
 import com.lody.virtual.remote.PendingResultData;
 import com.lody.virtual.remote.PreparedActivityLaunch;
+import com.lody.virtual.remote.TrustedGmsCloudMessagingState;
 import com.lody.virtual.remote.VParceledListSlice;
 import com.lody.virtual.server.IActivityManager;
 import com.lody.virtual.server.interfaces.IProcessObserver;
@@ -106,6 +107,7 @@ public class VActivityManagerService extends IActivityManager.Stub
     private final PreparedActivityLaunchRegistry mPreparedActivityLaunches =
             new PreparedActivityLaunchRegistry();
     private GmsBackgroundKeepAlive mGmsBackgroundKeepAlive;
+    private TrustedGmsCloudMessagingSupervisor mTrustedGmsCloudMessagingSupervisor;
     private LinePushProcessGuard mLinePushProcessGuard;
     private Handler mServiceHandler;
     private ActivityManager am = (ActivityManager) VirtualCore.get().getContext()
@@ -135,6 +137,21 @@ public class VActivityManagerService extends IActivityManager.Stub
         AttributeCache.init(context);
         mServiceHandler = new Handler(Looper.getMainLooper());
         mGmsBackgroundKeepAlive = new GmsBackgroundKeepAlive(context);
+        mTrustedGmsCloudMessagingSupervisor = new TrustedGmsCloudMessagingSupervisor(
+                context, new TrustedGmsRuntimeOperations(), mServiceHandler);
+        mGmsBackgroundKeepAlive.setListener(new GmsBackgroundKeepAlive.Listener() {
+            @Override
+            public void onGmsBindingConnected(int userId, long processGeneration) {
+                mTrustedGmsCloudMessagingSupervisor.onBindingConnected(
+                        userId, processGeneration);
+            }
+
+            @Override
+            public void onGmsBindingDisconnected(int userId, long processGeneration) {
+                mTrustedGmsCloudMessagingSupervisor.onBindingDisconnected(
+                        userId, processGeneration);
+            }
+        });
         mLinePushProcessGuard = new LinePushProcessGuard(context, mServiceHandler);
         PackageManager pm = context.getPackageManager();
         PackageInfo packageInfo = null;
@@ -149,6 +166,16 @@ public class VActivityManagerService extends IActivityManager.Stub
             throw new RuntimeException("Unable to found PackageInfo : " + context.getPackageName());
         }
         sService.set(this);
+
+        // Package/user state is loaded later in BinderProvider. This delayed pass is best effort;
+        // the persisted daemon job is the independent recurring recovery trigger.
+        mServiceHandler.postDelayed(() -> {
+            try {
+                mTrustedGmsCloudMessagingSupervisor.reconcile();
+            } catch (RuntimeException error) {
+                VLog.w(TAG, "Initial trusted GMS reconciliation deferred: " + error);
+            }
+        }, 5_000L);
 
     }
 
@@ -1528,6 +1555,10 @@ public class VActivityManagerService extends IActivityManager.Stub
                 ProcessLifecycle.TerminalReason.PROCESS_DIED)) {
             return;
         }
+        if (isTrustedGmsPersistentProcess(record)) {
+            mTrustedGmsCloudMessagingSupervisor.onProcessDied(
+                    record.userId, record.generation);
+        }
         cleanupProcessGeneration(record, "process-died", false);
     }
 
@@ -1543,6 +1574,30 @@ public class VActivityManagerService extends IActivityManager.Stub
         enforceCallerUserOrHost(userId);
         ProcessRecord r = startProcessIfNeedLocked(processName, userId, packageName);
         return r != null ? r.vpid : -1;
+    }
+
+    @Override
+    public boolean ensureTrustedGmsCloudMessagingForUser(int userId) {
+        enforceCallerUserOrHost(userId);
+        return mTrustedGmsCloudMessagingSupervisor.ensureForUser(userId);
+    }
+
+    @Override
+    public boolean stopTrustedGmsCloudMessagingForUser(int userId) {
+        enforceCallerUserOrHost(userId);
+        return mTrustedGmsCloudMessagingSupervisor.stopForUser(userId);
+    }
+
+    @Override
+    public void reconcileTrustedGmsCloudMessaging() {
+        com.lody.virtual.server.VirtualUserAccessPolicy.enforceHost();
+        mTrustedGmsCloudMessagingSupervisor.reconcile();
+    }
+
+    @Override
+    public TrustedGmsCloudMessagingState getTrustedGmsCloudMessagingState(int userId) {
+        enforceCallerUserOrHost(userId);
+        return mTrustedGmsCloudMessagingSupervisor.getState(userId);
     }
 
     ProcessRecord startProcessIfNeedLocked(String processName, int userId, String packageName) {
@@ -2315,6 +2370,10 @@ public class VActivityManagerService extends IActivityManager.Stub
         }
         if (r.lifecycle.markReady(r.generation)) {
             mGmsBackgroundKeepAlive.retain(r);
+            if (isTrustedGmsPersistentProcess(r)) {
+                mTrustedGmsCloudMessagingSupervisor.onProcessReady(
+                        r.userId, r.generation);
+            }
             VLog.i(TAG, "process-lifecycle pid=" + r.pid + " generation=" + r.generation
                     + " STARTING->READY pending=" + r.lifecycle.pendingCount());
             drainProcessLifecycle(r);
@@ -2341,6 +2400,7 @@ public class VActivityManagerService extends IActivityManager.Stub
     }
 
     public int stopUser(int userHandle, IStopUserCallback.Stub stub) {
+        mTrustedGmsCloudMessagingSupervisor.stopForUser(userHandle);
         retireUserProcesses(userHandle, "user-stop");
         mPendingIntents.clearUser(userHandle);
         if (hasUserRuntimeState(userHandle)) return -1;
@@ -2350,6 +2410,102 @@ public class VActivityManagerService extends IActivityManager.Stub
             e.printStackTrace();
         }
         return 0;
+    }
+
+    private static boolean isTrustedGmsPersistentProcess(ProcessRecord process) {
+        return process != null && process.info != null
+                && TrustedGmsCloudMessagingSupervisor.GMS_PACKAGE.equals(
+                        process.info.packageName)
+                && TrustedGmsCloudMessagingSupervisor.GMS_PERSISTENT_PROCESS.equals(
+                        process.processName);
+    }
+
+    private final class TrustedGmsRuntimeOperations
+            implements TrustedGmsCloudMessagingSupervisor.RuntimeOperations {
+        @Override
+        public boolean isInstalled(int userId) {
+            VAppManagerService appManager = VAppManagerService.get();
+            return appManager != null
+                    && appManager.isAppInstalledAsUser(
+                            userId, TrustedGmsCloudMessagingSupervisor.GMS_PACKAGE);
+        }
+
+        @Override
+        public int[] installedUserIds() {
+            VUserManagerService userManager = VUserManagerService.get();
+            if (userManager == null) {
+                return new int[0];
+            }
+            int[] users = userManager.getUserIds();
+            int count = 0;
+            for (int userId : users) {
+                if (isInstalled(userId)) {
+                    count++;
+                }
+            }
+            int[] installed = new int[count];
+            int index = 0;
+            for (int userId : users) {
+                if (isInstalled(userId)) {
+                    installed[index++] = userId;
+                }
+            }
+            return installed;
+        }
+
+        @Override
+        public boolean startCloudMessaging(int userId) {
+            ComponentName provision = new ComponentName(
+                    TrustedGmsCloudMessagingSupervisor.GMS_PACKAGE,
+                    TrustedGmsCloudMessagingSupervisor.PROVISION_SERVICE);
+            Intent provisionIntent = new Intent()
+                    .setComponent(provision)
+                    .putExtra("checkin_enabled", true)
+                    .putExtra("gcm_enabled", true);
+            ComponentName provisioned = VActivityManagerService.this.startService(
+                    null, provisionIntent, null, userId);
+            if (!provision.equals(provisioned)) {
+                return false;
+            }
+
+            ComponentName mcs = new ComponentName(
+                    TrustedGmsCloudMessagingSupervisor.GMS_PACKAGE,
+                    TrustedGmsCloudMessagingSupervisor.MCS_SERVICE);
+            Intent connectIntent = new Intent(
+                    TrustedGmsCloudMessagingSupervisor.ACTION_MCS_CONNECT)
+                    .setComponent(mcs)
+                    .putExtra("org.microg.gms.gcm.mcs.REASON", "apptwin-supervisor");
+            return mcs.equals(VActivityManagerService.this.startService(
+                    null, connectIntent, null, userId));
+        }
+
+        @Override
+        public void stopCloudMessaging(int userId) {
+            ComponentName mcs = new ComponentName(
+                    TrustedGmsCloudMessagingSupervisor.GMS_PACKAGE,
+                    TrustedGmsCloudMessagingSupervisor.MCS_SERVICE);
+            VActivityManagerService.this.stopService(
+                    null, new Intent().setComponent(mcs), null, userId);
+        }
+
+        @Override
+        public boolean isPersistentProcessAlive(int userId) {
+            PackageSetting setting = PackageCacheManager.getSetting(
+                    TrustedGmsCloudMessagingSupervisor.GMS_PACKAGE);
+            if (setting == null || !setting.isInstalled(userId)) {
+                return false;
+            }
+            int vuid = VUserHandle.getUid(userId, setting.appId);
+            synchronized (mProcessNames) {
+                return isLogicalOwnerAlive(findProcessLocked(
+                        TrustedGmsCloudMessagingSupervisor.GMS_PERSISTENT_PROCESS, vuid));
+            }
+        }
+
+        @Override
+        public boolean isPersistentBindingAlive(int userId) {
+            return mGmsBackgroundKeepAlive.isPersistentBindingAlive(userId);
+        }
     }
 
     public void sendOrderedBroadcastAsUser(Intent intent, VUserHandle user, String receiverPermission,

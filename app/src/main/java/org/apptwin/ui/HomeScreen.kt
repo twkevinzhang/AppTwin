@@ -79,6 +79,7 @@ import org.apptwin.spaces.SpaceLifecycleState
 import org.apptwin.gms.model.GmsDesiredState
 import org.apptwin.gms.model.GmsNetworkConsent
 import org.apptwin.gms.model.GmsObservedState
+import org.apptwin.gms.ports.CloudMessagingState
 
 @Composable
 fun HomeScreen(
@@ -529,17 +530,17 @@ private fun GmsCompatibilityCard(
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
-                Surface(
-                    shape = MaterialTheme.shapes.small,
-                    color = MaterialTheme.colorScheme.secondaryContainer,
-                ) {
-                    Text(
-                        gmsProfileLabel(profile?.observedState),
-                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
-                        style = MaterialTheme.typography.labelMedium,
-                    )
-                }
             }
+            GmsStatusRow(
+                label = "Google 服務",
+                status = gmsProfileLabel(profile?.observedState),
+                testTag = "gms-services-status",
+            )
+            GmsStatusRow(
+                label = "背景通知",
+                status = cloudMessagingLabel(state?.cloudMessaging?.state),
+                testTag = "gms-cloud-messaging-status",
+            )
             if (state?.hasDataWarning == true) {
                 Text(
                     "相容服務資料無法安全讀取；已停止變更並保留原始資料。",
@@ -599,7 +600,30 @@ private fun GmsCompatibilityCard(
     }
 }
 
-private fun gmsProfileLabel(state: GmsObservedState?): String = when (state) {
+@Composable
+private fun GmsStatusRow(label: String, status: String, testTag: String) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .testTag(testTag),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(label, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Surface(
+            shape = MaterialTheme.shapes.small,
+            color = MaterialTheme.colorScheme.secondaryContainer,
+        ) {
+            Text(
+                status,
+                modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                style = MaterialTheme.typography.labelMedium,
+            )
+        }
+    }
+}
+
+internal fun gmsProfileLabel(state: GmsObservedState?): String = when (state) {
     GmsObservedState.ABSENT, null -> "未啟用"
     GmsObservedState.ENABLING -> "啟用中"
     GmsObservedState.READY_PARTIAL -> "已啟用"
@@ -608,6 +632,14 @@ private fun gmsProfileLabel(state: GmsObservedState?): String = when (state) {
     GmsObservedState.RESETTING -> "重設中"
     GmsObservedState.UPDATE_REQUIRED -> "需要更新"
     GmsObservedState.REVOKED -> "版本已撤銷"
+}
+
+internal fun cloudMessagingLabel(state: CloudMessagingState?): String = when (state) {
+    CloudMessagingState.DISABLED -> "已停用"
+    CloudMessagingState.STARTING -> "連線中"
+    CloudMessagingState.CONNECTED -> "已連線"
+    CloudMessagingState.DEGRADED -> "需要處理"
+    CloudMessagingState.UNKNOWN, null -> "未知"
 }
 
 @Composable

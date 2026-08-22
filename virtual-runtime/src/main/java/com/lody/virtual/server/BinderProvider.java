@@ -64,6 +64,7 @@ public final class BinderProvider extends ContentProvider {
         // Recovery must run after scanApps and every durable user-scoped service is ready. Running
         // it from VUserManagerService's constructor would miss persisted PackageSetting entries.
         VUserManagerService.get().recoverPartialUsers();
+        VActivityManagerService.get().reconcileTrustedGmsCloudMessaging();
         return true;
     }
 
