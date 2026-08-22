@@ -459,6 +459,149 @@ class MainViewModelLifecycleTest {
         )
     }
 
+    @Test
+    fun `selecting app adds then launches the same clone before reporting completion`() = runTest {
+        val dispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(dispatcher)
+        val launchGate = CompletableDeferred<Unit>()
+        val operations = FakeOperations(
+            groups = listOf(group()),
+            launchGate = launchGate,
+            launchResult = RuntimeLaunchResult.Started(
+                packageName = APP_PACKAGE,
+                processPrefix = "org.apptwin:p7",
+                dataDirectory = "/data/user/7/$APP_PACKAGE",
+            ),
+        )
+        val viewModel = viewModel(SavedStateHandle(), operations, dispatcher)
+        advanceUntilIdle()
+        viewModel.openAppPicker(GROUP_ID)
+        advanceUntilIdle()
+
+        viewModel.selectApp(appItem())
+        runCurrent()
+
+        assertEquals(listOf(GROUP_ID to APP_PACKAGE), operations.addedApps)
+        assertEquals(1, operations.launchedApps.size)
+        assertEquals(GROUP_ID, operations.launchedApps.single().groupId)
+        assertEquals(APP_PACKAGE, operations.launchedApps.single().app.packageName)
+        assertEquals(APP_PACKAGE, viewModel.uiState.busyPackageName)
+        assertEquals("$GROUP_ID:$APP_PACKAGE", viewModel.uiState.launchingAppKey)
+        assertFalse(viewModel.uiState.message.orEmpty().contains("並啟動"))
+
+        launchGate.complete(Unit)
+        advanceUntilIdle()
+
+        assertEquals(null, viewModel.uiState.busyPackageName)
+        assertEquals(null, viewModel.uiState.launchingAppKey)
+        assertEquals("已將 測試 App 加入「工作」並啟動", viewModel.uiState.message)
+    }
+
+    @Test
+    fun `selecting app does not launch when adding the clone fails`() = runTest {
+        val dispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(dispatcher)
+        val operations = FakeOperations(
+            groups = listOf(group()),
+            addAppError = IllegalStateException("無法加入測試 App"),
+        )
+        val viewModel = viewModel(SavedStateHandle(), operations, dispatcher)
+        advanceUntilIdle()
+        viewModel.openAppPicker(GROUP_ID)
+        advanceUntilIdle()
+
+        viewModel.selectApp(appItem())
+        advanceUntilIdle()
+
+        assertEquals(listOf(GROUP_ID to APP_PACKAGE), operations.addedApps)
+        assertTrue(operations.launchedApps.isEmpty())
+        assertEquals("無法加入測試 App", viewModel.uiState.message)
+        assertEquals(null, viewModel.uiState.busyPackageName)
+        assertEquals(GROUP_ID, viewModel.uiState.appPickerGroupId)
+    }
+
+    @Test
+    fun `failed automatic launch keeps the added clone and offers a retry`() = runTest {
+        val dispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(dispatcher)
+        val operations = FakeOperations(
+            groups = listOf(group()),
+            launchResult = RuntimeLaunchResult.Failed("guest activity 未進入前景"),
+        )
+        val viewModel = viewModel(SavedStateHandle(), operations, dispatcher)
+        advanceUntilIdle()
+        viewModel.openAppPicker(GROUP_ID)
+        advanceUntilIdle()
+
+        viewModel.selectApp(appItem())
+        advanceUntilIdle()
+
+        assertEquals(APP_PACKAGE, viewModel.uiState.groups.single().apps.single().app.packageName)
+        assertTrue(viewModel.uiState.message.orEmpty().contains("自動啟動失敗"))
+        assertTrue(viewModel.uiState.message.orEmpty().contains("分身已保留，可稍後重試"))
+        assertEquals(1, operations.launchedApps.size)
+    }
+
+    @Test
+    fun `repeated selection while add and launch is active runs only once`() = runTest {
+        val dispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(dispatcher)
+        val addGate = CompletableDeferred<Unit>()
+        val operations = FakeOperations(
+            groups = listOf(group()),
+            addAppGate = addGate,
+            launchResult = RuntimeLaunchResult.Started(
+                packageName = APP_PACKAGE,
+                processPrefix = "org.apptwin:p7",
+                dataDirectory = "/data/user/7/$APP_PACKAGE",
+            ),
+        )
+        val viewModel = viewModel(SavedStateHandle(), operations, dispatcher)
+        advanceUntilIdle()
+        viewModel.openAppPicker(GROUP_ID)
+        advanceUntilIdle()
+
+        viewModel.selectApp(appItem())
+        viewModel.selectApp(appItem())
+        runCurrent()
+        assertEquals(1, operations.addedApps.size)
+
+        addGate.complete(Unit)
+        advanceUntilIdle()
+
+        assertEquals(1, operations.addedApps.size)
+        assertEquals(1, operations.launchedApps.size)
+    }
+
+    @Test
+    fun `pending launch requested during add does not duplicate automatic launch`() = runTest {
+        val dispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(dispatcher)
+        val addGate = CompletableDeferred<Unit>()
+        val operations = FakeOperations(
+            groups = listOf(group()),
+            addAppGate = addGate,
+            launchResult = RuntimeLaunchResult.Started(
+                packageName = APP_PACKAGE,
+                processPrefix = "org.apptwin:p7",
+                dataDirectory = "/data/user/7/$APP_PACKAGE",
+            ),
+        )
+        val viewModel = viewModel(SavedStateHandle(), operations, dispatcher)
+        advanceUntilIdle()
+        viewModel.openAppPicker(GROUP_ID)
+        advanceUntilIdle()
+
+        viewModel.selectApp(appItem())
+        runCurrent()
+        viewModel.launchGroupApp(GROUP_ID, APP_PACKAGE)
+        addGate.complete(Unit)
+        advanceUntilIdle()
+
+        assertEquals(1, operations.addedApps.size)
+        assertEquals(1, operations.launchedApps.size)
+    }
+
     private fun viewModel(
         savedState: SavedStateHandle,
         operations: MainOperations,
@@ -482,7 +625,12 @@ class MainViewModelLifecycleTest {
         private val clearGroupStorageGate: CompletableDeferred<Unit>? = null,
         private val clearGroupStorageResult: ClearSpaceStorageResult =
             ClearSpaceStorageResult.Cleared(0),
+        private val addAppGate: CompletableDeferred<Unit>? = null,
+        private val addAppError: Throwable? = null,
+        private val launchGate: CompletableDeferred<Unit>? = null,
+        private val launchResult: RuntimeLaunchResult = RuntimeLaunchResult.Failed("unused"),
     ) : MainOperations {
+        private var currentGroups = groups
         var reconcileStarted = false
         var refreshCalls = 0
         var refreshRanOnIoDispatcher = false
@@ -490,9 +638,11 @@ class MainViewModelLifecycleTest {
         val gmsConsentGroups = mutableListOf<String>()
         val gmsEnableGroups = mutableListOf<String>()
         val clearedGroupIds = mutableListOf<String>()
+        val addedApps = mutableListOf<Pair<String, String>>()
+        val launchedApps = mutableListOf<GroupAppItem>()
 
         override suspend fun loadGroupSnapshot(): MainGroupSnapshot = MainGroupSnapshot(
-            groups = groups,
+            groups = currentGroups,
             operations = emptyList(),
             dataWarnings = loadIssues.map { "corrupt metadata" } + refreshWarnings,
         )
@@ -516,15 +666,28 @@ class MainViewModelLifecycleTest {
 
         override suspend fun findGroup(groupId: String): Group? {
             findGroupGate?.await()
-            return groups.firstOrNull { it.id == groupId }
+            return currentGroups.firstOrNull { it.id == groupId }
         }
 
         override suspend fun createGroup(name: String): Group = error("unused")
         override suspend fun renameGroup(groupId: String, name: String): Group? = error("unused")
         override suspend fun deleteGroup(groupId: String): Group? = error("unused")
-        override suspend fun addAppToGroup(groupId: String, packageName: String): Group =
-            error("unused")
-        override suspend fun launchGroupApp(item: GroupAppItem): RuntimeLaunchResult = error("unused")
+        override suspend fun addAppToGroup(groupId: String, packageName: String): Group {
+            addedApps += groupId to packageName
+            addAppGate?.await()
+            addAppError?.let { throw it }
+            val group = currentGroups.first { it.id == groupId }
+            val updated = group.copy(
+                apps = group.apps + GroupApp(packageName, addedAtEpochMillis = 2),
+            )
+            currentGroups = currentGroups.map { if (it.id == groupId) updated else it }
+            return updated
+        }
+        override suspend fun launchGroupApp(item: GroupAppItem): RuntimeLaunchResult {
+            launchedApps += item
+            launchGate?.await()
+            return launchResult
+        }
         override suspend fun uninstallGroupApp(item: GroupAppItem): GroupAppRemovalResult =
             error("unused")
         override suspend fun clearGroupAppStorage(item: GroupAppItem): ClearCloneStorageResult =
@@ -602,6 +765,19 @@ class MainViewModelLifecycleTest {
 
     private companion object {
         const val GROUP_ID = "00000000-0000-0000-0000-000000000001"
+        const val APP_PACKAGE = "com.example.test"
+
+        fun appItem() = AppItem(
+            entry = InstalledAppEntry(
+                label = "測試 App",
+                packageName = APP_PACKAGE,
+                versionName = "1.0",
+                versionCode = 1,
+            ),
+            isSynced = false,
+            activeVersionCode = null,
+            groupCount = 0,
+        )
 
         fun group() = Group(
             id = GROUP_ID,

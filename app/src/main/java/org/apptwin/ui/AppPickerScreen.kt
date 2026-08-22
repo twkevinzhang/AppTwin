@@ -32,6 +32,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -69,7 +70,9 @@ fun AppPickerScreen(
     }
 
     LazyColumn(
-        modifier = Modifier.fillMaxSize(),
+        modifier = Modifier
+            .fillMaxSize()
+            .testTag("app-picker-list"),
         contentPadding = PaddingValues(start = 20.dp, top = 16.dp, end = 20.dp, bottom = 32.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
@@ -134,7 +137,9 @@ private fun AppPickerItem(
 ) {
     Column {
         ListItem(
-            modifier = Modifier.clickable(enabled = enabled, onClick = onClick),
+            modifier = Modifier
+                .testTag("app-picker-${app.entry.packageName}")
+                .clickable(enabled = enabled, onClick = onClick),
             leadingContent = {
                 AppIcon(
                     packageName = app.entry.packageName,
