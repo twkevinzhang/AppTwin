@@ -1,5 +1,6 @@
 package org.apptwin
 
+import android.app.ActivityManager
 import android.app.Application
 import android.content.Context
 import android.os.Build
@@ -25,7 +26,16 @@ class AppTwinApplication : Application() {
             NativeEngine.disableJit(Build.VERSION.SDK_INT)
             VASettings.ENABLE_IO_REDIRECT = true
             VASettings.ENABLE_INNER_SHORTCUT = false
-            VirtualCore.get().startup(base)
+            VirtualCore.get().apply {
+                startup(base)
+                setTaskDescriptionDelegate { description ->
+                    ActivityManager.TaskDescription(
+                        CloneTaskDescriptionPolicy.RECENT_TASK_LABEL,
+                        description.icon,
+                        description.primaryColor,
+                    )
+                }
+            }
         }.onFailure { Log.e(TAG, "VirtualCore startup failed", it) }
     }
 
@@ -41,4 +51,9 @@ class AppTwinApplication : Application() {
     private companion object {
         const val TAG = "AppTwinRuntime"
     }
+}
+
+/** Keeps clone cards identifiable in Android's recent-apps overview without changing guest labels. */
+internal object CloneTaskDescriptionPolicy {
+    const val RECENT_TASK_LABEL = "AppTwin"
 }
