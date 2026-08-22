@@ -269,6 +269,8 @@ fun AppTwinApp(
                                     onUninstallApp = viewModel::uninstallGroupApp,
                                     onCreateShortcut = viewModel::createShortcut,
                                     onRepairApp = viewModel::repairClone,
+                                    clearingStorageAppKey = state.clearingStorageAppKey,
+                                    onClearStorage = viewModel::clearGroupAppStorage,
                                     onSetPermission = onSetClonePermission,
                                     onEnableGms = viewModel::enableGms,
                                     onDisableGms = viewModel::disableGms,

@@ -17,6 +17,7 @@ import kotlinx.coroutines.test.setMain
 import org.apptwin.groups.EnvironmentBinding
 import org.apptwin.groups.Group
 import org.apptwin.groups.GroupAppRemovalResult
+import org.apptwin.usecases.ClearCloneStorageResult
 import org.apptwin.groups.GroupHealth
 import org.apptwin.groups.GroupApp
 import org.apptwin.groups.GroupMetadataKind
@@ -427,6 +428,8 @@ class MainViewModelLifecycleTest {
             error("unused")
         override suspend fun launchGroupApp(item: GroupAppItem): RuntimeLaunchResult = error("unused")
         override suspend fun uninstallGroupApp(item: GroupAppItem): GroupAppRemovalResult =
+            error("unused")
+        override suspend fun clearGroupAppStorage(item: GroupAppItem): ClearCloneStorageResult =
             error("unused")
         override suspend fun createShortcut(item: GroupAppItem): ShortcutCreationResult =
             error("unused")

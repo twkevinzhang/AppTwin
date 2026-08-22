@@ -34,6 +34,7 @@ import org.apptwin.runtime.RuntimeLaunchResult
 import org.apptwin.spaces.CloneLifecycleState
 import org.apptwin.spaces.SpaceLifecycleState
 import org.apptwin.spaces.SpaceStatePolicy
+import org.apptwin.usecases.ClearCloneStorageResult
 
 enum class MainDestination { HOME, SETTINGS }
 
@@ -86,6 +87,7 @@ data class MainUiState(
     val gmsBusyGroupId: String? = null,
     val launchingAppKey: String? = null,
     val uninstallingAppKey: String? = null,
+    val clearingStorageAppKey: String? = null,
     val shortcutAppKey: String? = null,
     val repairingAppKey: String? = null,
     val allFilesGranted: Boolean = false,
@@ -138,6 +140,7 @@ internal interface MainOperations {
     suspend fun addAppToGroup(groupId: String, packageName: String): Group
     suspend fun launchGroupApp(item: GroupAppItem): RuntimeLaunchResult
     suspend fun uninstallGroupApp(item: GroupAppItem): GroupAppRemovalResult
+    suspend fun clearGroupAppStorage(item: GroupAppItem): ClearCloneStorageResult
     suspend fun createShortcut(item: GroupAppItem): ShortcutCreationResult
     suspend fun exportDiagnostics(): String
     suspend fun repairClone(item: GroupAppItem): RepairExecutionResult
@@ -616,6 +619,34 @@ class MainViewModel internal constructor(
                     showMessage("${item.appLabel} 已不在「${item.groupName}」中")
                 is GroupAppRemovalResult.Failed ->
                     showMessage("解除安裝失敗：${result.reason}")
+            }
+            refresh()
+        }
+    }
+
+    fun clearGroupAppStorage(item: GroupAppItem) {
+        if (
+            uiState.clearingStorageAppKey != null ||
+            uiState.uninstallingAppKey != null ||
+            uiState.launchingAppKey != null ||
+            uiState.busyGroupId != null ||
+            uiState.busyPackageName != null
+        ) return
+        uiState = uiState.copy(clearingStorageAppKey = item.launchKey)
+        viewModelScope.launch {
+            val result = runCatching {
+                withContext(ioDispatcher) { operations.clearGroupAppStorage(item) }
+            }.getOrElse(ClearCloneStorageResult::Failed)
+            uiState = uiState.copy(clearingStorageAppKey = null)
+            when (result) {
+                ClearCloneStorageResult.Cleared ->
+                    showMessage("已清除 ${item.appLabel} 的分身資料")
+                ClearCloneStorageResult.SpaceNotFound -> showMessage("找不到這個分身空間")
+                ClearCloneStorageResult.CloneNotFound -> showMessage("找不到這個分身 App")
+                ClearCloneStorageResult.SpaceUnavailable ->
+                    showMessage("「${item.groupName}」目前無法清除資料")
+                is ClearCloneStorageResult.Failed ->
+                    showMessage("清除資料失敗：${result.error.userMessage()}")
             }
             refresh()
         }
