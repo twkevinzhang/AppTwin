@@ -146,6 +146,47 @@ class SpaceUseCasesTest {
         assertFalse(invoked)
     }
 
+    @Test
+    fun `clear space storage resets clones in order and stops at the first failure`() {
+        val fixture = Fixture()
+        val space = fixture.createSpace()
+        val firstPackage = "com.example.first"
+        val secondPackage = "com.example.second"
+        val thirdPackage = "com.example.third"
+        fixture.store.addApp(space.id, firstPackage, 10L)
+        fixture.store.addApp(space.id, secondPackage, 11L)
+        fixture.store.addApp(space.id, thirdPackage, 12L)
+        val attemptedPackages = mutableListOf<String>()
+        val useCase = ClearSpaceStorageUseCase(fixture.store) { binding, packageName ->
+            assertEquals(requireNotNull(space.environmentBinding), binding)
+            attemptedPackages += packageName
+            if (packageName == secondPackage) error("storage unavailable")
+        }
+
+        val result = useCase.execute(space.id)
+
+        assertEquals(listOf(firstPackage, secondPackage), attemptedPackages)
+        assertTrue(result is ClearSpaceStorageResult.PartiallyCleared)
+        result as ClearSpaceStorageResult.PartiallyCleared
+        assertEquals(1, result.clearedCloneCount)
+        assertEquals(secondPackage, result.failedPackageName)
+        assertTrue(requireNotNull(fixture.store.find(space.id)).contains(firstPackage))
+        assertTrue(requireNotNull(fixture.store.find(space.id)).contains(secondPackage))
+        assertTrue(requireNotNull(fixture.store.find(space.id)).contains(thirdPackage))
+    }
+
+    @Test
+    fun `clear space storage retains space metadata and reports completed clone count`() {
+        val fixture = Fixture()
+        val space = fixture.createSpace()
+        fixture.store.addApp(space.id, PACKAGE, 10L)
+        val useCase = ClearSpaceStorageUseCase(fixture.store) { _, _ -> Unit }
+
+        assertEquals(ClearSpaceStorageResult.Cleared(1), useCase.execute(space.id))
+        assertEquals(space.name, requireNotNull(fixture.store.find(space.id)).name)
+        assertTrue(requireNotNull(fixture.store.find(space.id)).contains(PACKAGE))
+    }
+
     private fun tracker(store: TestOperationStore) = OperationTracker(
         store,
         idFactory = { UUID.randomUUID().toString() },
