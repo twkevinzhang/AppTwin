@@ -46,7 +46,7 @@ public final class ActivityFixer {
 			PackageManager pm = activity.getPackageManager();
 			if (intent != null && activity.isTaskRoot()) {
 				try {
-					String label = applicationInfo.loadLabel(pm) + "";
+					String label = TaskDescriptionPolicy.RECENT_TASK_LABEL;
 					Bitmap icon = null;
 					Drawable drawable = applicationInfo.loadIcon(pm);
 					if (drawable instanceof BitmapDrawable) {

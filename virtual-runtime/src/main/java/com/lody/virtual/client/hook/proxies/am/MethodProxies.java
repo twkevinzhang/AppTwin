@@ -39,6 +39,7 @@ import com.lody.virtual.client.badger.BadgerManager;
 import com.lody.virtual.client.core.VirtualCore;
 import com.lody.virtual.client.env.Constants;
 import com.lody.virtual.client.env.SpecialComponentList;
+import com.lody.virtual.client.fixer.TaskDescriptionPolicy;
 import com.lody.virtual.client.hook.base.MethodProxy;
 import com.lody.virtual.client.hook.base.ReplaceLastPkgMethodProxy;
 import com.lody.virtual.client.hook.delegate.TaskDescriptionDelegate;
@@ -1749,6 +1750,14 @@ class MethodProxies {
             TaskDescriptionDelegate descriptionDelegate = VirtualCore.get().getTaskDescriptionDelegate();
             if (descriptionDelegate != null) {
                 td = descriptionDelegate.getTaskDescription(td);
+            }
+
+            // The guest app owns its artwork, while AppTwin owns the task identity shown by Recents.
+            if (!TaskDescriptionPolicy.RECENT_TASK_LABEL.equals(td.getLabel())) {
+                td = new ActivityManager.TaskDescription(
+                        TaskDescriptionPolicy.RECENT_TASK_LABEL,
+                        td.getIcon(),
+                        td.getPrimaryColor());
             }
 
             args[1] = td;
