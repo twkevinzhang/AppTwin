@@ -64,7 +64,10 @@ public final class BinderProvider extends ContentProvider {
         // Recovery must run after scanApps and every durable user-scoped service is ready. Running
         // it from VUserManagerService's constructor would miss persisted PackageSetting entries.
         VUserManagerService.get().recoverPartialUsers();
-        VActivityManagerService.get().reconcileTrustedGmsCloudMessaging();
+        // Do not start guest services synchronously from ContentProvider.onCreate(). A guest stub
+        // provider cannot publish until this BinderProvider returns, so doing so creates a
+        // provider-start cycle. VActivityManagerService posts the initial reconciliation after
+        // this main-loop turn; DaemonService and its persisted job provide later retries.
         return true;
     }
 
