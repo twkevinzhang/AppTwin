@@ -12,6 +12,7 @@ import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.withContext
 import org.apptwin.groups.Group
 import org.apptwin.compatibility.CompatibilityLevel
@@ -215,6 +216,7 @@ class MainViewModel internal constructor(
     private var resolvedDeepLinkIdentities: Set<Pair<String, String>>? = null
     private var refreshGeneration = 0L
     private var pickerRequestGeneration = 0L
+    private val appLaunchMutex = Mutex()
 
     var uiState by mutableStateOf(
         MainUiState(
@@ -395,8 +397,9 @@ class MainViewModel internal constructor(
                         (target.groupId == null || item.groupId == target.groupId)
                 }
                 ?.let { pending ->
-                    pendingLaunch = null
-                    launchGroupApp(pending)
+                    if (tryLaunchGroupApp(pending) != LaunchAttempt.BUSY) {
+                        pendingLaunch = null
+                    }
                 }
         }
     }
@@ -559,32 +562,82 @@ class MainViewModel internal constructor(
         if (
             uiState.uninstallingAppKey != null ||
             uiState.busyPackageName != null ||
-            uiState.clearingStorageGroupId != null
+            uiState.clearingStorageGroupId != null ||
+            uiState.launchingAppKey != null
         ) return
         val groupId = uiState.appPickerGroupId ?: return
+        if (!appLaunchMutex.tryLock()) return
         uiState = uiState.copy(busyPackageName = app.entry.packageName)
         viewModelScope.launch {
-            val result = runCatching {
-                withContext(ioDispatcher) {
-                    operations.addAppToGroup(groupId, app.entry.packageName)
+            var appWasAdded = false
+            try {
+                val group = runCatching {
+                    withContext(ioDispatcher) {
+                        operations.addAppToGroup(groupId, app.entry.packageName)
+                    }
+                }.getOrElse { error ->
+                    showMessage(error.userMessage())
+                    return@launch
                 }
-            }
-            uiState = uiState.copy(busyPackageName = null)
-            result.onSuccess { group ->
+                appWasAdded = true
                 closeAppPicker()
-                showMessage("已將 ${app.entry.label} 加入「${group.name}」")
-                refresh()
-            }.onFailure { error -> showMessage(error.userMessage()) }
+                clearMatchingPendingLaunch(groupId, app.entry.packageName)
+                val groupApp = group.apps.firstOrNull {
+                    it.packageName == app.entry.packageName
+                }
+                if (groupApp == null) {
+                    showMessage(
+                        "已將 ${app.entry.label} 加入「${group.name}」，但找不到分身資料；" +
+                            "分身已保留，請重新整理後再試",
+                    )
+                    return@launch
+                }
+                val item = GroupAppItem(
+                    groupId = group.id,
+                    groupName = group.name,
+                    groupHealth = group.health,
+                    app = groupApp,
+                    appLabel = app.entry.label,
+                    versionName = app.entry.versionName,
+                    sourceInstalled = true,
+                    launchStatus = "準備中",
+                )
+                uiState = uiState.copy(launchingAppKey = item.launchKey)
+                val launchResult = runCatching {
+                    withContext(ioDispatcher) { operations.launchGroupApp(item) }
+                }.getOrElse { error -> RuntimeLaunchResult.Failed(error.userMessage(), error) }
+                clearMatchingPendingLaunch(groupId, app.entry.packageName)
+                when (launchResult) {
+                    is RuntimeLaunchResult.Started ->
+                        showMessage("已將 ${app.entry.label} 加入「${group.name}」並啟動")
+                    is RuntimeLaunchResult.Failed -> showMessage(
+                        "已將 ${app.entry.label} 加入「${group.name}」，但自動啟動失敗：" +
+                            "${launchResult.reason}；分身已保留，可稍後重試",
+                    )
+                }
+            } finally {
+                uiState = uiState.copy(
+                    busyPackageName = null,
+                    launchingAppKey = null,
+                )
+                appLaunchMutex.unlock()
+                if (appWasAdded) refresh()
+            }
         }
     }
 
     fun launchGroupApp(item: GroupAppItem) {
+        tryLaunchGroupApp(item)
+    }
+
+    private fun tryLaunchGroupApp(item: GroupAppItem): LaunchAttempt {
         if (
             uiState.launchingAppKey != null ||
             uiState.uninstallingAppKey != null ||
             uiState.clearingStorageAppKey != null ||
-            uiState.clearingStorageGroupId != null
-        ) return
+            uiState.clearingStorageGroupId != null ||
+            uiState.busyPackageName != null
+        ) return LaunchAttempt.BUSY
         if (item.groupHealth != GroupHealth.HEALTHY) {
             showMessage(
                 if (item.groupHealth == GroupHealth.DAMAGED) {
@@ -593,24 +646,37 @@ class MainViewModel internal constructor(
                     "「${item.groupName}」目前無法啟動 App"
                 },
             )
-            return
+            return LaunchAttempt.REJECTED
         }
         if (!item.sourceInstalled) {
             showMessage("來源 App 已移除，暫時無法啟動")
-            return
+            return LaunchAttempt.REJECTED
         }
+        if (!appLaunchMutex.tryLock()) return LaunchAttempt.BUSY
         uiState = uiState.copy(launchingAppKey = item.launchKey)
         viewModelScope.launch {
-            val result = runCatching {
-                withContext(ioDispatcher) { operations.launchGroupApp(item) }
-            }.getOrElse { error -> RuntimeLaunchResult.Failed(error.userMessage(), error) }
-            uiState = uiState.copy(launchingAppKey = null)
-            when (result) {
-                is RuntimeLaunchResult.Started ->
-                    showMessage("${item.appLabel} 已從「${item.groupName}」啟動")
-                is RuntimeLaunchResult.Failed -> showMessage("啟動失敗：${result.reason}")
+            try {
+                val result = runCatching {
+                    withContext(ioDispatcher) { operations.launchGroupApp(item) }
+                }.getOrElse { error -> RuntimeLaunchResult.Failed(error.userMessage(), error) }
+                when (result) {
+                    is RuntimeLaunchResult.Started ->
+                        showMessage("${item.appLabel} 已從「${item.groupName}」啟動")
+                    is RuntimeLaunchResult.Failed -> showMessage("啟動失敗：${result.reason}")
+                }
+            } finally {
+                uiState = uiState.copy(launchingAppKey = null)
+                appLaunchMutex.unlock()
+                refresh()
             }
-            refresh()
+        }
+        return LaunchAttempt.STARTED
+    }
+
+    private fun clearMatchingPendingLaunch(groupId: String, packageName: String) {
+        pendingLaunch = pendingLaunch?.takeUnless { pending ->
+            pending.packageName == packageName &&
+                (pending.groupId == null || pending.groupId == groupId)
         }
     }
 
@@ -1019,6 +1085,8 @@ class MainViewModel internal constructor(
     }
 
     private data class PendingLaunch(val groupId: String?, val packageName: String)
+
+    private enum class LaunchAttempt { STARTED, BUSY, REJECTED }
 }
 
 private fun Throwable.userMessage(): String = message ?: javaClass.simpleName
