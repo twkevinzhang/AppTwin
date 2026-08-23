@@ -1,9 +1,11 @@
 package com.lody.virtual.client.hook.proxies.shortcut;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertSame;
+import static org.junit.Assert.assertTrue;
 
 import android.os.IBinder;
 import android.os.IInterface;
@@ -16,7 +18,9 @@ import org.junit.Test;
 
 import java.lang.reflect.Constructor;
 import java.lang.reflect.Method;
+import java.util.Arrays;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 
 public class ShortcutServiceStubTest {
@@ -174,6 +178,117 @@ public class ShortcutServiceStubTest {
                 ShortcutServiceStub.selectShortcutProxyAction(""));
     }
 
+    @Test
+    public void recognizesOnlyHostOwnedShortcutsWithDirectHostTargets() {
+        assertTrue(ShortcutServiceStub.isHostNativeShortcutOwnership(
+                "host.package", "host.package", true, false));
+        assertTrue(ShortcutServiceStub.isHostNativeShortcutOwnership(
+                "host.package", "host.package", false, true));
+
+        assertFalse(ShortcutServiceStub.isHostNativeShortcutOwnership(
+                "guest.package", "host.package", true, true));
+        assertFalse(ShortcutServiceStub.isHostNativeShortcutOwnership(
+                "host.package", "host.package", false, false));
+    }
+
+    @Test
+    public void guestReadFiltersHostNativeShortcutWithoutChangingItsIconOrIntent() {
+        TestShortcut hostNative = new TestShortcut(
+                "host.package", true, "product-icon", "host/MainActivity");
+        TestShortcut rewrittenGuest = new TestShortcut(
+                "host.package", false, "guest-icon", "host/ShortcutHandleActivity");
+
+        List<TestShortcut> visible = ShortcutServiceStub.filterAndTransformGuestShortcuts(
+                Arrays.asList(hostNative, rewrittenGuest),
+                shortcut -> ShortcutServiceStub.isHostNativeShortcutOwnership(
+                        shortcut.owner, "host.package", false, shortcut.directHostTarget),
+                shortcut -> shortcut.repairs++);
+
+        assertEquals(1, visible.size());
+        assertSame(rewrittenGuest, visible.get(0));
+        assertEquals("product-icon", hostNative.icon);
+        assertEquals("host/MainActivity", hostNative.intent);
+        assertEquals(0, hostNative.repairs);
+        assertEquals(1, rewrittenGuest.repairs);
+    }
+
+    @Test
+    public void guestReadWriteRoundTripPreservesRewrittenShortcutIdentityAndPayload() {
+        TestShortcut rewrittenGuest = new TestShortcut(
+                "host.package", false, "bitmap-icon", "host/ShortcutHandleActivity?guest=1");
+
+        List<TestShortcut> read = ShortcutServiceStub.filterAndTransformGuestShortcuts(
+                Arrays.asList(rewrittenGuest),
+                shortcut -> ShortcutServiceStub.isHostNativeShortcutOwnership(
+                        shortcut.owner, "host.package", false, shortcut.directHostTarget),
+                shortcut -> shortcut.repairs++);
+        List<TestShortcut> write = ShortcutServiceStub.filterAndTransformGuestShortcuts(
+                read,
+                shortcut -> ShortcutServiceStub.isHostNativeShortcutOwnership(
+                        shortcut.owner, "host.package", false, shortcut.directHostTarget),
+                shortcut -> shortcut.writes++);
+
+        assertEquals(1, write.size());
+        assertSame(rewrittenGuest, write.get(0));
+        assertEquals("bitmap-icon", rewrittenGuest.icon);
+        assertEquals("host/ShortcutHandleActivity?guest=1", rewrittenGuest.intent);
+        assertEquals(1, rewrittenGuest.repairs);
+        assertEquals(1, rewrittenGuest.writes);
+    }
+
+    @Test
+    public void guestListWriteDropsHostNativeAndStillRewritesGenuineGuestShortcut() {
+        TestShortcut hostNative = new TestShortcut(
+                "host.package", true, "product-icon", "host/MainActivity");
+        TestShortcut genuineGuest = new TestShortcut(
+                "guest.package", false, "guest-resource-icon", "guest/LaunchActivity");
+
+        List<TestShortcut> writes = ShortcutServiceStub.filterAndTransformGuestShortcuts(
+                Arrays.asList(hostNative, genuineGuest),
+                shortcut -> ShortcutServiceStub.isHostNativeShortcutOwnership(
+                        shortcut.owner, "host.package", false, shortcut.directHostTarget),
+                shortcut -> {
+                    shortcut.owner = "host.package";
+                    shortcut.icon = "host-bitmap-icon";
+                    shortcut.intent = "host/ShortcutHandleActivity";
+                    shortcut.writes++;
+                });
+
+        assertEquals(1, writes.size());
+        assertSame(genuineGuest, writes.get(0));
+        assertEquals("host.package", genuineGuest.owner);
+        assertEquals("host-bitmap-icon", genuineGuest.icon);
+        assertEquals("host/ShortcutHandleActivity", genuineGuest.intent);
+        assertEquals(1, genuineGuest.writes);
+        assertEquals("product-icon", hostNative.icon);
+        assertEquals("host/MainActivity", hostNative.intent);
+        assertEquals(0, hostNative.writes);
+    }
+
+    @Test
+    public void guestSingleWriteProtectsHostNativeAndRewritesGenuineGuestShortcut() {
+        TestShortcut hostNative = new TestShortcut(
+                "host.package", true, "product-icon", "host/MainActivity");
+        TestShortcut genuineGuest = new TestShortcut(
+                "guest.package", false, "guest-icon", "guest/LaunchActivity");
+
+        assertFalse(ShortcutServiceStub.transformGuestShortcut(
+                hostNative,
+                shortcut -> ShortcutServiceStub.isHostNativeShortcutOwnership(
+                        shortcut.owner, "host.package", false, shortcut.directHostTarget),
+                shortcut -> shortcut.writes++));
+        assertTrue(ShortcutServiceStub.transformGuestShortcut(
+                genuineGuest,
+                shortcut -> ShortcutServiceStub.isHostNativeShortcutOwnership(
+                        shortcut.owner, "host.package", false, shortcut.directHostTarget),
+                shortcut -> shortcut.writes++));
+
+        assertEquals("product-icon", hostNative.icon);
+        assertEquals("host/MainActivity", hostNative.intent);
+        assertEquals(0, hostNative.writes);
+        assertEquals(1, genuineGuest.writes);
+    }
+
     private static Object invokeShortcutFinder(String proxySimpleName, String finderName)
             throws Exception {
         Class<?> proxyClass = Class.forName(
@@ -200,6 +315,22 @@ public class ShortcutServiceStubTest {
         MethodProxy proxy = invocationStub.getMethodProxy(method);
         assertNotNull(method, proxy);
         assertEquals(method, expectedSimpleName, proxy.getClass().getSimpleName());
+    }
+
+    private static final class TestShortcut {
+        String owner;
+        final boolean directHostTarget;
+        String icon;
+        String intent;
+        int repairs;
+        int writes;
+
+        TestShortcut(String owner, boolean directHostTarget, String icon, String intent) {
+            this.owner = owner;
+            this.directHostTarget = directHostTarget;
+            this.icon = icon;
+            this.intent = intent;
+        }
     }
 
     /** Avoids Android's ServiceManager and Binder implementations in local JVM tests. */

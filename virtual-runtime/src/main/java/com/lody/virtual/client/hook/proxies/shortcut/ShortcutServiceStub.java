@@ -20,6 +20,7 @@ import com.lody.virtual.helper.utils.BitmapUtils;
 import com.lody.virtual.helper.utils.VLog;
 
 import java.lang.reflect.Method;
+import java.util.ArrayList;
 import java.util.List;
 
 import mirror.android.content.pm.IShortcutService;
@@ -167,6 +168,85 @@ public class ShortcutServiceStub extends BinderInvocationProxy {
         }
     }
 
+    @TargetApi(Build.VERSION_CODES.N_MR1)
+    private static boolean isHostNativeShortcut(ShortcutInfo shortcutInfo, String hostPackage) {
+        if (shortcutInfo == null) {
+            return false;
+        }
+        String ownerPackage = mirror.android.content.pm.ShortcutInfo.mPackageName.get(shortcutInfo);
+        ComponentName activity = mirror.android.content.pm.ShortcutInfo.mActivity.get(shortcutInfo);
+        boolean directHostActivity = isDirectHostTarget(activity, hostPackage);
+        boolean directHostIntent = false;
+        Intent[] intents = mirror.android.content.pm.ShortcutInfo.mIntents.get(shortcutInfo);
+        if (intents != null) {
+            for (Intent intent : intents) {
+                if (isDirectHostTarget(intent, hostPackage)) {
+                    directHostIntent = true;
+                    break;
+                }
+            }
+        }
+        return isHostNativeShortcutOwnership(
+                ownerPackage,
+                hostPackage,
+                directHostActivity,
+                directHostIntent);
+    }
+
+    private static boolean isDirectHostTarget(ComponentName component, String hostPackage) {
+        return component != null
+                && hostPackage.equals(component.getPackageName())
+                && !Constants.SHORTCUT_PROXY_ACTIVITY_NAME.equals(component.getClassName());
+    }
+
+    private static boolean isDirectHostTarget(Intent intent, String hostPackage) {
+        if (intent == null) {
+            return false;
+        }
+        ComponentName component = intent.getComponent();
+        if (component != null) {
+            return isDirectHostTarget(component, hostPackage);
+        }
+        return hostPackage.equals(intent.getPackage());
+    }
+
+    static boolean isHostNativeShortcutOwnership(
+            String ownerPackage,
+            String hostPackage,
+            boolean directHostActivity,
+            boolean directHostIntent) {
+        return hostPackage != null
+                && hostPackage.equals(ownerPackage)
+                && (directHostActivity || directHostIntent);
+    }
+
+    static <T> List<T> filterAndTransformGuestShortcuts(
+            List<T> shortcuts,
+            HostNativeShortcutPredicate<T> hostNativePredicate,
+            GuestShortcutTransformer<T> guestTransformer) {
+        List<T> guestShortcuts = new ArrayList<>();
+        if (shortcuts == null) {
+            return guestShortcuts;
+        }
+        for (T shortcut : shortcuts) {
+            if (transformGuestShortcut(shortcut, hostNativePredicate, guestTransformer)) {
+                guestShortcuts.add(shortcut);
+            }
+        }
+        return guestShortcuts;
+    }
+
+    static <T> boolean transformGuestShortcut(
+            T shortcut,
+            HostNativeShortcutPredicate<T> hostNativePredicate,
+            GuestShortcutTransformer<T> guestTransformer) {
+        if (hostNativePredicate.isHostNative(shortcut)) {
+            return false;
+        }
+        guestTransformer.transform(shortcut);
+        return true;
+    }
+
     @TargetApi(Build.VERSION_CODES.M)
     private static Icon createBitmapIcon(Drawable drawable) {
         Bitmap bitmap = BitmapUtils.drawableToBitmap(drawable);
@@ -227,6 +307,14 @@ public class ShortcutServiceStub extends BinderInvocationProxy {
         void set(S shortcutInfo, T activity);
     }
 
+    interface HostNativeShortcutPredicate<T> {
+        boolean isHostNative(T shortcut);
+    }
+
+    interface GuestShortcutTransformer<T> {
+        void transform(T shortcut);
+    }
+
     private interface IconFailureReporter {
         void report(String message, Throwable error);
     }
@@ -242,9 +330,11 @@ public class ShortcutServiceStub extends BinderInvocationProxy {
             List<ShortcutInfo> shortcutList = findFirstShortcutList(args);
             if (shortcutList != null) {
                 String hostPkg = getHostPkg();
-                for (ShortcutInfo shortcutInfo : shortcutList) {
-                    replaceShortcutInfo(shortcutInfo, hostPkg, getPM());
-                }
+                List<ShortcutInfo> guestShortcuts = filterAndTransformGuestShortcuts(
+                        shortcutList,
+                        shortcut -> isHostNativeShortcut(shortcut, hostPkg),
+                        shortcut -> replaceShortcutInfo(shortcut, hostPkg, getPM()));
+                replaceFirstShortcutList(args, guestShortcuts);
             }
 
             return super.beforeCall(who, method, args);
@@ -256,11 +346,26 @@ public class ShortcutServiceStub extends BinderInvocationProxy {
                 return null;
             }
             for (Object arg : args) {
-                if (arg != null && arg.getClass().isAssignableFrom(ParceledListSlice.TYPE)) {
+                if (arg != null && ParceledListSlice.TYPE != null
+                        && ParceledListSlice.TYPE.isAssignableFrom(arg.getClass())) {
                     return ParceledListSliceCompat.getList(arg);
                 }
             }
             return null;
+        }
+
+        private void replaceFirstShortcutList(Object[] args, List<ShortcutInfo> shortcuts) {
+            if (args == null) {
+                return;
+            }
+            for (int i = 0; i < args.length; i++) {
+                Object arg = args[i];
+                if (arg != null && ParceledListSlice.TYPE != null
+                        && ParceledListSlice.TYPE.isAssignableFrom(arg.getClass())) {
+                    args[i] = ParceledListSliceCompat.create(shortcuts);
+                    return;
+                }
+            }
         }
     }
 
@@ -274,18 +379,29 @@ public class ShortcutServiceStub extends BinderInvocationProxy {
         public Object afterCall(Object who, Method method, Object[] args, Object result)
                 throws Throwable {
             Object replacement = super.afterCall(who, method, args, result);
+            if (replacement == null) {
+                return null;
+            }
             List shortcutList;
             if (replacement instanceof List) {
                 shortcutList = (List) replacement;
             } else {
                 shortcutList = ParceledListSliceCompat.getList(replacement);
             }
-            for (Object item : shortcutList) {
-                if (item instanceof ShortcutInfo) {
-                    repairShortcutInfoForGuest((ShortcutInfo) item);
-                }
+            String hostPkg = getHostPkg();
+            List guestShortcuts = filterAndTransformGuestShortcuts(
+                    shortcutList,
+                    item -> item instanceof ShortcutInfo
+                            && isHostNativeShortcut((ShortcutInfo) item, hostPkg),
+                    item -> {
+                        if (item instanceof ShortcutInfo) {
+                            repairShortcutInfoForGuest((ShortcutInfo) item);
+                        }
+                    });
+            if (replacement instanceof List) {
+                return guestShortcuts;
             }
-            return replacement;
+            return ParceledListSliceCompat.createForReturnType(method, guestShortcuts);
         }
     }
 
@@ -299,9 +415,22 @@ public class ShortcutServiceStub extends BinderInvocationProxy {
         @Override
         public boolean beforeCall(Object who, Method method, Object... args) {
             ShortcutInfo shortcutInfo = findFirstShortcutInfo(args);
-            replaceShortcutInfo(shortcutInfo, getHostPkg(), getPM());
+            String hostPkg = getHostPkg();
+            transformGuestShortcut(
+                    shortcutInfo,
+                    shortcut -> isHostNativeShortcut(shortcut, hostPkg),
+                    shortcut -> replaceShortcutInfo(shortcut, hostPkg, getPM()));
 
             return super.beforeCall(who, method, args);
+        }
+
+        @Override
+        public Object call(Object who, Method method, Object... args) throws Throwable {
+            ShortcutInfo shortcutInfo = findFirstShortcutInfo(args);
+            if (isHostNativeShortcut(shortcutInfo, getHostPkg())) {
+                return protectedHostWriteResult(method.getReturnType());
+            }
+            return super.call(who, method, args);
         }
 
         @TargetApi(Build.VERSION_CODES.N_MR1)
@@ -313,6 +442,34 @@ public class ShortcutServiceStub extends BinderInvocationProxy {
                 if (arg != null && arg.getClass() == mirror.android.content.pm.ShortcutInfo.TYPE) {
                     return (ShortcutInfo) arg;
                 }
+            }
+            return null;
+        }
+
+        private Object protectedHostWriteResult(Class<?> returnType) {
+            if (returnType == boolean.class) {
+                return false;
+            }
+            if (returnType == int.class) {
+                return 0;
+            }
+            if (returnType == long.class) {
+                return 0L;
+            }
+            if (returnType == float.class) {
+                return 0F;
+            }
+            if (returnType == double.class) {
+                return 0D;
+            }
+            if (returnType == byte.class) {
+                return (byte) 0;
+            }
+            if (returnType == short.class) {
+                return (short) 0;
+            }
+            if (returnType == char.class) {
+                return (char) 0;
             }
             return null;
         }
