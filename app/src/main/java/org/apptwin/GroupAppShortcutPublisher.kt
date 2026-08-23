@@ -209,9 +209,12 @@ private class AndroidProductShortcutPlatform(
         val bitmap = drawable.squareBitmap(ICON_SIZE)
         val canvas = Canvas(bitmap)
         val radius = ICON_SIZE * BADGE_RADIUS_RATIO
-        val center = ICON_SIZE - radius
+        // Pixel Launcher adds the shortcut owner's app badge at bottom-right. Keep the Space
+        // initial at bottom-left so both the product owner and exact Space remain identifiable.
+        val centerX = radius
+        val centerY = ICON_SIZE - radius
         val background = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = BADGE_COLOR }
-        canvas.drawCircle(center, center, radius, background)
+        canvas.drawCircle(centerX, centerY, radius, background)
         val foreground = Paint(Paint.ANTI_ALIAS_FLAG).apply {
             color = Color.WHITE
             textAlign = Paint.Align.CENTER
@@ -219,8 +222,8 @@ private class AndroidProductShortcutPlatform(
             isFakeBoldText = true
         }
         val initial = spec.groupName.trim().firstOrNull()?.toString().orEmpty()
-        val baseline = center - (foreground.ascent() + foreground.descent()) / 2f
-        canvas.drawText(initial, center, baseline, foreground)
+        val baseline = centerY - (foreground.ascent() + foreground.descent()) / 2f
+        canvas.drawText(initial, centerX, baseline, foreground)
         return if (spec.available) bitmap else bitmap.grayscale()
     }
 

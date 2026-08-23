@@ -934,6 +934,13 @@ class MainViewModel internal constructor(
             pendingLaunch = PendingLaunch(groupId, packageName)
             return
         }
+        // The durable group index is published before installed-app enrichment finishes.
+        // Defer exact shortcut routing so that cold start cannot briefly mistake the source
+        // application for an uninstalled one and reject an otherwise healthy clone.
+        if (uiState.isRefreshing) {
+            pendingLaunch = PendingLaunch(groupId, packageName)
+            return
+        }
         val item = uiState.groups.asSequence()
             .flatMap { it.apps.asSequence() }
             .firstOrNull { it.groupId == groupId && it.app.packageName == packageName }
