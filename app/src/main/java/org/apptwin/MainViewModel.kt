@@ -40,6 +40,8 @@ import org.apptwin.usecases.ClearSpaceStorageResult
 
 enum class MainDestination { HOME, SETTINGS }
 
+enum class GmsBusyAction { ENABLE, DISABLE, RESET }
+
 data class AppItem(
     val entry: InstalledAppEntry,
     val isSynced: Boolean,
@@ -87,6 +89,7 @@ data class MainUiState(
     val busyPackageName: String? = null,
     val busyGroupId: String? = null,
     val gmsBusyGroupId: String? = null,
+    val gmsBusyAction: GmsBusyAction? = null,
     val launchingAppKey: String? = null,
     val uninstallingAppKey: String? = null,
     val clearingStorageAppKey: String? = null,
@@ -132,6 +135,14 @@ internal data class MainGroupSnapshot(
     val dataWarnings: List<String>,
 )
 
+internal sealed interface DeleteGroupResult {
+    data object NotFound : DeleteGroupResult
+    data class Deleted(
+        val group: Group,
+        val cleanupWarning: String? = null,
+    ) : DeleteGroupResult
+}
+
 /** Blocking application operations. MainViewModel always invokes these on its IO dispatcher. */
 internal interface MainOperations {
     suspend fun loadGroupSnapshot(): MainGroupSnapshot
@@ -139,7 +150,7 @@ internal interface MainOperations {
     suspend fun findGroup(groupId: String): Group?
     suspend fun createGroup(name: String): Group
     suspend fun renameGroup(groupId: String, name: String): Group?
-    suspend fun deleteGroup(groupId: String): Group?
+    suspend fun deleteGroup(groupId: String): DeleteGroupResult
     suspend fun addAppToGroup(groupId: String, packageName: String): Group
     suspend fun launchGroupApp(item: GroupAppItem): RuntimeLaunchResult
     suspend fun uninstallGroupApp(item: GroupAppItem): GroupAppRemovalResult
@@ -509,6 +520,7 @@ class MainViewModel internal constructor(
     }
 
     fun renameGroup(groupId: String, name: String) {
+        if (uiState.gmsBusyGroupId == groupId) return
         viewModelScope.launch {
             val result = runCatching {
                 withContext(ioDispatcher) { operations.renameGroup(groupId, name) }
@@ -526,6 +538,7 @@ class MainViewModel internal constructor(
     fun deleteGroup(groupId: String) {
         if (
             uiState.busyGroupId != null ||
+            uiState.gmsBusyGroupId == groupId ||
             uiState.uninstallingAppKey != null ||
             uiState.clearingStorageAppKey != null ||
             uiState.clearingStorageGroupId != null
@@ -536,11 +549,19 @@ class MainViewModel internal constructor(
                 withContext(ioDispatcher) { operations.deleteGroup(groupId) }
             }
             uiState = uiState.copy(busyGroupId = null)
-            result.onSuccess { group ->
-                if (group == null) {
-                    showMessage("找不到這個群組")
-                } else {
-                    showMessage("已刪除「${group.name}」及其中的所有資料")
+            result.onSuccess { deletion ->
+                when (deletion) {
+                    DeleteGroupResult.NotFound -> showMessage("找不到這個群組")
+                    is DeleteGroupResult.Deleted -> {
+                        val warning = deletion.cleanupWarning
+                            ?.let { "；但$it" }
+                            .orEmpty()
+                        showMessage(
+                            "已刪除「${deletion.group.name}」及其中的所有資料$warning",
+                        )
+                    }
+                }
+                if (deletion is DeleteGroupResult.Deleted) {
                     if (uiState.selectedGroupId == groupId) closeGroup()
                     if (uiState.appPickerGroupId == groupId) closeAppPicker()
                 }
@@ -553,18 +574,22 @@ class MainViewModel internal constructor(
     }
 
     fun enableGms(groupId: String, grantConsent: Boolean = false) {
-        runGmsAction(groupId, "啟用") {
+        runGmsAction(groupId, GmsBusyAction.ENABLE, "啟用") {
             if (grantConsent) operations.grantGmsConsent(groupId)
             operations.enableGms(groupId)
         }
     }
 
     fun disableGms(groupId: String) {
-        runGmsAction(groupId, "停用") { operations.disableGms(groupId) }
+        runGmsAction(groupId, GmsBusyAction.DISABLE, "停用") {
+            operations.disableGms(groupId)
+        }
     }
 
     fun resetGms(groupId: String, reenable: Boolean) {
-        runGmsAction(groupId, "重設") { operations.resetGms(groupId, reenable) }
+        runGmsAction(groupId, GmsBusyAction.RESET, "重設") {
+            operations.resetGms(groupId, reenable)
+        }
     }
 
     fun selectApp(app: AppItem) {
@@ -575,6 +600,7 @@ class MainViewModel internal constructor(
             uiState.launchingAppKey != null
         ) return
         val groupId = uiState.appPickerGroupId ?: return
+        if (uiState.gmsBusyGroupId == groupId) return
         if (!appLaunchMutex.tryLock()) return
         uiState = uiState.copy(busyPackageName = app.entry.packageName)
         viewModelScope.launch {
@@ -645,7 +671,8 @@ class MainViewModel internal constructor(
             uiState.uninstallingAppKey != null ||
             uiState.clearingStorageAppKey != null ||
             uiState.clearingStorageGroupId != null ||
-            uiState.busyPackageName != null
+            uiState.busyPackageName != null ||
+            uiState.gmsBusyGroupId == item.groupId
         ) return LaunchAttempt.BUSY
         if (item.groupHealth != GroupHealth.HEALTHY) {
             showMessage(
@@ -695,7 +722,8 @@ class MainViewModel internal constructor(
             uiState.launchingAppKey != null ||
             uiState.clearingStorageGroupId != null ||
             uiState.busyGroupId != null ||
-            uiState.busyPackageName != null
+            uiState.busyPackageName != null ||
+            uiState.gmsBusyGroupId == item.groupId
         ) return
         uiState = uiState.copy(uninstallingAppKey = item.launchKey)
         viewModelScope.launch {
@@ -724,7 +752,8 @@ class MainViewModel internal constructor(
             uiState.uninstallingAppKey != null ||
             uiState.launchingAppKey != null ||
             uiState.busyGroupId != null ||
-            uiState.busyPackageName != null
+            uiState.busyPackageName != null ||
+            uiState.gmsBusyGroupId == item.groupId
         ) return
         uiState = uiState.copy(clearingStorageAppKey = item.launchKey)
         viewModelScope.launch {
@@ -1029,6 +1058,7 @@ class MainViewModel internal constructor(
 
     private fun runGmsAction(
         groupId: String,
+        busyAction: GmsBusyAction,
         actionLabel: String,
         action: suspend () -> GmsLifecycleResult,
     ) {
@@ -1037,10 +1067,10 @@ class MainViewModel internal constructor(
             uiState.busyGroupId != null ||
             uiState.clearingStorageGroupId != null
         ) return
-        uiState = uiState.copy(gmsBusyGroupId = groupId)
+        uiState = uiState.copy(gmsBusyGroupId = groupId, gmsBusyAction = busyAction)
         viewModelScope.launch {
             val result = runCatching { withContext(ioDispatcher) { action() } }
-            uiState = uiState.copy(gmsBusyGroupId = null)
+            uiState = uiState.copy(gmsBusyGroupId = null, gmsBusyAction = null)
             result.onSuccess { lifecycle ->
                 showMessage(gmsResultMessage(actionLabel, lifecycle))
                 refresh()

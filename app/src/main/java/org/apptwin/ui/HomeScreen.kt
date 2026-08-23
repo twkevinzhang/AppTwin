@@ -73,6 +73,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import org.apptwin.GroupAppItem
 import org.apptwin.GroupItem
+import org.apptwin.GmsBusyAction
 import org.apptwin.MainUiState
 import org.apptwin.spaces.CloneLifecycleState
 import org.apptwin.spaces.SpaceLifecycleState
@@ -89,6 +90,7 @@ fun HomeScreen(
     onLaunch: (GroupAppItem) -> Unit = {},
     onAddApp: (String) -> Unit = {},
     onRenameSpace: (String, String) -> Unit = { _, _ -> },
+    onDeleteSpace: (String) -> Unit = {},
     onEnableGms: (String, Boolean) -> Unit = { _, _ -> },
     onDisableGms: (String) -> Unit = {},
     onClearAllAppData: (String) -> Unit = {},
@@ -101,6 +103,7 @@ fun HomeScreen(
 ) {
     var collapsedGroupIds by rememberSaveable { mutableStateOf(emptyList<String>()) }
     var renameGroupId by rememberSaveable { mutableStateOf<String?>(null) }
+    var deleteGroupId by rememberSaveable { mutableStateOf<String?>(null) }
     var clearAllGroupId by rememberSaveable { mutableStateOf<String?>(null) }
     var uninstallTargetKey by rememberSaveable { mutableStateOf<String?>(null) }
     var clearStorageTargetKey by rememberSaveable { mutableStateOf<String?>(null) }
@@ -164,9 +167,17 @@ fun HomeScreen(
                                         item = item,
                                         expanded = item.groupId !in collapsedGroupIds,
                                         isBusy = state.busyGroupId == item.groupId ||
+                                            state.gmsBusyGroupId == item.groupId ||
                                             state.clearingStorageGroupId == item.groupId ||
                                             state.uninstallingAppKey
                                                 ?.startsWith("${item.groupId}:") == true,
+                                        gmsBusyMessage = if (
+                                            state.gmsBusyGroupId == item.groupId
+                                        ) {
+                                            gmsBusyMessage(state.gmsBusyAction)
+                                        } else {
+                                            null
+                                        },
                                         launchingAppKey = state.launchingAppKey,
                                         uninstallingAppKey = state.uninstallingAppKey,
                                         shortcutAppKey = state.shortcutAppKey,
@@ -181,6 +192,7 @@ fun HomeScreen(
                                         onLaunch = onLaunch,
                                         onAddApp = { onAddApp(item.groupId) },
                                         onRename = { renameGroupId = item.groupId },
+                                        onDelete = { deleteGroupId = item.groupId },
                                         onEnableGms = { grantConsent ->
                                             if (grantConsent) gmsConsentGroupId = item.groupId
                                             else onEnableGms(item.groupId, false)
@@ -205,6 +217,7 @@ fun HomeScreen(
     }
 
     val renamedGroup = state.groups.firstOrNull { it.groupId == renameGroupId }
+    val deleteGroup = state.groups.firstOrNull { it.groupId == deleteGroupId }
     val clearAllGroup = state.groups.firstOrNull { it.groupId == clearAllGroupId }
     val consentGroup = state.groups.firstOrNull { it.groupId == gmsConsentGroupId }
     val disableGroup = state.groups.firstOrNull { it.groupId == gmsDisableGroupId }
@@ -220,6 +233,16 @@ fun HomeScreen(
             onConfirm = { name ->
                 onRenameSpace(group.groupId, name)
                 renameGroupId = null
+            },
+        )
+    }
+    deleteGroup?.let { group ->
+        DeleteSpaceDialog(
+            group = group,
+            onDismiss = { deleteGroupId = null },
+            onConfirm = {
+                onDeleteSpace(group.groupId)
+                deleteGroupId = null
             },
         )
     }
@@ -327,6 +350,48 @@ private fun GmsDisableDialog(onDismiss: () -> Unit, onConfirm: () -> Unit) {
             }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("取消") } },
+    )
+}
+
+@Composable
+private fun DeleteSpaceDialog(
+    group: GroupItem,
+    onDismiss: () -> Unit,
+    onConfirm: () -> Unit,
+) {
+    AlertDialog(
+        modifier = Modifier.testTag("delete-space-dialog"),
+        onDismissRequest = onDismiss,
+        icon = {
+            Icon(
+                Icons.Default.Delete,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.error,
+            )
+        },
+        title = { Text("刪除「${group.name}」？") },
+        text = {
+            Text(
+                "將永久刪除此空間、${group.apps.size} 個分身 App，以及它們的登入、App 資料與 Google 服務相容資料；" +
+                    "對應桌面捷徑會停用。手機上的原始 App 和其他分身空間不受影響，此操作無法復原。",
+            )
+        },
+        confirmButton = {
+            Button(
+                modifier = Modifier.testTag("confirm-delete-space"),
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = MaterialTheme.colorScheme.error,
+                    contentColor = MaterialTheme.colorScheme.onError,
+                ),
+                onClick = onConfirm,
+            ) { Text("永久刪除") }
+        },
+        dismissButton = {
+            TextButton(
+                modifier = Modifier.testTag("cancel-delete-space"),
+                onClick = onDismiss,
+            ) { Text("取消") }
+        },
     )
 }
 
@@ -465,7 +530,8 @@ fun SpaceDetailScreen(
         item {
             SpaceDetailHeader(
                 space = space,
-                isBusy = state.busyGroupId == space.groupId,
+                isBusy = state.busyGroupId == space.groupId ||
+                    state.gmsBusyGroupId == space.groupId,
                 onRename = { showRename = true },
                 onDelete = { showDelete = true },
             )
@@ -489,7 +555,12 @@ fun SpaceDetailScreen(
             )
         }
         if (!space.apps.any() && space.lifecycle == SpaceLifecycleState.READY) {
-            item { EmptySpaceApps(onAddApp = { onAddApp(space.groupId) }) }
+            item {
+                EmptySpaceApps(
+                    enabled = state.gmsBusyGroupId != space.groupId,
+                    onAddApp = { onAddApp(space.groupId) },
+                )
+            }
         } else {
             item {
                 AppGrid(
@@ -502,6 +573,7 @@ fun SpaceDetailScreen(
                     clearingStorageAppKey = clearingStorageAppKey,
                     enabled = space.lifecycle == SpaceLifecycleState.READY &&
                         state.busyGroupId == null &&
+                        state.gmsBusyGroupId != space.groupId &&
                         state.launchingAppKey == null &&
                         state.uninstallingAppKey == null,
                     onLaunch = onLaunch,
@@ -528,27 +600,12 @@ fun SpaceDetailScreen(
     }
 
     if (showDelete) {
-        AlertDialog(
-            modifier = Modifier.testTag("delete-space-dialog"),
-            onDismissRequest = { showDelete = false },
-            icon = { Icon(Icons.Default.Delete, contentDescription = null) },
-            title = { Text("刪除「${space.name}」？") },
-            text = {
-                Text(
-                    "將永久刪除此空間、${space.apps.size} 個分身 App 的登入與所有資料。" +
-                        "手機上的原始 App 和其他分身空間不受影響，此操作無法復原。",
-                )
-            },
-            confirmButton = {
-                Button(
-                    onClick = {
-                        onDeleteSpace(space.groupId)
-                        showDelete = false
-                    },
-                ) { Text("永久刪除") }
-            },
-            dismissButton = {
-                TextButton(onClick = { showDelete = false }) { Text("取消") }
+        DeleteSpaceDialog(
+            group = space,
+            onDismiss = { showDelete = false },
+            onConfirm = {
+                onDeleteSpace(space.groupId)
+                showDelete = false
             },
         )
     }
@@ -1021,7 +1078,7 @@ private fun SpaceDetailHeader(
 }
 
 @Composable
-private fun EmptySpaceApps(onAddApp: () -> Unit) {
+private fun EmptySpaceApps(enabled: Boolean, onAddApp: () -> Unit) {
     Card(
         modifier = Modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer),
@@ -1039,7 +1096,11 @@ private fun EmptySpaceApps(onAddApp: () -> Unit) {
                 textAlign = TextAlign.Center,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
-            Button(modifier = Modifier.padding(top = 20.dp), onClick = onAddApp) {
+            Button(
+                modifier = Modifier.padding(top = 20.dp),
+                enabled = enabled,
+                onClick = onAddApp,
+            ) {
                 Icon(Icons.Default.Add, contentDescription = null)
                 Text("加入第一個 App", modifier = Modifier.padding(start = 8.dp))
             }
@@ -1122,6 +1183,7 @@ private fun ExpandableSpaceCard(
     item: GroupItem,
     expanded: Boolean,
     isBusy: Boolean,
+    gmsBusyMessage: String?,
     launchingAppKey: String?,
     uninstallingAppKey: String?,
     shortcutAppKey: String?,
@@ -1130,6 +1192,7 @@ private fun ExpandableSpaceCard(
     onLaunch: (GroupAppItem) -> Unit,
     onAddApp: () -> Unit,
     onRename: () -> Unit,
+    onDelete: () -> Unit,
     onEnableGms: (requiresConsent: Boolean) -> Unit,
     onDisableGms: () -> Unit,
     onClearAllAppData: () -> Unit,
@@ -1186,8 +1249,11 @@ private fun ExpandableSpaceCard(
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
-                if (isBusy) {
-                    CircularProgressIndicator(modifier = Modifier.size(24.dp), strokeWidth = 2.dp)
+                if (isBusy && gmsBusyMessage == null) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(24.dp),
+                        strokeWidth = 2.dp,
+                    )
                 } else {
                     IconButton(
                         modifier = Modifier.testTag("space-expand-${item.groupId}"),
@@ -1202,27 +1268,48 @@ private fun ExpandableSpaceCard(
                             },
                         )
                     }
-                    Box {
-                        IconButton(
-                            modifier = Modifier.testTag("space-manage-${item.groupId}"),
-                            onClick = { menuExpanded = true },
-                        ) {
-                            Icon(Icons.Default.MoreVert, contentDescription = "管理 ${item.name}")
-                        }
-                        SpaceManagementMenu(
-                            item = item,
-                            expanded = menuExpanded,
-                            gmsEnabled = gmsEnabled,
-                            gmsActionEnabled = gmsActionEnabled,
-                            gmsRequiresConsent =
-                                gmsState?.profile?.networkConsent != GmsNetworkConsent.GRANTED,
-                            onDismiss = { menuExpanded = false },
-                            onRename = onRename,
-                            onEnableGms = onEnableGms,
-                            onDisableGms = onDisableGms,
-                            onClearAllAppData = onClearAllAppData,
-                        )
+                }
+                Box {
+                    IconButton(
+                        modifier = Modifier.testTag("space-manage-${item.groupId}"),
+                        enabled = !isBusy,
+                        onClick = { menuExpanded = true },
+                    ) {
+                        Icon(Icons.Default.MoreVert, contentDescription = "管理 ${item.name}")
                     }
+                    SpaceManagementMenu(
+                        item = item,
+                        expanded = menuExpanded,
+                        gmsEnabled = gmsEnabled,
+                        gmsActionEnabled = gmsActionEnabled,
+                        gmsRequiresConsent =
+                            gmsState?.profile?.networkConsent != GmsNetworkConsent.GRANTED,
+                        onDismiss = { menuExpanded = false },
+                        onRename = onRename,
+                        onEnableGms = onEnableGms,
+                        onDisableGms = onDisableGms,
+                        onClearAllAppData = onClearAllAppData,
+                        onDelete = onDelete,
+                    )
+                }
+            }
+            gmsBusyMessage?.let { message ->
+                Row(
+                    modifier = Modifier
+                        .padding(top = 14.dp)
+                        .testTag("gms-busy-space-${item.groupId}"),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                ) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(20.dp),
+                        strokeWidth = 2.dp,
+                    )
+                    Text(
+                        message,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.primary,
+                    )
                 }
             }
             SpaceStatusChip(lifecycle = item.lifecycle)
@@ -1273,6 +1360,7 @@ private fun SpaceManagementMenu(
     onEnableGms: (requiresConsent: Boolean) -> Unit,
     onDisableGms: () -> Unit,
     onClearAllAppData: () -> Unit,
+    onDelete: () -> Unit,
 ) {
     DropdownMenu(expanded = expanded, onDismissRequest = onDismiss) {
         DropdownMenuItem(
@@ -1310,7 +1398,29 @@ private fun SpaceManagementMenu(
                 onClearAllAppData()
             },
         )
+        DropdownMenuItem(
+            modifier = Modifier.testTag("delete-space-${item.groupId}"),
+            text = { Text("刪除空間", color = MaterialTheme.colorScheme.error) },
+            leadingIcon = {
+                Icon(
+                    Icons.Default.Delete,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.error,
+                )
+            },
+            onClick = {
+                onDismiss()
+                onDelete()
+            },
+        )
     }
+}
+
+private fun gmsBusyMessage(action: GmsBusyAction?): String = when (action) {
+    GmsBusyAction.ENABLE -> "正在啟用 Google 服務…"
+    GmsBusyAction.DISABLE -> "正在停用 Google 服務…"
+    GmsBusyAction.RESET -> "正在重設 Google 服務…"
+    null -> "正在處理 Google 服務…"
 }
 
 @Composable
