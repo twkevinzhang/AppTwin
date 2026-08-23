@@ -645,6 +645,39 @@ class MainViewModelLifecycleTest {
     }
 
     @Test
+    fun `cold shortcut waits for installed app enrichment before launching exact clone`() = runTest {
+        val dispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(dispatcher)
+        val refreshGate = CompletableDeferred<Unit>()
+        val operations = FakeOperations(
+            groups = listOf(
+                group().copy(apps = listOf(GroupApp(APP_PACKAGE, 2L, GroupAppState.ENABLED))),
+            ),
+            installedEntries = listOf(appItem().entry),
+            refreshGate = refreshGate,
+            launchResult = RuntimeLaunchResult.Started(
+                packageName = APP_PACKAGE,
+                processPrefix = "org.apptwin:p7",
+                dataDirectory = "/data/user/7/$APP_PACKAGE",
+            ),
+        )
+        val viewModel = viewModel(SavedStateHandle(), operations, dispatcher)
+        runCurrent()
+
+        viewModel.launchGroupApp(GROUP_ID, APP_PACKAGE)
+        runCurrent()
+
+        assertTrue(operations.launchedApps.isEmpty())
+
+        refreshGate.complete(Unit)
+        advanceUntilIdle()
+
+        assertEquals(1, operations.launchedApps.size)
+        assertEquals(GROUP_ID, operations.launchedApps.single().groupId)
+        assertEquals(APP_PACKAGE, operations.launchedApps.single().app.packageName)
+    }
+
+    @Test
     fun `shortcut to failed exact clone reports repair instead of launching another space`() =
         runTest {
             val dispatcher = StandardTestDispatcher(testScheduler)
@@ -677,6 +710,7 @@ class MainViewModelLifecycleTest {
 
     private class FakeOperations(
         private val groups: List<Group> = emptyList(),
+        private val installedEntries: List<InstalledAppEntry> = emptyList(),
         private val reconcileGate: CompletableDeferred<Unit>? = null,
         private val expectedIoDispatcher: CoroutineDispatcher? = null,
         private val loadIssues: List<GroupStoreLoadIssue> = emptyList(),
@@ -723,7 +757,7 @@ class MainViewModelLifecycleTest {
             refreshError?.let { throw it }
             return MainRefreshSnapshot(
                 storage = StorageStatus(false, 0, 0),
-                entries = emptyList<InstalledAppEntry>(),
+                entries = installedEntries,
                 groups = groups.groups,
                 activeRevisions = emptyMap(),
                 dataWarnings = groups.dataWarnings,
