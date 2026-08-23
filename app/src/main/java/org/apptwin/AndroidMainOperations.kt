@@ -43,6 +43,7 @@ import org.apptwin.gms.capabilities.GmsCapabilityAssessment
 import org.apptwin.gms.capabilities.GmsCapabilityStatus
 import org.apptwin.gms.model.GmsGroupId
 import org.apptwin.gms.model.GmsProfile
+import org.apptwin.gms.runtime.SharedPreferencesGmsOperationReceiptStore
 import org.apptwin.gms.usecases.GmsLifecycleResult
 import org.apptwin.gms.production
 import org.apptwin.operations.FileOperationRecordStore
@@ -148,7 +149,16 @@ internal class AndroidMainOperations(private val application: Application) : Mai
         runtime = runtimeController,
         journal = FileGroupAppRemovalJournal(application),
     )
-    private val gms = AndroidGmsOperations.production(application, groupStore)
+    private val gmsOperationReceipts = SharedPreferencesGmsOperationReceiptStore(application)
+    private val gms = AndroidGmsOperations.production(
+        application,
+        groupStore,
+        gmsOperationReceipts,
+    )
+    private val deletedGroupCleanup = DeletedGroupCleanup(
+        receipts = gmsOperationReceipts,
+        disableShortcuts = shortcutPublisher::disable,
+    )
 
     override suspend fun loadGroupSnapshot(): MainGroupSnapshot {
         val groupSnapshot = groupStore.loadSnapshot()
@@ -250,11 +260,10 @@ internal class AndroidMainOperations(private val application: Application) : Mai
     override suspend fun renameGroup(groupId: String, name: String): Group? =
         groupStore.rename(groupId, name)?.also(runtimeController::syncEnvironmentLabel)
 
-    override suspend fun deleteGroup(groupId: String): Group? {
-        val group = groupStore.find(groupId) ?: return null
+    override suspend fun deleteGroup(groupId: String): DeleteGroupResult {
+        val group = groupStore.find(groupId) ?: return DeleteGroupResult.NotFound
         check(lifecycle.deleteGroup(groupId)) { "群組資料不存在" }
-        shortcutPublisher.disable(group)
-        return group
+        return deletedGroupCleanup.execute(group)
     }
 
     override suspend fun addAppToGroup(groupId: String, packageName: String): Group {

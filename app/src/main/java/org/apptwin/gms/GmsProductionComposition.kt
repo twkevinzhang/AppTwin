@@ -22,6 +22,7 @@ import org.apptwin.gms.ports.ActiveGmsReleasePort
 import org.apptwin.gms.runtime.AndroidGmsRuntimeAdapter
 import org.apptwin.gms.runtime.GmsArtifactStageProvider
 import org.apptwin.gms.runtime.GmsGroupBindingResolver
+import org.apptwin.gms.runtime.GmsOperationReceiptStore
 import org.apptwin.gms.runtime.SharedPreferencesGmsOperationReceiptStore
 import org.apptwin.gms.runtime.VirtualCoreGmsRuntimeGateway
 import org.apptwin.groups.FileGroupStore
@@ -173,6 +174,7 @@ internal class PinnedActiveGmsReleasePort(
 internal fun AndroidGmsOperations.Companion.production(
     application: Application,
     groups: FileGroupStore,
+    receipts: GmsOperationReceiptStore = SharedPreferencesGmsOperationReceiptStore(application),
 ): AndroidGmsOperations {
     val artifactProvider = PinnedMicrogArtifactProvider(
         source = AssetMicrogArtifactSource(application),
@@ -182,7 +184,7 @@ internal fun AndroidGmsOperations.Companion.production(
         bindings = fileGroupBindingResolver(groups),
         artifacts = GmsArtifactStageProvider.pinned(artifactProvider),
         engine = VirtualCoreGmsRuntimeGateway(),
-        receipts = SharedPreferencesGmsOperationReceiptStore(application),
+        receipts = receipts,
     )
     return AndroidGmsOperations(
         application = application,

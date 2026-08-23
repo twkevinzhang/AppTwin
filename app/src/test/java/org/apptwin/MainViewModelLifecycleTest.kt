@@ -332,6 +332,60 @@ class MainViewModelLifecycleTest {
     }
 
     @Test
+    fun `GMS enable exposes exact busy action and blocks destructive space operations`() = runTest {
+        val dispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(dispatcher)
+        val enableGate = CompletableDeferred<Unit>()
+        val operations = FakeOperations(
+            groups = listOf(
+                group().copy(apps = listOf(GroupApp(APP_PACKAGE, 2L, GroupAppState.ENABLED))),
+            ),
+            gmsEnableGate = enableGate,
+        )
+        val viewModel = viewModel(SavedStateHandle(), operations, dispatcher)
+        advanceUntilIdle()
+
+        viewModel.enableGms(GROUP_ID)
+        runCurrent()
+
+        assertEquals(GROUP_ID, viewModel.uiState.gmsBusyGroupId)
+        assertEquals(GmsBusyAction.ENABLE, viewModel.uiState.gmsBusyAction)
+
+        viewModel.deleteGroup(GROUP_ID)
+        viewModel.launchGroupApp(viewModel.uiState.groups.single().apps.single())
+        runCurrent()
+
+        assertTrue(operations.deletedGroupIds.isEmpty())
+        assertTrue(operations.launchedApps.isEmpty())
+
+        enableGate.complete(Unit)
+        advanceUntilIdle()
+
+        assertEquals(null, viewModel.uiState.gmsBusyGroupId)
+        assertEquals(null, viewModel.uiState.gmsBusyAction)
+    }
+
+    @Test
+    fun `space deletion reports shortcut cleanup warning without hiding completed deletion`() =
+        runTest {
+            val dispatcher = StandardTestDispatcher(testScheduler)
+            Dispatchers.setMain(dispatcher)
+            val operations = FakeOperations(
+                groups = listOf(group()),
+                deleteShortcutWarning = "桌面捷徑未能完全停用",
+            )
+            val viewModel = viewModel(SavedStateHandle(), operations, dispatcher)
+            advanceUntilIdle()
+
+            viewModel.deleteGroup(GROUP_ID)
+            advanceUntilIdle()
+
+            assertEquals(listOf(GROUP_ID), operations.deletedGroupIds)
+            assertTrue(viewModel.uiState.message.orEmpty().contains("已刪除「工作」"))
+            assertTrue(viewModel.uiState.message.orEmpty().contains("桌面捷徑未能完全停用"))
+        }
+
+    @Test
     fun `corrupt GMS startup state becomes warning without losing the space snapshot`() = runTest {
         val dispatcher = StandardTestDispatcher(testScheduler)
         Dispatchers.setMain(dispatcher)
@@ -718,6 +772,8 @@ class MainViewModelLifecycleTest {
         private val diagnostics: String? = null,
         private val deepLinkCandidates: List<Pair<String, String>>? = null,
         private val gmsReconcileError: Throwable? = null,
+        private val gmsEnableGate: CompletableDeferred<Unit>? = null,
+        private val deleteShortcutWarning: String? = null,
         private val gmsStartupProductStates: Map<String, GmsGroupProductState> = emptyMap(),
         private val refreshWarnings: List<String> = emptyList(),
         private val clonePermissions: List<ClonePermissionSummary> = emptyList(),
@@ -739,6 +795,7 @@ class MainViewModelLifecycleTest {
         val gmsConsentGroups = mutableListOf<String>()
         val gmsEnableGroups = mutableListOf<String>()
         val clearedGroupIds = mutableListOf<String>()
+        val deletedGroupIds = mutableListOf<String>()
         val addedApps = mutableListOf<Pair<String, String>>()
         val launchedApps = mutableListOf<GroupAppItem>()
 
@@ -772,7 +829,12 @@ class MainViewModelLifecycleTest {
 
         override suspend fun createGroup(name: String): Group = error("unused")
         override suspend fun renameGroup(groupId: String, name: String): Group? = error("unused")
-        override suspend fun deleteGroup(groupId: String): Group? = error("unused")
+        override suspend fun deleteGroup(groupId: String): DeleteGroupResult {
+            deletedGroupIds += groupId
+            return currentGroups.firstOrNull { it.id == groupId }
+                ?.let { DeleteGroupResult.Deleted(it, deleteShortcutWarning) }
+                ?: DeleteGroupResult.NotFound
+        }
         override suspend fun addAppToGroup(groupId: String, packageName: String): Group {
             addedApps += groupId to packageName
             addAppGate?.await()
@@ -840,6 +902,7 @@ class MainViewModelLifecycleTest {
         }
         override suspend fun enableGms(groupId: String): GmsLifecycleResult {
             gmsEnableGroups += groupId
+            gmsEnableGate?.await()
             return GmsLifecycleResult.TrustedReleaseUnavailable
         }
         override suspend fun disableGms(groupId: String): GmsLifecycleResult =

@@ -236,6 +236,7 @@ fun AppTwinApp(
                             if (
                                 state.busyPackageName != null ||
                                 state.busyGroupId != null ||
+                                state.gmsBusyGroupId != null ||
                                 state.launchingAppKey != null ||
                                 state.uninstallingAppKey != null ||
                                 state.clearingStorageGroupId != null
@@ -254,6 +255,7 @@ fun AppTwinApp(
                                     onLaunch = viewModel::launchGroupApp,
                                     onAddApp = viewModel::openAppPicker,
                                     onRenameSpace = viewModel::renameGroup,
+                                    onDeleteSpace = viewModel::deleteGroup,
                                     onEnableGms = viewModel::enableGms,
                                     onDisableGms = viewModel::disableGms,
                                     onClearAllAppData = viewModel::clearAllGroupAppData,

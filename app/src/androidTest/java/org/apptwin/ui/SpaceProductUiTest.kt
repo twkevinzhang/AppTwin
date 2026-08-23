@@ -2,6 +2,7 @@ package org.apptwin.ui
 
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsEnabled
+import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
@@ -12,6 +13,7 @@ import androidx.compose.ui.test.longClick
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import org.apptwin.GroupAppItem
 import org.apptwin.GroupItem
+import org.apptwin.GmsBusyAction
 import org.apptwin.MainUiState
 import org.apptwin.groups.GroupApp
 import org.apptwin.groups.GroupAppState
@@ -110,6 +112,45 @@ class SpaceProductUiTest {
     }
 
     @Test
+    fun homeGmsBusyShowsExactSpaceFeedbackAndLocksOnlyThatSpace() {
+        setHome(
+            state = multiSpaceState.copy(
+                gmsBusyGroupId = spaceId,
+                gmsBusyAction = GmsBusyAction.ENABLE,
+            ),
+        )
+
+        composeRule.onNodeWithTag("gms-busy-space-$spaceId").assertIsDisplayed()
+        composeRule.onNodeWithText("正在啟用 Google 服務…").assertIsDisplayed()
+        composeRule.onNodeWithTag("space-manage-$spaceId").assertIsNotEnabled()
+        composeRule.onNodeWithTag("home-app-tile-${app.launchKey}").assertIsNotEnabled()
+        composeRule.onNodeWithTag("space-manage-$secondSpaceId").assertIsEnabled()
+        composeRule.onNodeWithTag("home-app-tile-${secondApp.launchKey}").assertIsEnabled()
+    }
+
+    @Test
+    fun homeDeleteSpaceRequiresConfirmationAndTargetsExactSpace() {
+        var deletedGroupId: String? = null
+        setHome(
+            state = multiSpaceState,
+            onDeleteSpace = { deletedGroupId = it },
+        )
+
+        composeRule.onNodeWithTag("space-manage-$secondSpaceId").performClick()
+        composeRule.onNodeWithTag("delete-space-$secondSpaceId").performClick()
+        composeRule.onNodeWithTag("delete-space-dialog").assertIsDisplayed()
+        composeRule.onNodeWithText("刪除「私人」？").assertIsDisplayed()
+        composeRule.onNodeWithTag("cancel-delete-space").performClick()
+        composeRule.runOnIdle { assertEquals(null, deletedGroupId) }
+
+        composeRule.onNodeWithTag("space-manage-$secondSpaceId").performClick()
+        composeRule.onNodeWithTag("delete-space-$secondSpaceId").performClick()
+        composeRule.onNodeWithTag("confirm-delete-space").performClick()
+
+        composeRule.runOnIdle { assertEquals(secondSpaceId, deletedGroupId) }
+    }
+
+    @Test
     fun homeAppLongPressShowsTheSameAppActionsWithoutLaunching() {
         var launched: GroupAppItem? = null
         setHome(state = defaultState, onLaunch = { launched = it })
@@ -149,8 +190,8 @@ class SpaceProductUiTest {
 
         composeRule.onNodeWithTag("delete-space-dialog").assertIsDisplayed()
         composeRule.onNodeWithText(
-            "將永久刪除此空間、1 個分身 App 的登入與所有資料。" +
-                "手機上的原始 App 和其他分身空間不受影響，此操作無法復原。",
+            "將永久刪除此空間、1 個分身 App，以及它們的登入、App 資料與 Google 服務相容資料；" +
+                "對應桌面捷徑會停用。手機上的原始 App 和其他分身空間不受影響，此操作無法復原。",
         ).assertIsDisplayed()
     }
 
@@ -211,6 +252,7 @@ class SpaceProductUiTest {
         onLaunch: (GroupAppItem) -> Unit = {},
         onAddApp: (String) -> Unit = {},
         onClearAllAppData: (String) -> Unit = {},
+        onDeleteSpace: (String) -> Unit = {},
     ) {
         composeRule.setContent {
             AppTwinTheme {
@@ -221,6 +263,7 @@ class SpaceProductUiTest {
                     onLaunch = onLaunch,
                     onAddApp = onAddApp,
                     onClearAllAppData = onClearAllAppData,
+                    onDeleteSpace = onDeleteSpace,
                 )
             }
         }
