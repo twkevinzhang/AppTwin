@@ -21,6 +21,7 @@ import org.apptwin.usecases.ClearCloneStorageResult
 import org.apptwin.usecases.ClearSpaceStorageResult
 import org.apptwin.groups.GroupHealth
 import org.apptwin.groups.GroupApp
+import org.apptwin.groups.GroupAppState
 import org.apptwin.groups.GroupMetadataKind
 import org.apptwin.groups.GroupReconciliationResult
 import org.apptwin.groups.GroupStoreLoadIssue
@@ -601,6 +602,72 @@ class MainViewModelLifecycleTest {
         assertEquals(1, operations.addedApps.size)
         assertEquals(1, operations.launchedApps.size)
     }
+
+    @Test
+    fun `warm shortcut to removed exact clone refreshes then reports it missing`() = runTest {
+        val dispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(dispatcher)
+        val operations = FakeOperations(groups = listOf(group()))
+        val viewModel = viewModel(SavedStateHandle(), operations, dispatcher)
+        advanceUntilIdle()
+
+        viewModel.launchGroupApp(GROUP_ID, APP_PACKAGE)
+        advanceUntilIdle()
+
+        assertTrue(operations.launchedApps.isEmpty())
+        assertEquals(
+            "此捷徑對應的分身已不存在；請從 AppTwin 重新建立捷徑",
+            viewModel.uiState.message,
+        )
+    }
+
+    @Test
+    fun `cold shortcut to removed exact clone reports it missing after initial refresh`() = runTest {
+        val dispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(dispatcher)
+        val refreshGate = CompletableDeferred<Unit>()
+        val operations = FakeOperations(
+            groups = listOf(group()),
+            refreshGate = refreshGate,
+        )
+        val viewModel = viewModel(SavedStateHandle(), operations, dispatcher)
+        runCurrent()
+
+        viewModel.launchGroupApp(GROUP_ID, APP_PACKAGE)
+        refreshGate.complete(Unit)
+        advanceUntilIdle()
+
+        assertTrue(operations.launchedApps.isEmpty())
+        assertEquals(
+            "此捷徑對應的分身已不存在；請從 AppTwin 重新建立捷徑",
+            viewModel.uiState.message,
+        )
+    }
+
+    @Test
+    fun `shortcut to failed exact clone reports repair instead of launching another space`() =
+        runTest {
+            val dispatcher = StandardTestDispatcher(testScheduler)
+            Dispatchers.setMain(dispatcher)
+            val failed = group().copy(
+                apps = listOf(GroupApp(APP_PACKAGE, 2L, GroupAppState.FAILED)),
+            )
+            val other = group().copy(
+                id = "22222222-2222-2222-2222-222222222222",
+                environmentBinding = EnvironmentBinding(8),
+                apps = listOf(GroupApp(APP_PACKAGE, 3L, GroupAppState.ENABLED)),
+            )
+            val operations = FakeOperations(groups = listOf(failed, other))
+            val viewModel = viewModel(SavedStateHandle(), operations, dispatcher)
+            advanceUntilIdle()
+
+            viewModel.launchGroupApp(GROUP_ID, APP_PACKAGE)
+            advanceUntilIdle()
+
+            assertTrue(operations.launchedApps.isEmpty())
+            assertTrue(viewModel.uiState.message.orEmpty().contains("分身目前不可使用"))
+            assertTrue(viewModel.uiState.message.orEmpty().contains("請在 AppTwin 中修復"))
+        }
 
     private fun viewModel(
         savedState: SavedStateHandle,

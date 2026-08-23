@@ -165,6 +165,7 @@ internal class AndroidMainOperations(private val application: Application) : Mai
     suspend fun refreshSnapshot(): MainRefreshSnapshot = refreshSnapshot(loadGroupSnapshot())
 
     override suspend fun refreshSnapshot(groups: MainGroupSnapshot): MainRefreshSnapshot {
+        shortcutPublisher.reconcile(groups.groups)
         val storage = readStorageStatus()
         val entries = runCatching(importer::listCloneableApps).getOrDefault(emptyList())
         groups.groups.forEach { group ->
@@ -252,6 +253,7 @@ internal class AndroidMainOperations(private val application: Application) : Mai
     override suspend fun deleteGroup(groupId: String): Group? {
         val group = groupStore.find(groupId) ?: return null
         check(lifecycle.deleteGroup(groupId)) { "群組資料不存在" }
+        shortcutPublisher.disable(group)
         return group
     }
 
@@ -316,7 +318,11 @@ internal class AndroidMainOperations(private val application: Application) : Mai
             val error = IllegalStateException("「${item.groupName}」目前無法解除安裝 App")
             return GroupAppRemovalResult.Failed(requireNotNull(error.message), error)
         }
-        return appRemoval.remove(item.groupId, item.app.packageName)
+        return appRemoval.remove(item.groupId, item.app.packageName).also { result ->
+            if (result is GroupAppRemovalResult.Succeeded) {
+                shortcutPublisher.disable(item.groupId, item.app.packageName)
+            }
+        }
     }
 
     override suspend fun clearGroupAppStorage(item: GroupAppItem): ClearCloneStorageResult =
@@ -325,8 +331,21 @@ internal class AndroidMainOperations(private val application: Application) : Mai
     override suspend fun clearGroupStorage(groupId: String): ClearSpaceStorageResult =
         clearSpaceStorage.execute(groupId)
 
-    override suspend fun createShortcut(item: GroupAppItem): ShortcutCreationResult =
-        shortcutPublisher.requestPin(item)
+    override suspend fun createShortcut(item: GroupAppItem): ShortcutCreationResult {
+        val currentGroup = groupStore.find(item.groupId)
+            ?: return ShortcutCreationResult.Failed("找不到這個分身空間")
+        val currentApp = currentGroup.apps.firstOrNull { app ->
+            app.packageName == item.app.packageName &&
+                app.addedAtEpochMillis == item.app.addedAtEpochMillis
+        } ?: return ShortcutCreationResult.Failed("找不到這個分身 App")
+        return shortcutPublisher.requestPin(
+            item.copy(
+                groupName = currentGroup.name,
+                groupHealth = currentGroup.health,
+                app = currentApp,
+            ),
+        )
+    }
 
     override suspend fun exportDiagnostics(): String {
         val groupSnapshot = groupStore.loadSnapshot()

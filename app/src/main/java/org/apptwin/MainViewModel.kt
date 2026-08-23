@@ -61,7 +61,7 @@ data class GroupAppItem(
     val cameraGranted: Boolean = false,
     val microphoneGranted: Boolean = false,
 ) {
-    val launchKey: String = "$groupId:${app.packageName}"
+    val launchKey: String = GroupAppLaunchContract.launchKey(groupId, app.packageName)
 }
 
 data class GroupItem(
@@ -390,17 +390,26 @@ class MainViewModel internal constructor(
             showMessage("偵測到 ${snapshot.dataWarnings.size} 筆資料完整性問題；原始資料已保留")
         }
         pendingLaunch?.let { target ->
-            groupItems.asSequence()
+            val pending = groupItems.asSequence()
                 .flatMap { it.apps.asSequence() }
                 .firstOrNull { item ->
                     item.app.packageName == target.packageName &&
                         (target.groupId == null || item.groupId == target.groupId)
                 }
-                ?.let { pending ->
-                    if (tryLaunchGroupApp(pending) != LaunchAttempt.BUSY) {
-                        pendingLaunch = null
-                    }
+            if (pending != null) {
+                if (
+                    target.groupId != null &&
+                    pending.lifecycle !in setOf(CloneLifecycleState.READY, CloneLifecycleState.PREPARING)
+                ) {
+                    pendingLaunch = null
+                    showUnavailableShortcutMessage(pending)
+                } else if (tryLaunchGroupApp(pending) != LaunchAttempt.BUSY) {
+                    pendingLaunch = null
                 }
+            } else if (target.groupId != null) {
+                pendingLaunch = null
+                showMessage("此捷徑對應的分身已不存在；請從 AppTwin 重新建立捷徑")
+            }
         }
     }
 
@@ -797,6 +806,8 @@ class MainViewModel internal constructor(
             when (result) {
                 ShortcutCreationResult.Requested ->
                     showMessage("請在啟動器確認建立「${item.groupName} ${item.appLabel}」捷徑")
+                ShortcutCreationResult.Updated ->
+                    showMessage("已更新「${item.groupName} ${item.appLabel}」捷徑")
                 ShortcutCreationResult.Unsupported ->
                     showMessage("目前的啟動器不支援固定捷徑")
                 is ShortcutCreationResult.Failed ->
@@ -915,6 +926,10 @@ class MainViewModel internal constructor(
     }
 
     fun launchGroupApp(groupId: String, packageName: String) {
+        if (groupId.isBlank() || packageName.isBlank()) {
+            showMessage("捷徑資料無效；請從 AppTwin 重新建立捷徑")
+            return
+        }
         if (uiState.showOnboarding) {
             pendingLaunch = PendingLaunch(groupId, packageName)
             return
@@ -923,9 +938,14 @@ class MainViewModel internal constructor(
             .flatMap { it.apps.asSequence() }
             .firstOrNull { it.groupId == groupId && it.app.packageName == packageName }
         if (item != null) {
-            launchGroupApp(item)
+            if (item.lifecycle in setOf(CloneLifecycleState.READY, CloneLifecycleState.PREPARING)) {
+                launchGroupApp(item)
+            } else {
+                showUnavailableShortcutMessage(item)
+            }
         } else {
             pendingLaunch = PendingLaunch(groupId, packageName)
+            if (!uiState.isRefreshing) refresh()
         }
     }
 
@@ -938,6 +958,13 @@ class MainViewModel internal constructor(
 
     fun consumeMessage(messageId: Long) {
         if (uiState.messageId == messageId) uiState = uiState.copy(message = null)
+    }
+
+    private fun showUnavailableShortcutMessage(item: GroupAppItem) {
+        showMessage(
+            "「${item.groupName}」的 ${item.appLabel} 分身目前不可使用；" +
+                "請在 AppTwin 中修復",
+        )
     }
 
     private fun reconcileAndRefresh() {

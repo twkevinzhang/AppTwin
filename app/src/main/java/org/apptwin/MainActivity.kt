@@ -141,11 +141,11 @@ class MainActivity : ComponentActivity() {
     private fun routeProductIntent(intent: Intent) {
         when (intent.action) {
             GroupAppLaunchContract.ACTION_LAUNCH_GROUP_APP -> {
-                val groupId = intent.getStringExtra(GroupAppLaunchContract.EXTRA_GROUP_ID)
-                val packageName = intent.getStringExtra(GroupAppLaunchContract.EXTRA_PACKAGE_NAME)
-                if (!groupId.isNullOrBlank() && !packageName.isNullOrBlank()) {
-                    window.decorView.post { mainViewModel.launchGroupApp(groupId, packageName) }
-                }
+                val groupId = intent.getStringExtra(GroupAppLaunchContract.EXTRA_GROUP_ID).orEmpty()
+                val packageName = intent.getStringExtra(
+                    GroupAppLaunchContract.EXTRA_PACKAGE_NAME,
+                ).orEmpty()
+                window.decorView.post { mainViewModel.launchGroupApp(groupId, packageName) }
             }
             Intent.ACTION_VIEW -> intent.dataString
                 ?.takeIf { intent.data?.scheme in setOf("http", "https") }
