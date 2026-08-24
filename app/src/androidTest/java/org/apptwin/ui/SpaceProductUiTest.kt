@@ -96,6 +96,37 @@ class SpaceProductUiTest {
     }
 
     @Test
+    fun homePopulatedSpaceAddsAppToThatExactSpace() {
+        var addAppGroupId: String? = null
+        setHome(
+            state = multiSpaceState,
+            onAddApp = { addAppGroupId = it },
+        )
+
+        composeRule.onNodeWithTag("home-add-app-$secondSpaceId")
+            .assertIsDisplayed()
+            .performClick()
+
+        composeRule.runOnIdle { assertEquals(secondSpaceId, addAppGroupId) }
+    }
+
+    @Test
+    fun homeBusyPopulatedSpaceDoesNotAddApp() {
+        var addAppGroupId: String? = null
+        setHome(
+            state = multiSpaceState.copy(gmsBusyGroupId = spaceId),
+            onAddApp = { addAppGroupId = it },
+        )
+
+        composeRule.onNodeWithTag("home-add-app-$spaceId")
+            .assertIsDisplayed()
+            .assertIsNotEnabled()
+            .performClick()
+
+        composeRule.runOnIdle { assertEquals(null, addAppGroupId) }
+    }
+
+    @Test
     fun homeManageMenuShowsSpaceActionsAndDoesNotNavigate() {
         var clearAllGroupId: String? = null
         setHome(state = multiSpaceState, onClearAllAppData = { clearAllGroupId = it })
@@ -123,7 +154,7 @@ class SpaceProductUiTest {
         composeRule.onNodeWithTag("gms-busy-space-$spaceId").assertIsDisplayed()
         composeRule.onNodeWithText("正在啟用 Google 服務…").assertIsDisplayed()
         composeRule.onNodeWithTag("space-manage-$spaceId").assertIsNotEnabled()
-        composeRule.onNodeWithTag("home-app-tile-${app.launchKey}").assertIsNotEnabled()
+        composeRule.onNodeWithTag("group-app-tile-${app.launchKey}").assertIsNotEnabled()
         composeRule.onNodeWithTag("space-manage-$secondSpaceId").assertIsEnabled()
         composeRule.onNodeWithTag("home-app-tile-${secondApp.launchKey}").assertIsEnabled()
     }
