@@ -1328,6 +1328,7 @@ private fun ExpandableSpaceCard(
                 } else {
                     HomeAppGrid(
                         modifier = Modifier.padding(top = 16.dp),
+                        groupId = item.groupId,
                         apps = item.apps,
                         launchingAppKey = launchingAppKey,
                         uninstallingAppKey = uninstallingAppKey,
@@ -1341,6 +1342,7 @@ private fun ExpandableSpaceCard(
                         onRepair = onRepair,
                         onClearStorage = onClearStorage,
                         onManagePermissions = onManagePermissions,
+                        onAddApp = onAddApp,
                     )
                 }
             }
@@ -1426,6 +1428,7 @@ private fun gmsBusyMessage(action: GmsBusyAction?): String = when (action) {
 @Composable
 private fun HomeAppGrid(
     modifier: Modifier,
+    groupId: String,
     apps: List<GroupAppItem>,
     launchingAppKey: String?,
     uninstallingAppKey: String?,
@@ -1439,6 +1442,7 @@ private fun HomeAppGrid(
     onRepair: (GroupAppItem) -> Unit,
     onClearStorage: (GroupAppItem) -> Unit,
     onManagePermissions: (GroupAppItem) -> Unit,
+    onAddApp: () -> Unit,
 ) {
     BoxWithConstraints(modifier = modifier.fillMaxWidth()) {
         val columns = when {
@@ -1446,36 +1450,50 @@ private fun HomeAppGrid(
             maxWidth >= 560.dp -> 4
             else -> 3
         }
+        val cells = buildList<GroupAppItem?> {
+            addAll(apps)
+            add(null)
+        }
         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            apps.chunked(columns).forEach { rowApps ->
+            cells.chunked(columns).forEach { rowCells ->
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
-                    rowApps.forEach { app ->
-                        Box(
-                            modifier = Modifier
-                                .weight(1f)
-                                .testTag("home-app-tile-${app.launchKey}"),
-                        ) {
-                            AppGridTile(
-                                app = app,
-                                isLaunching = launchingAppKey == app.launchKey,
-                                isUninstalling = uninstallingAppKey == app.launchKey,
-                                isCreatingShortcut = shortcutAppKey == app.launchKey,
-                                isRepairing = repairingAppKey == app.launchKey,
-                                isClearingStorage = clearingStorageAppKey == app.launchKey,
-                                enabled = enabled && launchingAppKey == null,
-                                onClick = { onLaunch(app) },
-                                onUninstall = { onUninstall(app) },
-                                onCreateShortcut = { onCreateShortcut(app) },
-                                onRepair = { onRepair(app) },
-                                onClearStorage = { onClearStorage(app) },
-                                onManagePermissions = { onManagePermissions(app) },
+                    rowCells.forEach { app ->
+                        if (app == null) {
+                            AddAppTile(
+                                enabled = enabled,
+                                onClick = onAddApp,
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .testTag("home-add-app-$groupId"),
                             )
+                        } else {
+                            Box(
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .testTag("home-app-tile-${app.launchKey}"),
+                            ) {
+                                AppGridTile(
+                                    app = app,
+                                    isLaunching = launchingAppKey == app.launchKey,
+                                    isUninstalling = uninstallingAppKey == app.launchKey,
+                                    isCreatingShortcut = shortcutAppKey == app.launchKey,
+                                    isRepairing = repairingAppKey == app.launchKey,
+                                    isClearingStorage = clearingStorageAppKey == app.launchKey,
+                                    enabled = enabled && launchingAppKey == null,
+                                    onClick = { onLaunch(app) },
+                                    onUninstall = { onUninstall(app) },
+                                    onCreateShortcut = { onCreateShortcut(app) },
+                                    onRepair = { onRepair(app) },
+                                    onClearStorage = { onClearStorage(app) },
+                                    onManagePermissions = { onManagePermissions(app) },
+                                )
+                            }
                         }
                     }
-                    repeat(columns - rowApps.size) { Spacer(Modifier.weight(1f)) }
+                    repeat(columns - rowCells.size) { Spacer(Modifier.weight(1f)) }
                 }
             }
         }
@@ -1856,9 +1874,13 @@ private fun cloneLifecycleLabel(lifecycle: CloneLifecycleState): String = when (
 }
 
 @Composable
-private fun AddAppTile(enabled: Boolean, onClick: () -> Unit) {
+private fun AddAppTile(
+    enabled: Boolean,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
     Column(
-        modifier = Modifier
+        modifier = modifier
             .fillMaxWidth()
             .aspectRatio(0.82f)
             .clip(MaterialTheme.shapes.medium)
