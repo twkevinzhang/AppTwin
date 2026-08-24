@@ -81,7 +81,6 @@ data class MainUiState(
     val destination: MainDestination = MainDestination.HOME,
     val apps: List<AppItem> = emptyList(),
     val groups: List<GroupItem> = emptyList(),
-    val selectedGroupId: String? = null,
     val appPickerGroupId: String? = null,
     val showOnboarding: Boolean = false,
     val isRefreshing: Boolean = true,
@@ -234,7 +233,6 @@ class MainViewModel internal constructor(
             destination = savedStateHandle.get<String>(DESTINATION_KEY)
                 ?.let(::destinationFromSavedState)
                 ?: MainDestination.HOME,
-            selectedGroupId = savedStateHandle[SELECTED_GROUP_KEY],
             appPickerGroupId = savedStateHandle.get<String>(APP_PICKER_GROUP_KEY),
             showOnboarding = !onboardingStore.isCompleted(),
         ),
@@ -248,35 +246,11 @@ class MainViewModel internal constructor(
     fun navigate(destination: MainDestination) {
         pickerRequestGeneration += 1
         savedStateHandle[DESTINATION_KEY] = destination.name
-        savedStateHandle[SELECTED_GROUP_KEY] = null
         savedStateHandle[APP_PICKER_GROUP_KEY] = null
         uiState = uiState.copy(
             destination = destination,
-            selectedGroupId = null,
             appPickerGroupId = null,
         )
-    }
-
-    fun openGroup(groupId: String) {
-        if (uiState.groups.none { it.groupId == groupId }) {
-            showMessage("找不到這個分身空間")
-            return
-        }
-        savedStateHandle[DESTINATION_KEY] = MainDestination.HOME.name
-        savedStateHandle[SELECTED_GROUP_KEY] = groupId
-        savedStateHandle[APP_PICKER_GROUP_KEY] = null
-        uiState = uiState.copy(
-            destination = MainDestination.HOME,
-            selectedGroupId = groupId,
-            appPickerGroupId = null,
-        )
-    }
-
-    fun closeGroup() {
-        pickerRequestGeneration += 1
-        savedStateHandle[SELECTED_GROUP_KEY] = null
-        savedStateHandle[APP_PICKER_GROUP_KEY] = null
-        uiState = uiState.copy(selectedGroupId = null, appPickerGroupId = null)
     }
 
     fun completeOnboarding() {
@@ -306,11 +280,9 @@ class MainViewModel internal constructor(
                 group.health != GroupHealth.HEALTHY -> showMessage("這個群組目前無法加入 App")
                 else -> {
                     savedStateHandle[DESTINATION_KEY] = MainDestination.HOME.name
-                    savedStateHandle[SELECTED_GROUP_KEY] = groupId
                     savedStateHandle[APP_PICKER_GROUP_KEY] = groupId
                     uiState = uiState.copy(
                         destination = MainDestination.HOME,
-                        selectedGroupId = groupId,
                         appPickerGroupId = groupId,
                     )
                 }
@@ -385,7 +357,7 @@ class MainViewModel internal constructor(
             enrichmentComplete = true,
         )
         val warningsChanged = snapshot.dataWarnings != uiState.dataWarnings
-        updateSelectedGroups(groupItems)
+        updateAppPickerGroup(groupItems)
         uiState = uiState.copy(
             apps = appItems,
             groups = groupItems,
@@ -434,7 +406,7 @@ class MainViewModel internal constructor(
             enrichmentComplete = false,
         )
         val warningsChanged = snapshot.dataWarnings != uiState.dataWarnings
-        updateSelectedGroups(groupItems)
+        updateAppPickerGroup(groupItems)
         uiState = uiState.copy(
             groups = groupItems,
             dataWarnings = snapshot.dataWarnings,
@@ -445,23 +417,14 @@ class MainViewModel internal constructor(
         }
     }
 
-    private fun updateSelectedGroups(groupItems: List<GroupItem>) {
+    private fun updateAppPickerGroup(groupItems: List<GroupItem>) {
         val restoredPickerId = uiState.appPickerGroupId?.takeIf { selectedId ->
-            groupItems.any { it.groupId == selectedId }
-        }
-        val restoredSelectedId = uiState.selectedGroupId?.takeIf { selectedId ->
             groupItems.any { it.groupId == selectedId }
         }
         if (restoredPickerId != uiState.appPickerGroupId) {
             savedStateHandle[APP_PICKER_GROUP_KEY] = null
         }
-        if (restoredSelectedId != uiState.selectedGroupId) {
-            savedStateHandle[SELECTED_GROUP_KEY] = null
-        }
-        uiState = uiState.copy(
-            selectedGroupId = restoredSelectedId,
-            appPickerGroupId = restoredPickerId,
-        )
+        uiState = uiState.copy(appPickerGroupId = restoredPickerId)
     }
 
     private fun buildGroupItems(
@@ -562,7 +525,6 @@ class MainViewModel internal constructor(
                     }
                 }
                 if (deletion is DeleteGroupResult.Deleted) {
-                    if (uiState.selectedGroupId == groupId) closeGroup()
                     if (uiState.appPickerGroupId == groupId) closeAppPicker()
                 }
                 refresh()
@@ -1046,7 +1008,7 @@ class MainViewModel internal constructor(
                             group.copy(gmsCompatibility = productState)
                         } ?: group
                     }
-                    updateSelectedGroups(updatedGroups)
+                    updateAppPickerGroup(updatedGroups)
                     uiState = uiState.copy(groups = updatedGroups)
                 }
                 if (result.cloudMessagingRepairFailures.isNotEmpty()) {
@@ -1141,7 +1103,6 @@ class MainViewModel internal constructor(
 
     private companion object {
         const val DESTINATION_KEY = "main.destination"
-        const val SELECTED_GROUP_KEY = "main.selectedGroupId"
         const val APP_PICKER_GROUP_KEY = "main.appPickerGroupId"
 
         fun destinationFromSavedState(value: String): MainDestination? =

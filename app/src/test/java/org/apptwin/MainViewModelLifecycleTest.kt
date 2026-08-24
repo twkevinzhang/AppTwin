@@ -74,16 +74,13 @@ class MainViewModelLifecycleTest {
         advanceUntilIdle()
 
         assertEquals(MainDestination.HOME, first.uiState.destination)
-        assertEquals(GROUP_ID, first.uiState.selectedGroupId)
         assertEquals(GROUP_ID, first.uiState.appPickerGroupId)
-        assertEquals(GROUP_ID, savedState.get<String>("main.selectedGroupId"))
         assertEquals(GROUP_ID, savedState.get<String>("main.appPickerGroupId"))
 
         val recreated = viewModel(savedState, operations, ioDispatcher)
         advanceUntilIdle()
 
         assertEquals(MainDestination.HOME, recreated.uiState.destination)
-        assertEquals(GROUP_ID, recreated.uiState.selectedGroupId)
         assertEquals(GROUP_ID, recreated.uiState.appPickerGroupId)
     }
 

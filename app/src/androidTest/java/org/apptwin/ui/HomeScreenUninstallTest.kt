@@ -34,7 +34,7 @@ class HomeScreenUninstallTest {
     @Test
     fun shortTapLaunchesApp() {
         var launched: GroupAppItem? = null
-        setSpaceDetail(onLaunch = { launched = it })
+        setHome(onLaunch = { launched = it })
 
         composeRule.onNodeWithTag(tileTag).performClick()
 
@@ -47,7 +47,7 @@ class HomeScreenUninstallTest {
     fun longPressDoesNotLaunchAndCancelThenConfirmControlsUninstall() {
         var launched: GroupAppItem? = null
         var uninstalled: GroupAppItem? = null
-        setSpaceDetail(
+        setHome(
             onLaunch = { launched = it },
             onUninstallApp = { uninstalled = it },
         )
@@ -79,7 +79,7 @@ class HomeScreenUninstallTest {
     @Test
     fun uninstallBusyDisablesTileAndShowsProgressLabel() {
         var launched: GroupAppItem? = null
-        setSpaceDetail(
+        setHome(
             state = uiState.copy(uninstallingAppKey = appItem.launchKey),
             onLaunch = { launched = it },
         )
@@ -95,9 +95,9 @@ class HomeScreenUninstallTest {
         composeRule.setContent {
             var clearingStorageAppKey by remember { mutableStateOf<String?>(null) }
             AppTwinTheme {
-                SpaceDetailScreen(
+                HomeScreen(
                     state = uiState,
-                    space = uiState.groups.single(),
+                    onCreateGroup = {},
                     onLaunch = {},
                     onAddApp = {},
                     onRenameSpace = { _, _ -> },
@@ -128,7 +128,7 @@ class HomeScreenUninstallTest {
         composeRule.onNodeWithTag("confirm-clear-storage").performClick()
 
         composeRule.runOnIdle { assertEquals(appItem, cleared) }
-        composeRule.onNodeWithTag("clear-storage-progress").assertIsDisplayed()
+        composeRule.onNodeWithText("清除中…").assertIsDisplayed()
         composeRule.onNodeWithTag("confirm-clear-storage").assertIsNotEnabled()
         composeRule.onNodeWithTag("cancel-clear-storage").assertIsNotEnabled()
         composeRule.onNodeWithTag(tileTag).assertIsNotEnabled()
@@ -143,7 +143,6 @@ class HomeScreenUninstallTest {
                         isRefreshing = false,
                         dataWarnings = listOf("corrupt group metadata"),
                     ),
-                    onOpenSpace = {},
                     onCreateGroup = {},
                 )
             }
@@ -153,16 +152,16 @@ class HomeScreenUninstallTest {
         composeRule.onNodeWithText("偵測到 1 筆空間資料問題").assertIsDisplayed()
     }
 
-    private fun setSpaceDetail(
+    private fun setHome(
         state: MainUiState = uiState,
         onLaunch: (GroupAppItem) -> Unit = {},
         onUninstallApp: (GroupAppItem) -> Unit = {},
     ) {
         composeRule.setContent {
             AppTwinTheme {
-                SpaceDetailScreen(
+                HomeScreen(
                     state = state,
-                    space = state.groups.single(),
+                    onCreateGroup = {},
                     onLaunch = onLaunch,
                     onAddApp = {},
                     onRenameSpace = { _, _ -> },

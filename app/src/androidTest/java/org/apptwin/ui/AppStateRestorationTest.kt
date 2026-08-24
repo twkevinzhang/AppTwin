@@ -3,7 +3,7 @@ package org.apptwin.ui
 import androidx.compose.ui.test.assertTextContains
 import androidx.compose.ui.test.junit4.StateRestorationTester
 import androidx.compose.ui.test.junit4.createComposeRule
-import androidx.compose.ui.test.onNodeWithContentDescription
+import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performTextClearance
@@ -73,21 +73,14 @@ class AppStateRestorationTest {
         )
         restorationTester.setContent {
             AppTwinTheme {
-                SpaceDetailScreen(
+                HomeScreen(
                     state = MainUiState(isRefreshing = false, groups = listOf(space)),
-                    space = space,
-                    onLaunch = {},
-                    onAddApp = {},
+                    onCreateGroup = {},
                     onRenameSpace = { _, _ -> },
-                    onDeleteSpace = {},
-                    onUninstallApp = {},
-                    onCreateShortcut = {},
-                    onRepairApp = {},
-                    onSetPermission = { _, _, _ -> },
                 )
             }
         }
-        composeRule.onNodeWithContentDescription("空間選單").performClick()
+        composeRule.onNodeWithTag("space-manage-$GROUP_ID").performClick()
         composeRule.onNodeWithText("重新命名空間").performClick()
         composeRule.onNodeWithText("空間名稱").performTextClearance()
         composeRule.onNodeWithText("空間名稱").performTextInput("專案 A")
