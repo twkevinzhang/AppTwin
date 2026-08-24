@@ -4,7 +4,6 @@ import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.junit4.createComposeRule
-import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
@@ -15,6 +14,12 @@ import org.apptwin.GroupAppItem
 import org.apptwin.GroupItem
 import org.apptwin.GmsBusyAction
 import org.apptwin.MainUiState
+import org.apptwin.gms.GmsGroupProductState
+import org.apptwin.gms.model.GmsDesiredState
+import org.apptwin.gms.model.GmsGroupId
+import org.apptwin.gms.model.GmsNetworkConsent
+import org.apptwin.gms.model.GmsObservedState
+import org.apptwin.gms.model.GmsProfile
 import org.apptwin.groups.GroupApp
 import org.apptwin.groups.GroupAppState
 import org.apptwin.groups.GroupHealth
@@ -160,6 +165,38 @@ class SpaceProductUiTest {
     }
 
     @Test
+    fun homeDisabledGmsRequiresConsentAndEnablesTheExactSpace() {
+        var enabled: Pair<String, Boolean>? = null
+        setHome(
+            state = defaultState.copy(groups = listOf(space.copy(gmsCompatibility = disabledGms))),
+            onEnableGms = { groupId, consent -> enabled = groupId to consent },
+        )
+
+        composeRule.onNodeWithTag("space-manage-$spaceId").performClick()
+        composeRule.onNodeWithTag("gms-toggle-space-$spaceId").performClick()
+        composeRule.onNodeWithTag("gms-consent-dialog").assertIsDisplayed()
+        composeRule.onNodeWithTag("confirm-gms-consent").performClick()
+
+        composeRule.runOnIdle { assertEquals(spaceId to true, enabled) }
+    }
+
+    @Test
+    fun homeEnabledGmsRequiresConfirmationAndDisablesTheExactSpace() {
+        var disabledGroupId: String? = null
+        setHome(
+            state = defaultState.copy(groups = listOf(space.copy(gmsCompatibility = enabledGms))),
+            onDisableGms = { disabledGroupId = it },
+        )
+
+        composeRule.onNodeWithTag("space-manage-$spaceId").performClick()
+        composeRule.onNodeWithTag("gms-toggle-space-$spaceId").performClick()
+        composeRule.onNodeWithTag("gms-disable-dialog").assertIsDisplayed()
+        composeRule.onNodeWithTag("confirm-gms-disable").performClick()
+
+        composeRule.runOnIdle { assertEquals(spaceId, disabledGroupId) }
+    }
+
+    @Test
     fun homeDeleteSpaceRequiresConfirmationAndTargetsExactSpace() {
         var deletedGroupId: String? = null
         setHome(
@@ -214,9 +251,9 @@ class SpaceProductUiTest {
 
     @Test
     fun deleteSpaceSummarizesAppsAndUnaffectedData() {
-        setSpaceDetail()
+        setHome(state = defaultState)
 
-        composeRule.onNodeWithContentDescription("空間選單").performClick()
+        composeRule.onNodeWithTag("space-manage-$spaceId").performClick()
         composeRule.onNodeWithText("刪除空間").performClick()
 
         composeRule.onNodeWithTag("delete-space-dialog").assertIsDisplayed()
@@ -228,7 +265,7 @@ class SpaceProductUiTest {
 
     @Test
     fun sourceMissingAppExplainsWhyItCannotLaunch() {
-        setSpaceDetail(
+        setHome(
             state = defaultState.copy(
                 groups = listOf(
                     space.copy(apps = listOf(app.copy(sourceInstalled = false))),
@@ -244,7 +281,7 @@ class SpaceProductUiTest {
 
     @Test
     fun clonePermissionDialogExplainsPerSpaceScope() {
-        setSpaceDetail()
+        setHome(state = defaultState)
 
         composeRule.onNodeWithTag("group-app-tile-${app.launchKey}")
             .performTouchInput { longClick() }
@@ -258,43 +295,26 @@ class SpaceProductUiTest {
         composeRule.onNodeWithText("麥克風").assertIsDisplayed()
     }
 
-    private fun setSpaceDetail(state: MainUiState = defaultState) {
-        composeRule.setContent {
-            AppTwinTheme {
-                SpaceDetailScreen(
-                    state = state,
-                    space = state.groups.single(),
-                    onLaunch = {},
-                    onAddApp = {},
-                    onRenameSpace = { _, _ -> },
-                    onDeleteSpace = {},
-                    onUninstallApp = {},
-                    onCreateShortcut = {},
-                    onRepairApp = {},
-                    onSetPermission = { _, _, _ -> },
-                )
-            }
-        }
-    }
-
     private fun setHome(
         state: MainUiState,
-        onOpenSpace: (String) -> Unit = {},
         onLaunch: (GroupAppItem) -> Unit = {},
         onAddApp: (String) -> Unit = {},
         onClearAllAppData: (String) -> Unit = {},
         onDeleteSpace: (String) -> Unit = {},
+        onEnableGms: (String, Boolean) -> Unit = { _, _ -> },
+        onDisableGms: (String) -> Unit = {},
     ) {
         composeRule.setContent {
             AppTwinTheme {
                 HomeScreen(
                     state = state,
-                    onOpenSpace = onOpenSpace,
                     onCreateGroup = {},
                     onLaunch = onLaunch,
                     onAddApp = onAddApp,
                     onClearAllAppData = onClearAllAppData,
                     onDeleteSpace = onDeleteSpace,
+                    onEnableGms = onEnableGms,
+                    onDisableGms = onDisableGms,
                 )
             }
         }
@@ -325,6 +345,18 @@ class SpaceProductUiTest {
             apps = listOf(app),
         )
         val defaultState = MainUiState(isRefreshing = false, groups = listOf(space))
+        val disabledGms = GmsGroupProductState(
+            profile = GmsProfile.disabled(GmsGroupId(spaceId)),
+            capabilities = emptyList(),
+        )
+        val enabledGms = disabledGms.copy(
+            profile = disabledGms.profile.copy(
+                desiredState = GmsDesiredState.ENABLED,
+                observedState = GmsObservedState.READY_PARTIAL,
+                networkConsent = GmsNetworkConsent.GRANTED,
+                observedReleaseId = "microg-v1",
+            ),
+        )
         val secondApp = GroupAppItem(
             groupId = secondSpaceId,
             groupName = "私人",
