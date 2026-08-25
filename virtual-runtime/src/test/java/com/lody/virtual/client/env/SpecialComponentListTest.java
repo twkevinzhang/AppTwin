@@ -5,6 +5,7 @@ import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 
 import android.Manifest;
+import android.app.DownloadManager;
 import android.content.Intent;
 
 import org.junit.Test;
@@ -60,6 +61,27 @@ public class SpecialComponentListTest {
                 "_VA_protected_com.example.CUSTOM",
                 Intent.ACTION_SCREEN_ON
         )), actions);
+    }
+
+    @Test
+    public void registrationActionsSeparateExternalSystemSendersFromInternalActions() {
+        Set<String> internalActions = new LinkedHashSet<>(Arrays.asList(
+                "_VA_protected_com.example.CUSTOM",
+                DownloadManager.ACTION_DOWNLOAD_COMPLETE,
+                Intent.ACTION_SCREEN_ON
+        ));
+        Set<String> systemActions = new LinkedHashSet<>(internalActions);
+
+        SpecialComponentList.retainSystemBroadcastActions(internalActions, false);
+        SpecialComponentList.retainSystemBroadcastActions(systemActions, true);
+
+        assertEquals(new LinkedHashSet<>(Arrays.asList(
+                "_VA_protected_com.example.CUSTOM"
+        )), internalActions);
+        assertEquals(new LinkedHashSet<>(Arrays.asList(
+                DownloadManager.ACTION_DOWNLOAD_COMPLETE,
+                Intent.ACTION_SCREEN_ON
+        )), systemActions);
     }
 
     @Test

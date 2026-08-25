@@ -11,9 +11,11 @@ import com.lody.virtual.client.stub.StubKeepAliveService;
 import com.lody.virtual.helper.utils.VLog;
 import com.lody.virtual.remote.PendingResultData;
 
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.IdentityHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 
 /**
@@ -58,10 +60,22 @@ final class LinePushProcessGuard {
                 lease = new Lease(process);
                 leases.put(process, lease);
             }
+            final Lease activeLease = lease;
             handler.removeCallbacks(lease.releaseTask);
+            Runnable tracedDispatch = () -> {
+                LinePushDeliveryDiagnostics.lease(
+                        result, "dispatch", process, activeLease.protection.dispatchCount());
+                dispatch.run();
+            };
             enqueueAction = lease.protection.enqueue(
-                    result.mToken, dispatch, result::finish);
+                    result.mToken, tracedDispatch, () -> {
+                        LinePushDeliveryDiagnostics.finish(result.mToken, "lease-aborted");
+                        result.finish();
+                    });
             leasesByToken.put(result.mToken, lease);
+            LinePushDeliveryDiagnostics.lease(result,
+                    "lease-" + enqueueAction.name().toLowerCase(Locale.US),
+                    process, lease.protection.dispatchCount());
         }
 
         if (enqueueAction == LinePushProcessProtection.EnqueueAction.START_BIND) {
@@ -79,8 +93,10 @@ final class LinePushProcessGuard {
         synchronized (this) {
             Lease lease = leasesByToken.remove(token);
             if (lease == null || !lease.protection.complete(token)) {
+                LinePushDeliveryDiagnostics.checkpoint(token, "lease-finished");
                 return;
             }
+            LinePushDeliveryDiagnostics.checkpoint(token, "lease-finished");
             handler.removeCallbacks(lease.releaseTask);
             handler.postDelayed(lease.releaseTask, RELEASE_GRACE_MILLIS);
         }
@@ -102,6 +118,28 @@ final class LinePushProcessGuard {
         unbind(lease);
     }
 
+    /** Cancels queued LINE dispatches for a stop scope; dispatched results keep their owner. */
+    void cancelPackageUser(String packageName, int userId) {
+        List<ProcessRecord> matches = new ArrayList<>();
+        synchronized (this) {
+            for (ProcessRecord process : leases.keySet()) {
+                String processPackage = process.info == null
+                        ? null : process.info.packageName;
+                if (packageName.equals(processPackage)
+                        && (userId == LinePushStopFence.ALL_USERS || process.userId == userId)) {
+                    matches.add(process);
+                }
+            }
+        }
+        for (ProcessRecord process : matches) {
+            release(process);
+        }
+    }
+
+    synchronized int activeLeaseCount() {
+        return leases.size();
+    }
+
     private void beginBinding(Lease lease) {
         handler.postDelayed(lease.bindTimeoutTask, BIND_TIMEOUT_MILLIS);
         Intent intent = new Intent().setComponent(componentName(context, lease.process.vpid));
@@ -110,7 +148,7 @@ final class LinePushProcessGuard {
             bound = context.bindService(intent, lease.connection, bindingFlags());
         } catch (RuntimeException error) {
             VLog.e(TAG, "Unable to thaw LINE push process slot=" + lease.process.vpid
-                    + " error=" + error);
+                    + " errorType=" + error.getClass().getSimpleName());
             bound = false;
         }
         synchronized (this) {

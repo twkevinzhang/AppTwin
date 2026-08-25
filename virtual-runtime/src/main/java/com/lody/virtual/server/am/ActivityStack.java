@@ -45,6 +45,21 @@ import static android.content.pm.ActivityInfo.LAUNCH_SINGLE_TOP;
 
 /* package */ class ActivityStack {
 
+    static final class DaemonActivityWorkload {
+        final int taskCount;
+        final int activityCount;
+        final boolean observationReliable;
+        final boolean workloadChanged;
+
+        DaemonActivityWorkload(int taskCount, int activityCount,
+                boolean observationReliable, boolean workloadChanged) {
+            this.taskCount = taskCount;
+            this.activityCount = activityCount;
+            this.observationReliable = observationReliable;
+            this.workloadChanged = workloadChanged;
+        }
+    }
+
     private final ActivityManager mAM;
     private final VActivityManagerService mService;
 
@@ -245,6 +260,34 @@ import static android.content.pm.ActivityInfo.LAUNCH_SINGLE_TOP;
             if (!taskAlive) {
                 mHistory.removeAt(N);
             }
+        }
+    }
+
+    /** Reconciles virtual task state with Android before deciding whether the daemon may stop. */
+    DaemonActivityWorkload snapshotDaemonWorkload() {
+        synchronized (mHistory) {
+            int tasksBeforeReconciliation = mHistory.size();
+            try {
+                optimizeTasksLocked();
+            } catch (RuntimeException taskQueryFailure) {
+                // A platform query failure is not evidence that every cloned activity is idle.
+                return new DaemonActivityWorkload(0, 0, false, false);
+            }
+            int taskCount = 0;
+            int activityCount = 0;
+            for (int index = 0; index < mHistory.size(); index++) {
+                TaskRecord task = mHistory.valueAt(index);
+                int taskActivityCount;
+                synchronized (task.activities) {
+                    taskActivityCount = task.activities.size();
+                }
+                if (taskActivityCount > 0) {
+                    taskCount++;
+                    activityCount += taskActivityCount;
+                }
+            }
+            return new DaemonActivityWorkload(taskCount, activityCount, true,
+                    mHistory.size() != tasksBeforeReconciliation);
         }
     }
 

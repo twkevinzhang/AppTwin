@@ -116,6 +116,8 @@ interface IActivityManager {
 
     void broadcastFinish(in PendingResultData res);
 
+    String issueLinePushBroadcastAttestation(String action, String targetPackage);
+
     void notifyBadgerChange(in BadgerInfo info);
 
     PreparedActivityLaunch prepareActivityLaunch(in Intent intent, String expectedPackage, int userId);
@@ -129,6 +131,12 @@ interface IActivityManager {
     boolean stopTrustedGmsCloudMessagingForUser(int userId);
 
     void reconcileTrustedGmsCloudMessaging();
+
+    boolean reconcileTrustedGmsCloudMessagingForUsers(in int[] desiredUserIds);
+
+    long getDaemonWorkloadGateReopenEpoch();
+
+    boolean awaitDaemonWorkloadGateOpenAfter(long observedReopenEpoch, long timeoutMs);
 
     TrustedGmsCloudMessagingState getTrustedGmsCloudMessagingState(int userId);
 }

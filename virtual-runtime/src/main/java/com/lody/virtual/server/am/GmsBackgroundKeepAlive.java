@@ -130,6 +130,10 @@ final class GmsBackgroundKeepAlive {
         return false;
     }
 
+    synchronized int activeBindingCount() {
+        return connections.size();
+    }
+
     static boolean shouldRetain(String packageName, String processName, int vpid,
             boolean isolatedWorker) {
         if (isolatedWorker || vpid < 0 || vpid >= VASettings.STUB_COUNT) {

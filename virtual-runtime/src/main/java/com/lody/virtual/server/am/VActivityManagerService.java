@@ -36,6 +36,7 @@ import com.lody.virtual.client.env.Constants;
 import com.lody.virtual.client.env.SpecialComponentList;
 import com.lody.virtual.client.ipc.ProviderCall;
 import com.lody.virtual.client.ipc.VNotificationManager;
+import com.lody.virtual.client.stub.DaemonService;
 import com.lody.virtual.client.stub.StubProcessContract;
 import com.lody.virtual.client.stub.VASettings;
 import com.lody.virtual.helper.collection.ArrayMap;
@@ -73,6 +74,7 @@ import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
 
 import static android.os.Process.killProcess;
@@ -87,11 +89,24 @@ public class VActivityManagerService extends IActivityManager.Stub
     private static final boolean BROADCAST_NOT_STARTED_PKG = false;
     private static final long SERVICE_STARTUP_TIMEOUT_MS = 15_000L;
     private static final long PREPARED_LAUNCH_ACK_TIMEOUT_MS = 5_000L;
+    private static final long INITIAL_GMS_RECONCILE_RETRY_DELAY_MS = 5_000L;
+    static final long MAX_DAEMON_WORKLOAD_GATE_WAIT_MS = 15_000L;
+    static final LinePushDeliveryMode LINE_PUSH_DELIVERY_MODE =
+            LinePushDeliveryMode.DIRECT_BASELINE;
     private static final int STUB_INIT_MAX_ATTEMPTS = 4;
     private static final long STUB_INIT_RETRY_DELAY_MS = 100L;
 
     private static final AtomicReference<VActivityManagerService> sService = new AtomicReference<>();
     private static final String TAG = VActivityManagerService.class.getSimpleName();
+    private final DaemonWorkloadAtomicGate mDaemonWorkloadGate =
+            new DaemonWorkloadAtomicGate(this);
+    private final GmsReconciliationReliability mGmsReconciliationReliability =
+            new GmsReconciliationReliability(this);
+    private final LinePushStopFence mLinePushStopFence = new LinePushStopFence();
+    private final LinePushBroadcastAttestationRegistry mLinePushBroadcastAttestations =
+            new LinePushBroadcastAttestationRegistry();
+    private final Map<Long, LinePushDaemonAuthorizationScope> mLinePushDaemonAuthorizations =
+            new java.util.HashMap<>();
     private final SparseArray<ProcessRecord> mPidsSelfLocked = new SparseArray<ProcessRecord>();
     private final ProcessStartGate mProcessStartGate = new ProcessStartGate();
     private final ActivityStack mMainStack = new ActivityStack(this);
@@ -109,6 +124,8 @@ public class VActivityManagerService extends IActivityManager.Stub
     private GmsBackgroundKeepAlive mGmsBackgroundKeepAlive;
     private TrustedGmsCloudMessagingSupervisor mTrustedGmsCloudMessagingSupervisor;
     private LinePushProcessGuard mLinePushProcessGuard;
+    private LinePushClosedGateRecovery mLinePushClosedGateRecovery;
+    private int mDaemonWorkloadMutationsInFlight;
     private Handler mServiceHandler;
     private ActivityManager am = (ActivityManager) VirtualCore.get().getContext()
             .getSystemService(Context.ACTIVITY_SERVICE);
@@ -117,6 +134,110 @@ public class VActivityManagerService extends IActivityManager.Stub
 
     public static VActivityManagerService get() {
         return sService.get();
+    }
+
+    /** Returns the centralized, fail-safe daemon ownership view for this engine process. */
+    public synchronized DaemonWorkloadSnapshot getDaemonWorkloadSnapshot() {
+        int activeServices = 0;
+        synchronized (mHistory) {
+            for (ServiceRecord service : mHistory) {
+                if (!service.isRetired()) activeServices++;
+            }
+        }
+
+        TrustedGmsCloudMessagingSupervisor gmsSupervisor =
+                mTrustedGmsCloudMessagingSupervisor;
+        GmsBackgroundKeepAlive keepAlive = mGmsBackgroundKeepAlive;
+        LinePushProcessGuard lineGuard = mLinePushProcessGuard;
+        boolean initialized = gmsSupervisor != null && keepAlive != null && lineGuard != null;
+        boolean nonActivityObservationReliable = initialized
+                && mGmsReconciliationReliability.isComplete()
+                && mDaemonWorkloadMutationsInFlight == 0;
+        DaemonWorkloadSnapshot nonActivitySnapshot = new DaemonWorkloadSnapshot(
+                mDaemonWorkloadGate.generation(),
+                gmsSupervisor == null ? 0 : gmsSupervisor.desiredUserCount(),
+                0,
+                0,
+                activeServices,
+                mPreparedActivityLaunches.pendingCount(),
+                keepAlive == null ? 0 : keepAlive.activeBindingCount(),
+                lineGuard == null ? 0 : lineGuard.activeLeaseCount(),
+                nonActivityObservationReliable);
+        if (nonActivitySnapshot.hasNonActivityWorkload()) {
+            return nonActivitySnapshot;
+        }
+
+        ActivityStack.DaemonActivityWorkload activities = mMainStack.snapshotDaemonWorkload();
+        if (activities.workloadChanged) mDaemonWorkloadGate.workloadChanged();
+        return new DaemonWorkloadSnapshot(
+                mDaemonWorkloadGate.generation(),
+                nonActivitySnapshot.getGmsDesiredUserCount(),
+                activities.taskCount,
+                activities.activityCount,
+                nonActivitySnapshot.getActiveVirtualServiceCount(),
+                nonActivitySnapshot.getPendingPreparedLaunchCount(),
+                nonActivitySnapshot.getKeepAliveBindingCount(),
+                nonActivitySnapshot.getLineLeaseCount(),
+                nonActivityObservationReliable && activities.observationReliable);
+    }
+
+    public boolean runIfDaemonWorkloadStillIdle(long expectedGeneration,
+            java.util.function.BooleanSupplier action) {
+        if (action == null) return false;
+        return mDaemonWorkloadGate.runIfStillIdle(
+                expectedGeneration, this::getDaemonWorkloadSnapshot, action);
+    }
+
+    /** Reopens background workload acquisition after a legitimate visible FGS start. */
+    public void reopenDaemonWorkloadGate() {
+        mDaemonWorkloadGate.reopen();
+    }
+
+    @Override
+    public long getDaemonWorkloadGateReopenEpoch() {
+        com.lody.virtual.server.VirtualUserAccessPolicy.enforceHost();
+        return mDaemonWorkloadGate.reopenEpoch();
+    }
+
+    @Override
+    public boolean awaitDaemonWorkloadGateOpenAfter(long observedReopenEpoch, long timeoutMs) {
+        com.lody.virtual.server.VirtualUserAccessPolicy.enforceHost();
+        if (!isDaemonWorkloadGateWaitValid(observedReopenEpoch, timeoutMs)) {
+            throw new IllegalArgumentException("observedReopenEpoch must be non-negative and "
+                    + "timeoutMs must be between 0 and "
+                    + MAX_DAEMON_WORKLOAD_GATE_WAIT_MS);
+        }
+        return mDaemonWorkloadGate.awaitOpenAfter(observedReopenEpoch, timeoutMs);
+    }
+
+    static boolean isDaemonWorkloadGateWaitValid(long observedReopenEpoch, long timeoutMs) {
+        return observedReopenEpoch >= 0L
+                && timeoutMs >= 0L && timeoutMs <= MAX_DAEMON_WORKLOAD_GATE_WAIT_MS;
+    }
+
+    private synchronized boolean beginDaemonWorkloadAcquisition() {
+        if (!mDaemonWorkloadGate.tryBeginWorkloadAcquisition()) return false;
+        mDaemonWorkloadMutationsInFlight++;
+        mDaemonWorkloadGate.workloadChanged();
+        return true;
+    }
+
+    /** Teardown is always allowed, including after the daemon stop is committed. */
+    private synchronized void beginDaemonWorkloadTeardown() {
+        mDaemonWorkloadMutationsInFlight++;
+        mDaemonWorkloadGate.workloadChanged();
+    }
+
+    private synchronized void endDaemonWorkloadMutation() {
+        if (mDaemonWorkloadMutationsInFlight <= 0) {
+            throw new IllegalStateException("No daemon workload mutation is active");
+        }
+        mDaemonWorkloadMutationsInFlight--;
+        mDaemonWorkloadGate.workloadChanged();
+    }
+
+    public boolean hasActiveDaemonWorkload() {
+        return getDaemonWorkloadSnapshot().hasWorkload();
     }
 
     public static void systemReady(Context context) {
@@ -153,6 +274,12 @@ public class VActivityManagerService extends IActivityManager.Stub
             }
         });
         mLinePushProcessGuard = new LinePushProcessGuard(context, mServiceHandler);
+        mLinePushClosedGateRecovery = new LinePushClosedGateRecovery((runnable, delayMillis) -> {
+            if (!mServiceHandler.postDelayed(runnable, delayMillis)) {
+                throw new IllegalStateException("LINE push recovery handler rejected callback");
+            }
+            return () -> mServiceHandler.removeCallbacks(runnable);
+        });
         PackageManager pm = context.getPackageManager();
         PackageInfo packageInfo = null;
         try {
@@ -167,16 +294,51 @@ public class VActivityManagerService extends IActivityManager.Stub
         }
         sService.set(this);
 
-        // Package/user state is loaded later in BinderProvider. This delayed pass is best effort;
-        // the persisted daemon job is the independent recurring recovery trigger.
-        mServiceHandler.postDelayed(() -> {
-            try {
-                mTrustedGmsCloudMessagingSupervisor.reconcile();
-            } catch (RuntimeException error) {
-                VLog.w(TAG, "Initial trusted GMS reconciliation deferred: " + error);
-            }
-        }, 5_000L);
+        // A provider/job process must not start guest MCS without an active, user-visible FGS.
+        // Service.onStartCommand performs the normal foreground-session reconciliation.
+        boolean foregroundSessionActive = DaemonService.isForegroundSessionActive();
+        boolean automaticRecoveryAllowed = foregroundSessionActive
+                && DaemonService.allowsAutomaticRecovery(context);
+        if (shouldScheduleInitialGmsReconciliation(
+                foregroundSessionActive, automaticRecoveryAllowed)) {
+            scheduleInitialGmsReconciliation();
+        }
 
+    }
+
+    private void scheduleInitialGmsReconciliation() {
+        mServiceHandler.postDelayed(() -> {
+            if (!DaemonService.isForegroundSessionActive()) {
+                return;
+            }
+            if (!beginDaemonWorkloadAcquisition()) return;
+            long reconciliationGeneration = mGmsReconciliationReliability.begin();
+            try {
+                boolean reconciled = mTrustedGmsCloudMessagingSupervisor.reconcile();
+                mGmsReconciliationReliability.finish(reconciliationGeneration,
+                        shouldMarkGmsReconciliationComplete(reconciled));
+            } catch (RuntimeException error) {
+                mGmsReconciliationReliability.finish(reconciliationGeneration, false);
+                VLog.w(TAG, "Initial trusted GMS reconciliation failed: " + error);
+                // Keep the snapshot fail-safe unreliable. A later successful foreground or
+                // persisted-job reconciliation marks it complete without unbounded startup retry.
+            } finally {
+                endDaemonWorkloadMutation();
+            }
+        }, INITIAL_GMS_RECONCILE_RETRY_DELAY_MS);
+    }
+
+    static boolean shouldScheduleInitialGmsReconciliation(boolean foregroundSessionActive,
+            boolean automaticRecoveryAllowed) {
+        return foregroundSessionActive && automaticRecoveryAllowed;
+    }
+
+    static boolean shouldRunAutomaticGmsReconciliation(boolean foregroundSessionActive) {
+        return foregroundSessionActive;
+    }
+
+    static boolean shouldMarkGmsReconciliationComplete(boolean reconciliationSucceeded) {
+        return reconciliationSucceeded;
     }
 
 
@@ -184,7 +346,17 @@ public class VActivityManagerService extends IActivityManager.Stub
     public int startActivity(Intent intent, ActivityInfo info, IBinder resultTo, Bundle options, String resultWho, int requestCode, int userId) {
         enforceCallerUserOrHost(userId);
         synchronized (this) {
-            return mMainStack.startActivityLocked(userId, intent, info, resultTo, options, resultWho, requestCode);
+            if (!beginDaemonWorkloadAcquisition()) {
+                return ActivityManagerCompat.START_INTENT_NOT_RESOLVED;
+            }
+            try {
+                int result = mMainStack.startActivityLocked(
+                        userId, intent, info, resultTo, options, resultWho, requestCode);
+                mDaemonWorkloadGate.workloadChanged();
+                return result;
+            } finally {
+                endDaemonWorkloadMutation();
+            }
         }
     }
 
@@ -192,6 +364,10 @@ public class VActivityManagerService extends IActivityManager.Stub
     public int startActivities(Intent[] intents, String[] resolvedTypes, IBinder token, Bundle options, int userId) {
         enforceCallerUserOrHost(userId);
         synchronized (this) {
+            if (!beginDaemonWorkloadAcquisition()) {
+                return ActivityManagerCompat.START_INTENT_NOT_RESOLVED;
+            }
+            try {
             ActivityInfo[] infos = new ActivityInfo[intents.length];
             for (int i = 0; i < intents.length; i++) {
                 ActivityInfo ai = VirtualCore.get().resolveActivityInfo(intents[i], userId);
@@ -201,7 +377,13 @@ public class VActivityManagerService extends IActivityManager.Stub
                 infos[i] = ai;
 
             }
-            return mMainStack.startActivitiesLocked(userId, intents, infos, resolvedTypes, token, options);
+            int result = mMainStack.startActivitiesLocked(
+                    userId, intents, infos, resolvedTypes, token, options);
+            mDaemonWorkloadGate.workloadChanged();
+            return result;
+            } finally {
+                endDaemonWorkloadMutation();
+            }
         }
     }
 
@@ -237,6 +419,10 @@ public class VActivityManagerService extends IActivityManager.Stub
         }
 
         synchronized (this) {
+            if (!beginDaemonWorkloadAcquisition()) {
+                return PreparedActivityLaunch.failure("Daemon workload gate is closed");
+            }
+            try {
             PreparedActivityLaunch prepared = mMainStack.prepareActivityLaunchLocked(
                     userId, request, resolved);
             if (prepared.isHostStartRequired()
@@ -244,17 +430,33 @@ public class VActivityManagerService extends IActivityManager.Stub
                 return PreparedActivityLaunch.failure("Unable to register prepared launch");
             }
             return prepared;
+            } finally {
+                endDaemonWorkloadMutation();
+            }
         }
     }
 
     boolean registerPreparedActivityLaunch(String launchId, int userId, IBinder expectedToken) {
-        try {
-            mPreparedActivityLaunches.register(launchId, userId, expectedToken);
-        } catch (IllegalArgumentException invalidLaunch) {
-            return false;
+        synchronized (this) {
+            if (!beginDaemonWorkloadAcquisition()) return false;
+            try {
+            try {
+                mPreparedActivityLaunches.register(launchId, userId, expectedToken);
+            } catch (IllegalArgumentException invalidLaunch) {
+                return false;
+            }
+            mDaemonWorkloadGate.workloadChanged();
+            } finally {
+                endDaemonWorkloadMutation();
+            }
         }
         mServiceHandler.postDelayed(
-                () -> mPreparedActivityLaunches.cancel(launchId),
+                () -> {
+                    synchronized (VActivityManagerService.this) {
+                        mPreparedActivityLaunches.cancel(launchId);
+                        mDaemonWorkloadGate.workloadChanged();
+                    }
+                },
                 PREPARED_LAUNCH_ACK_TIMEOUT_MS);
         return true;
     }
@@ -264,13 +466,20 @@ public class VActivityManagerService extends IActivityManager.Stub
         com.lody.virtual.server.VirtualUserAccessPolicy.enforceHost();
         long boundedTimeout = Math.max(0L,
                 Math.min(timeoutMs, PREPARED_LAUNCH_ACK_TIMEOUT_MS));
-        return mPreparedActivityLaunches.await(launchId, boundedTimeout);
+        boolean acknowledged = mPreparedActivityLaunches.await(launchId, boundedTimeout);
+        synchronized (this) {
+            mDaemonWorkloadGate.workloadChanged();
+        }
+        return acknowledged;
     }
 
     @Override
     public void cancelPreparedActivityLaunch(String launchId) {
         com.lody.virtual.server.VirtualUserAccessPolicy.enforceHost();
-        mPreparedActivityLaunches.cancel(launchId);
+        synchronized (this) {
+            mPreparedActivityLaunches.cancel(launchId);
+            mDaemonWorkloadGate.workloadChanged();
+        }
     }
 
     static boolean isPreparedLaunchIntentScopedToPackage(
@@ -330,10 +539,16 @@ public class VActivityManagerService extends IActivityManager.Stub
 
     /** Synchronously retires all runtime ownership before a virtual user id can be reused. */
     public boolean clearUserRuntimeState(int userId) {
-        retireUserProcesses(userId, "user-cleanup");
-        mPendingIntents.clearUser(userId);
-        mPreparedActivityLaunches.cancelUser(userId);
-        return !hasUserRuntimeState(userId);
+        LinePushStopFence.StopScope lineStop = beginLinePushStop(
+                LinePushBroadcastPolicy.LINE_PACKAGE, userId);
+        try {
+            retireUserProcesses(userId, "user-cleanup");
+            mPendingIntents.clearUser(userId);
+            mPreparedActivityLaunches.cancelUser(userId);
+            return !hasUserRuntimeState(userId);
+        } finally {
+            endLinePushStop(lineStop);
+        }
     }
 
     private void retireUserProcesses(int userId, String reason) {
@@ -377,9 +592,45 @@ public class VActivityManagerService extends IActivityManager.Stub
     }
 
     @Override
-    public boolean onActivityCreated(ComponentName component, ComponentName caller, IBinder token,
+    public String issueLinePushBroadcastAttestation(String action, String targetPackage) {
+        int callingPid = Binder.getCallingPid();
+        ProcessRecord caller;
+        synchronized (mPidsSelfLocked) {
+            caller = findProcessLocked(callingPid);
+        }
+        if (caller == null || caller.pid != callingPid || caller.info == null) return null;
+
+        boolean currentOwner;
+        synchronized (mProcessNames) {
+            currentOwner = isCurrentProcessOwner(caller);
+        }
+        boolean eligible = LinePushBroadcastAttestationRegistry.canIssue(
+                caller.info.packageName,
+                caller.vuid,
+                caller.userId,
+                !caller.terminalCleanupStarted
+                        && caller.lifecycle.state() == ProcessLifecycle.State.READY,
+                currentOwner,
+                isProcessEndpointActive(caller),
+                action,
+                targetPackage,
+                true);
+        if (!eligible) return null;
+        LinePushStopFence.Permit stopPermit = mLinePushStopFence.acquire(
+                LinePushBroadcastPolicy.LINE_PACKAGE, caller.userId);
+        if (stopPermit == null) return null;
+        return mLinePushBroadcastAttestations.issue(
+                new LinePushBroadcastAttestationRegistry.Binding(
+                        caller.vuid, caller.userId, action, targetPackage, stopPermit));
+    }
+
+    @Override
+    public synchronized boolean onActivityCreated(ComponentName component, ComponentName caller,
+            IBinder token,
             Intent intent, String affinity, int taskId, int launchMode, int flags,
             String preparedLaunchId) {
+        if (!beginDaemonWorkloadAcquisition()) return false;
+        try {
         int pid = Binder.getCallingPid();
         ProcessRecord targetApp = findProcessLocked(pid);
         if (targetApp == null) {
@@ -401,11 +652,15 @@ public class VActivityManagerService extends IActivityManager.Stub
             mPreparedActivityLaunches.cancelForUser(preparedLaunchId, targetApp.userId);
             return false;
         }
+        mDaemonWorkloadGate.workloadChanged();
         return true;
+        } finally {
+            endDaemonWorkloadMutation();
+        }
     }
 
     @Override
-    public void onActivityResumed(int userId, IBinder token) {
+    public synchronized void onActivityResumed(int userId, IBinder token) {
         enforceCallerUserOrHost(userId);
         if (mMainStack.onActivityResumed(userId, token)) {
             mPreparedActivityLaunches.acknowledge(userId, token);
@@ -413,10 +668,11 @@ public class VActivityManagerService extends IActivityManager.Stub
     }
 
     @Override
-    public boolean onActivityDestroyed(int userId, IBinder token) {
+    public synchronized boolean onActivityDestroyed(int userId, IBinder token) {
         enforceCallerUserOrHost(userId);
         ActivityRecord r = mMainStack.onActivityDestroyed(userId, token);
         mPreparedActivityLaunches.cancelActivity(userId, token);
+        if (r != null) mDaemonWorkloadGate.workloadChanged();
         return r != null;
     }
 
@@ -457,16 +713,22 @@ public class VActivityManagerService extends IActivityManager.Stub
                 .getProviderInfo(new ComponentName(info.packageName, info.name),
                         PackageManager.GET_META_DATA, userId);
         if (resolved == null) throw new SecurityException("Provider is not installed for user");
-        String processName = resolved.processName;
-        ProcessRecord r = startProcessIfNeedLocked(processName, userId, resolved.packageName);
-        if (r != null && r.client.asBinder().pingBinder()) {
-            try {
-                return r.client.acquireProviderClient(resolved);
-            } catch (RemoteException e) {
-                e.printStackTrace();
+        if (!beginDaemonWorkloadAcquisition()) return null;
+        try {
+            String processName = resolved.processName;
+            ProcessRecord r = startProcessIfNeedLocked(
+                    processName, userId, resolved.packageName);
+            if (r != null && r.client.asBinder().pingBinder()) {
+                try {
+                    return r.client.acquireProviderClient(resolved);
+                } catch (RemoteException e) {
+                    e.printStackTrace();
+                }
             }
+            return null;
+        } finally {
+            endDaemonWorkloadMutation();
         }
-        return null;
     }
 
     @Override
@@ -492,15 +754,15 @@ public class VActivityManagerService extends IActivityManager.Stub
         }
     }
 
-    private void addRecord(ServiceRecord r) {
+    private synchronized void addRecord(ServiceRecord r) {
         synchronized (mHistory) {
-            mHistory.add(r);
+            if (mHistory.add(r)) mDaemonWorkloadGate.workloadChanged();
         }
     }
 
-    private void removeRecord(ServiceRecord r) {
+    private synchronized void removeRecord(ServiceRecord r) {
         synchronized (mHistory) {
-            mHistory.remove(r);
+            if (mHistory.remove(r)) mDaemonWorkloadGate.workloadChanged();
         }
     }
 
@@ -571,18 +833,35 @@ public class VActivityManagerService extends IActivityManager.Stub
 
 
     @Override
-    public ComponentName startService(IBinder caller, Intent service, String resolvedType, int userId) {
+    public synchronized ComponentName startService(
+            IBinder caller, Intent service, String resolvedType, int userId) {
         enforceCallerUserOrHost(userId);
-        return startServiceCommon(service, true, userId);
+        if (!beginDaemonWorkloadAcquisition()) return null;
+        try {
+            return startServiceCommon(caller, service, true, userId);
+        } finally {
+            endDaemonWorkloadMutation();
+        }
     }
 
     private ComponentName startServiceCommon(Intent service,
                                              boolean scheduleServiceArgs, int userId) {
+        return startServiceCommon(null, service, scheduleServiceArgs, userId);
+    }
+
+    private ComponentName startServiceCommon(IBinder caller, Intent service,
+                                             boolean scheduleServiceArgs, int userId) {
         String instanceName = IsolatedServiceRouting.takeInstanceName(service);
-        return startServiceCommon(service, scheduleServiceArgs, userId, instanceName);
+        return startServiceCommon(caller, service, scheduleServiceArgs, userId, instanceName);
     }
 
     private ComponentName startServiceCommon(Intent service,
+                                             boolean scheduleServiceArgs, int userId,
+                                             String instanceName) {
+        return startServiceCommon(null, service, scheduleServiceArgs, userId, instanceName);
+    }
+
+    private ComponentName startServiceCommon(IBinder caller, Intent service,
                                              boolean scheduleServiceArgs, int userId,
                                              String instanceName) {
         ServiceInfo serviceInfo = resolveServiceInfo(service, userId);
@@ -590,6 +869,7 @@ public class VActivityManagerService extends IActivityManager.Stub
             VLog.w(TAG, "startService unresolved: " + service + " user=" + userId);
             return null;
         }
+        notifyTrustedGmsMcsReconnectIfNeeded(caller, service, serviceInfo, userId);
         VLog.i(TAG, "startService " + service + " resolved="
                 + ComponentUtils.toComponentName(serviceInfo) + " user=" + userId);
         final boolean isolatedProcess = isIsolatedProcess(serviceInfo);
@@ -691,6 +971,81 @@ public class VActivityManagerService extends IActivityManager.Stub
         return ComponentUtils.toComponentName(serviceInfo);
     }
 
+    /**
+     * Bridges microG's own reconnect decision into the host supervisor without changing service
+     * dispatch. The signal is deliberately fail-closed: intent metadata is not trusted until the
+     * real Binder caller resolves to the current, ready persistent GMS process and presents that
+     * process' exact app-thread binder.
+     */
+    private void notifyTrustedGmsMcsReconnectIfNeeded(IBinder caller, Intent service,
+            ServiceInfo serviceInfo, int userId) {
+        if (caller == null || service == null || serviceInfo == null
+                || mTrustedGmsCloudMessagingSupervisor == null) {
+            return;
+        }
+
+        final int callingPid = Binder.getCallingPid();
+        final ProcessRecord callerRecord;
+        final IBinder expectedCaller;
+        synchronized (mPidsSelfLocked) {
+            callerRecord = findProcessLocked(callingPid);
+            if (callerRecord == null
+                    || callerRecord.pid != callingPid
+                    || callerRecord.userId != userId
+                    || callerRecord.appThread == null) {
+                return;
+            }
+            expectedCaller = callerRecord.appThread.asBinder();
+        }
+        if (!sameBinderHandle(expectedCaller, caller)
+                || callerRecord.terminalCleanupStarted
+                || callerRecord.lifecycle.state() != ProcessLifecycle.State.READY
+                || !isCurrentProcessOwner(callerRecord)
+                || !isProcessEndpointActive(callerRecord)) {
+            return;
+        }
+
+        ComponentName requestedTarget = service.getComponent();
+        ComponentName resolvedTarget = ComponentUtils.toComponentName(serviceInfo);
+        if (requestedTarget == null || !requestedTarget.equals(resolvedTarget)) {
+            return;
+        }
+
+        final String triggerReason;
+        try {
+            Bundle extras = service.getExtras();
+            Object rawReason = extras == null ? null
+                    : extras.get(TrustedGmsMcsReconnectSignalPolicy.EXTRA_MCS_REASON);
+            triggerReason = rawReason instanceof Intent ? ((Intent) rawReason).getAction() : null;
+        } catch (RuntimeException malformedReason) {
+            VLog.w(TAG, "Ignoring malformed trusted-GMS reconnect reason", malformedReason);
+            return;
+        }
+
+        if (!TrustedGmsMcsReconnectSignalPolicy.isTrustedReconnectSignal(
+                callerRecord.info == null ? null : callerRecord.info.packageName,
+                callerRecord.processName,
+                serviceInfo.packageName,
+                serviceInfo.name,
+                service.getAction(),
+                triggerReason)) {
+            return;
+        }
+
+        try {
+            mTrustedGmsCloudMessagingSupervisor.onMcsReconnectRequired(
+                    userId, callerRecord.generation, triggerReason);
+        } catch (RuntimeException supervisorFailure) {
+            // Health observation must never prevent microG from performing its own reconnect.
+            VLog.w(TAG, "Unable to record trusted-GMS reconnect signal for user=" + userId,
+                    supervisorFailure);
+        }
+    }
+
+    static boolean sameBinderHandle(IBinder expected, IBinder actual) {
+        return expected != null && expected.equals(actual);
+    }
+
     @Override
     public int stopService(IBinder caller, Intent service, String resolvedType, int userId) {
         enforceCallerUserOrHost(userId);
@@ -769,9 +1124,12 @@ public class VActivityManagerService extends IActivityManager.Stub
     }
 
     @Override
-    public int bindService(IBinder caller, IBinder token, Intent service, String resolvedType,
+    public synchronized int bindService(
+                           IBinder caller, IBinder token, Intent service, String resolvedType,
                            IServiceConnection connection, int flags, int userId) {
         enforceCallerUserOrHost(userId);
+        if (!beginDaemonWorkloadAcquisition()) return 0;
+        try {
         String instanceName = IsolatedServiceRouting.takeInstanceName(service);
         ServiceInfo serviceInfo = resolveServiceInfo(service, userId);
         if (serviceInfo == null) {
@@ -861,6 +1219,9 @@ public class VActivityManagerService extends IActivityManager.Stub
             drainProcessLifecycle(targetRecord.process);
         }
         return 1;
+        } finally {
+            endDaemonWorkloadMutation();
+        }
     }
 
 
@@ -1237,10 +1598,19 @@ public class VActivityManagerService extends IActivityManager.Stub
                     }
                 }
             }
+            if (!ownedServices.isEmpty()) mDaemonWorkloadGate.workloadChanged();
         }
 
-        mGmsBackgroundKeepAlive.release(process);
-        mLinePushProcessGuard.release(process);
+        synchronized (this) {
+            int bindingsBefore = mGmsBackgroundKeepAlive.activeBindingCount();
+            int leasesBefore = mLinePushProcessGuard.activeLeaseCount();
+            mGmsBackgroundKeepAlive.release(process);
+            mLinePushProcessGuard.release(process);
+            if (bindingsBefore != mGmsBackgroundKeepAlive.activeBindingCount()
+                    || leasesBefore != mLinePushProcessGuard.activeLeaseCount()) {
+                mDaemonWorkloadGate.workloadChanged();
+            }
+        }
         for (ServiceRecord service : ownedServices) {
             ComponentName component = ComponentUtils.toComponentName(service.serviceInfo);
             for (IServiceConnection connection : disconnectedClients.get(service)) {
@@ -1248,7 +1618,10 @@ public class VActivityManagerService extends IActivityManager.Stub
             }
         }
         if (!process.osIsolatedWorker) {
-            mMainStack.processDied(process);
+            synchronized (this) {
+                mMainStack.processDied(process);
+                mDaemonWorkloadGate.workloadChanged();
+            }
         }
         VLog.w(TAG, "process-lifecycle-cleanup pid=" + process.pid
                 + " generation=" + process.generation + " reason=" + reason
@@ -1527,7 +1900,19 @@ public class VActivityManagerService extends IActivityManager.Stub
                 mPidsSelfLocked.put(app.pid, app);
             }
         }
-        mGmsBackgroundKeepAlive.retain(app);
+        synchronized (this) {
+            if (beginDaemonWorkloadAcquisition()) {
+                try {
+                    int bindingsBefore = mGmsBackgroundKeepAlive.activeBindingCount();
+                    mGmsBackgroundKeepAlive.retain(app);
+                    if (bindingsBefore != mGmsBackgroundKeepAlive.activeBindingCount()) {
+                        mDaemonWorkloadGate.workloadChanged();
+                    }
+                } finally {
+                    endDaemonWorkloadMutation();
+                }
+            }
+        }
 
         boolean needsDeathLink = previousClientBinder == null
                 || !previousClientBinder.equals(clientBinder) || previousPid != pid;
@@ -1572,26 +1957,77 @@ public class VActivityManagerService extends IActivityManager.Stub
     @Override
     public int initProcess(String packageName, String processName, int userId) {
         enforceCallerUserOrHost(userId);
-        ProcessRecord r = startProcessIfNeedLocked(processName, userId, packageName);
-        return r != null ? r.vpid : -1;
+        if (!beginDaemonWorkloadAcquisition()) return -1;
+        try {
+            ProcessRecord r = startProcessIfNeedLocked(processName, userId, packageName);
+            return r != null ? r.vpid : -1;
+        } finally {
+            endDaemonWorkloadMutation();
+        }
     }
 
     @Override
     public boolean ensureTrustedGmsCloudMessagingForUser(int userId) {
         enforceCallerUserOrHost(userId);
-        return mTrustedGmsCloudMessagingSupervisor.ensureForUser(userId);
+        if (!beginDaemonWorkloadAcquisition()) return false;
+        try {
+            return mTrustedGmsCloudMessagingSupervisor.ensureForUser(userId);
+        } finally {
+            endDaemonWorkloadMutation();
+        }
     }
 
     @Override
     public boolean stopTrustedGmsCloudMessagingForUser(int userId) {
         enforceCallerUserOrHost(userId);
-        return mTrustedGmsCloudMessagingSupervisor.stopForUser(userId);
+        LinePushStopFence.StopScope lineStop = beginLinePushStop(
+                LinePushBroadcastPolicy.LINE_PACKAGE, userId);
+        beginDaemonWorkloadTeardown();
+        try {
+            return mTrustedGmsCloudMessagingSupervisor.stopForUser(userId);
+        } finally {
+            endDaemonWorkloadMutation();
+            endLinePushStop(lineStop);
+        }
     }
 
     @Override
     public void reconcileTrustedGmsCloudMessaging() {
         com.lody.virtual.server.VirtualUserAccessPolicy.enforceHost();
-        mTrustedGmsCloudMessagingSupervisor.reconcile();
+        if (!shouldRunAutomaticGmsReconciliation(
+                DaemonService.isForegroundSessionActive())) {
+            return;
+        }
+        if (!beginDaemonWorkloadAcquisition()) return;
+        long reconciliationGeneration = mGmsReconciliationReliability.begin();
+        try {
+            boolean reconciled = mTrustedGmsCloudMessagingSupervisor.reconcile();
+            mGmsReconciliationReliability.finish(reconciliationGeneration,
+                    shouldMarkGmsReconciliationComplete(reconciled));
+        } finally {
+            endDaemonWorkloadMutation();
+        }
+    }
+
+    @Override
+    public boolean reconcileTrustedGmsCloudMessagingForUsers(int[] desiredUserIds) {
+        com.lody.virtual.server.VirtualUserAccessPolicy.enforceHost();
+        if (!shouldRunAutomaticGmsReconciliation(
+                DaemonService.isForegroundSessionActive())) {
+            return false;
+        }
+        if (!beginDaemonWorkloadAcquisition()) return false;
+        long reconciliationGeneration = mGmsReconciliationReliability.begin();
+        try {
+            boolean accepted = mTrustedGmsCloudMessagingSupervisor
+                    .reconcileDesiredUsers(desiredUserIds == null
+                            ? new int[0] : desiredUserIds.clone());
+            mGmsReconciliationReliability.finish(reconciliationGeneration,
+                    shouldMarkGmsReconciliationComplete(accepted));
+            return accepted;
+        } finally {
+            endDaemonWorkloadMutation();
+        }
     }
 
     @Override
@@ -2254,23 +2690,28 @@ public class VActivityManagerService extends IActivityManager.Stub
         } else {
             enforceCallerUserOrHost(userId);
         }
-        synchronized (mProcessNames) {
-            ArrayMap<String, SparseArray<ProcessRecord>> map = mProcessNames.getMap();
-            int N = map.size();
-            while (N-- > 0) {
-                SparseArray<ProcessRecord> uids = map.valueAt(N);
-                for (int i = 0; i < uids.size(); i++) {
-                    ProcessRecord r = uids.valueAt(i);
-                    if (userId != VUserHandle.USER_ALL) {
-                        if (r.userId != userId) {
-                            continue;
+        LinePushStopFence.StopScope lineStop = beginLinePushStop(pkg, userId);
+        try {
+            synchronized (mProcessNames) {
+                ArrayMap<String, SparseArray<ProcessRecord>> map = mProcessNames.getMap();
+                int N = map.size();
+                while (N-- > 0) {
+                    SparseArray<ProcessRecord> uids = map.valueAt(N);
+                    for (int i = 0; i < uids.size(); i++) {
+                        ProcessRecord r = uids.valueAt(i);
+                        if (userId != VUserHandle.USER_ALL) {
+                            if (r.userId != userId) {
+                                continue;
+                            }
                         }
-                    }
-                    if (r.pkgList.contains(pkg)) {
-                        killProcess(r.pid);
+                        if (r.pkgList.contains(pkg)) {
+                            killProcess(r.pid);
+                        }
                     }
                 }
             }
+        } finally {
+            endLinePushStop(lineStop);
         }
     }
 
@@ -2369,7 +2810,19 @@ public class VActivityManagerService extends IActivityManager.Stub
             return;
         }
         if (r.lifecycle.markReady(r.generation)) {
-            mGmsBackgroundKeepAlive.retain(r);
+            synchronized (this) {
+                if (beginDaemonWorkloadAcquisition()) {
+                    try {
+                        int bindingsBefore = mGmsBackgroundKeepAlive.activeBindingCount();
+                        mGmsBackgroundKeepAlive.retain(r);
+                        if (bindingsBefore != mGmsBackgroundKeepAlive.activeBindingCount()) {
+                            mDaemonWorkloadGate.workloadChanged();
+                        }
+                    } finally {
+                        endDaemonWorkloadMutation();
+                    }
+                }
+            }
             if (isTrustedGmsPersistentProcess(r)) {
                 mTrustedGmsCloudMessagingSupervisor.onProcessReady(
                         r.userId, r.generation);
@@ -2400,16 +2853,22 @@ public class VActivityManagerService extends IActivityManager.Stub
     }
 
     public int stopUser(int userHandle, IStopUserCallback.Stub stub) {
-        mTrustedGmsCloudMessagingSupervisor.stopForUser(userHandle);
-        retireUserProcesses(userHandle, "user-stop");
-        mPendingIntents.clearUser(userHandle);
-        if (hasUserRuntimeState(userHandle)) return -1;
+        LinePushStopFence.StopScope lineStop = beginLinePushStop(
+                LinePushBroadcastPolicy.LINE_PACKAGE, userHandle);
         try {
-            stub.userStopped(userHandle);
-        } catch (RemoteException e) {
-            e.printStackTrace();
+            mTrustedGmsCloudMessagingSupervisor.stopForUser(userHandle);
+            retireUserProcesses(userHandle, "user-stop");
+            mPendingIntents.clearUser(userHandle);
+            if (hasUserRuntimeState(userHandle)) return -1;
+            try {
+                stub.userStopped(userHandle);
+            } catch (RemoteException e) {
+                e.printStackTrace();
+            }
+            return 0;
+        } finally {
+            endLinePushStop(lineStop);
         }
-        return 0;
     }
 
     private static boolean isTrustedGmsPersistentProcess(ProcessRecord process) {
@@ -2548,7 +3007,13 @@ public class VActivityManagerService extends IActivityManager.Stub
     }
 
     boolean handleStaticBroadcast(int appId, ActivityInfo info, Intent intent,
-                                  PendingResultData result) {
+                                  PendingResultData result,
+                                  boolean signatureProtectedWrapper,
+                                  String targetPackage,
+                                  String virtualSenderPackage,
+                                  int virtualSenderVuid,
+                                  int virtualSenderUserId,
+                                  String linePushAttestation) {
         Intent realIntent = intent.getParcelableExtra("_VA_|_intent_");
         ComponentName component = intent.getParcelableExtra("_VA_|_component_");
         int userId = intent.getIntExtra("_VA_|_user_id_", VUserHandle.USER_NULL);
@@ -2560,10 +3025,17 @@ public class VActivityManagerService extends IActivityManager.Stub
             return false;
         }
         int vuid = VUserHandle.getUid(userId, appId);
-        return handleUserBroadcast(vuid, info, component, realIntent, result);
+        return handleUserBroadcast(vuid, info, component, realIntent, result,
+                signatureProtectedWrapper, intent.getComponent() != null, targetPackage,
+                virtualSenderPackage, virtualSenderVuid, virtualSenderUserId,
+                linePushAttestation);
     }
 
-    private boolean handleUserBroadcast(int vuid, ActivityInfo info, ComponentName component, Intent realIntent, PendingResultData result) {
+    private boolean handleUserBroadcast(int vuid, ActivityInfo info, ComponentName component,
+            Intent realIntent, PendingResultData result, boolean signatureProtectedWrapper,
+            boolean wrapperHasComponent, String targetPackage,
+            String virtualSenderPackage, int virtualSenderVuid, int virtualSenderUserId,
+            String linePushAttestation) {
         if (component != null && !ComponentUtils.toComponentName(info).equals(component)) {
             // Verify the component.
             return false;
@@ -2573,11 +3045,199 @@ public class VActivityManagerService extends IActivityManager.Stub
             // restore to origin action.
             realIntent.setAction(originAction);
         }
-        return handleStaticBroadcastAsUser(vuid, info, realIntent, result);
+        return handleStaticBroadcastAsUser(vuid, info, realIntent, result,
+                signatureProtectedWrapper, wrapperHasComponent, component != null,
+                targetPackage, virtualSenderPackage, virtualSenderVuid, virtualSenderUserId,
+                linePushAttestation);
     }
 
-    private boolean handleStaticBroadcastAsUser(int vuid, ActivityInfo info, Intent intent,
-                                                PendingResultData result) {
+    private synchronized boolean handleStaticBroadcastAsUser(
+                                                int vuid, ActivityInfo info, Intent intent,
+                                                PendingResultData result,
+                                                boolean signatureProtectedWrapper,
+                                                boolean wrapperHasComponent,
+                                                boolean originalHasComponent,
+                                                String targetPackage,
+                                                String virtualSenderPackage,
+                                                int virtualSenderVuid,
+                                                int virtualSenderUserId,
+                                                String linePushAttestation) {
+        if (!beginDaemonWorkloadAcquisition()) {
+            LinePushDeliveryDiagnostics.checkpoint(result, "gate-reject");
+            int userId = getUserId(vuid);
+            boolean desiredUser = mTrustedGmsCloudMessagingSupervisor.isDesiredUser(userId);
+            PackageSetting gmsSetting = PackageCacheManager.getSetting(
+                    TrustedGmsCloudMessagingSupervisor.GMS_PACKAGE);
+            int expectedSenderVuid = gmsSetting == null || !gmsSetting.isInstalled(userId)
+                    ? -1 : VUserHandle.getUid(userId, gmsSetting.appId);
+            LinePushStopFence.Permit stopPermit = mLinePushStopFence.acquire(
+                    info == null ? null : info.packageName, userId);
+            if (stopPermit == null) {
+                LinePushDeliveryDiagnostics.checkpoint(result, "recovery-app-stopping");
+                return false;
+            }
+            boolean senderAttested = mLinePushBroadcastAttestations.consume(
+                    linePushAttestation,
+                    new LinePushBroadcastAttestationRegistry.Binding(
+                            virtualSenderVuid,
+                            virtualSenderUserId,
+                            intent == null ? null : intent.getAction(),
+                            targetPackage,
+                            stopPermit));
+            boolean exactRouteEligible = LinePushClosedGateRecoveryPolicy.isEligible(
+                    senderAttested,
+                    signatureProtectedWrapper,
+                    targetPackage,
+                    info == null ? null : info.packageName,
+                    info == null ? null : info.processName,
+                    intent == null ? null : intent.getPackage(),
+                    wrapperHasComponent,
+                    originalHasComponent,
+                    intent == null ? null : intent.getAction(),
+                    virtualSenderPackage,
+                    virtualSenderVuid,
+                    virtualSenderUserId,
+                    expectedSenderVuid,
+                    userId,
+                    desiredUser);
+            boolean stopPermitCurrent = mLinePushStopFence.isCurrent(stopPermit);
+            boolean automaticRecoveryAllowed = LINE_PUSH_DELIVERY_MODE
+                    == LinePushDeliveryMode.RELIABLE_GATED
+                    && DaemonService.allowsAutomaticRecovery(VirtualCore.get().getContext());
+            if (!LinePushDeliveryPolicy.shouldRecoverClosedGate(
+                    LINE_PUSH_DELIVERY_MODE,
+                    exactRouteEligible,
+                    automaticRecoveryAllowed,
+                    stopPermitCurrent)) {
+                if (exactRouteEligible
+                        && LINE_PUSH_DELIVERY_MODE == LinePushDeliveryMode.DIRECT_BASELINE) {
+                    LinePushDeliveryDiagnostics.checkpoint(
+                            result, "direct-baseline-gate-closed");
+                } else {
+                    LinePushDeliveryDiagnostics.checkpoint(result, "recovery-ineligible");
+                }
+                return false;
+            }
+            LinePushDaemonAuthorization daemonAuthorization =
+                    new LinePushDaemonAuthorization();
+            boolean deferred = mLinePushClosedGateRecovery.defer(
+                    result == null ? null : result.mToken,
+                    userId,
+                    info.packageName,
+                    new LinePushClosedGateRecovery.Callbacks() {
+                        @Override
+                        public boolean requestDaemonRecovery() {
+                            return requestLinePushRecoveryThroughFence(
+                                    result == null ? null : result.mToken, userId,
+                                    stopPermit, daemonAuthorization, result);
+                        }
+
+                        @Override
+                        public void revokeDaemonRecovery() {
+                            daemonAuthorization.revoke();
+                        }
+
+                        @Override
+                        public boolean retryThroughNormalGate() {
+                            return retryStaticBroadcastThroughNormalGate(
+                                    result == null ? null : result.mToken,
+                                    userId, stopPermit, vuid, info, intent, result);
+                        }
+
+                        @Override
+                        public void checkpoint(String stage) {
+                            LinePushDeliveryDiagnostics.checkpoint(result, stage);
+                        }
+
+                        @Override
+                        public void finish(String reason) {
+                            LinePushDeliveryDiagnostics.finish(
+                                    result == null ? null : result.mToken, reason);
+                            if (result != null) result.finish();
+                        }
+                    });
+            if (!deferred) {
+                LinePushDeliveryDiagnostics.checkpoint(result, "recovery-overflow");
+            }
+            return deferred;
+        }
+        LinePushDeliveryDiagnostics.checkpoint(result, "gate-allow");
+        return dispatchStaticBroadcastWithAcquiredGate(vuid, info, intent, result, null);
+    }
+
+    private synchronized boolean requestLinePushRecoveryThroughFence(
+            Object recoveryToken, int userId, LinePushStopFence.Permit stopPermit,
+            LinePushDaemonAuthorization daemonAuthorization, PendingResultData result) {
+        if (!mLinePushClosedGateRecovery.isExecutionAllowed(recoveryToken)) {
+            LinePushDeliveryDiagnostics.checkpoint(
+                    result, "recovery-cancelled-before-request");
+            return false;
+        }
+        if (!mLinePushStopFence.isCurrent(stopPermit)) {
+            LinePushDeliveryDiagnostics.checkpoint(result, "recovery-stop-epoch-changed");
+            return false;
+        }
+        if (!mTrustedGmsCloudMessagingSupervisor.isDesiredUser(userId)) {
+            LinePushDeliveryDiagnostics.checkpoint(
+                    result, "recovery-user-no-longer-desired");
+            return false;
+        }
+        try {
+            return daemonAuthorization.start(
+                    VirtualCore.get().getContext(), stopPermit, userId);
+        } catch (RuntimeException recoveryFailure) {
+            VLog.w(TAG, "Unable to request LINE push daemon recovery user="
+                    + userId + " errorType="
+                    + recoveryFailure.getClass().getSimpleName());
+            return false;
+        }
+    }
+
+    private synchronized boolean retryStaticBroadcastThroughNormalGate(
+            Object recoveryToken, int userId, LinePushStopFence.Permit stopPermit,
+            int vuid, ActivityInfo info,
+            Intent intent, PendingResultData result) {
+        if (!mLinePushClosedGateRecovery.isExecutionAllowed(recoveryToken)) {
+            LinePushDeliveryDiagnostics.checkpoint(
+                    result, "recovery-cancelled-before-retry");
+            return false;
+        }
+        if (!mLinePushStopFence.isCurrent(stopPermit)) {
+            LinePushDeliveryDiagnostics.checkpoint(result, "recovery-stop-epoch-changed");
+            return false;
+        }
+        if (!mTrustedGmsCloudMessagingSupervisor.isDesiredUser(userId)) {
+            LinePushDeliveryDiagnostics.checkpoint(
+                    result, "recovery-user-no-longer-desired");
+            return false;
+        }
+        if (!beginDaemonWorkloadAcquisition()) {
+            LinePushDeliveryDiagnostics.checkpoint(result, "gate-retry-reject");
+            return false;
+        }
+        LinePushDeliveryDiagnostics.checkpoint(result, "gate-retry-allow");
+        return dispatchStaticBroadcastWithAcquiredGate(
+                vuid, info, intent, result, stopPermit);
+    }
+
+    private boolean dispatchStaticBroadcastWithAcquiredGate(
+            int vuid, ActivityInfo info, Intent intent, PendingResultData result,
+            LinePushStopFence.Permit recoveryStopPermit) {
+        try {
+        final int userId = getUserId(vuid);
+        final boolean linePush = LinePushBroadcastPolicy.LINE_PACKAGE.equals(info.packageName)
+                && LinePushBroadcastPolicy.LINE_PACKAGE.equals(info.processName)
+                && LinePushBroadcastPolicy.C2DM_RECEIVE.equals(intent.getAction());
+        final LinePushStopFence.Permit dispatchStopPermit;
+        synchronized (this) {
+            dispatchStopPermit = linePush && recoveryStopPermit == null
+                    ? mLinePushStopFence.acquire(info.packageName, userId)
+                    : recoveryStopPermit;
+            if (linePush && !mLinePushStopFence.isCurrent(dispatchStopPermit)) {
+                LinePushDeliveryDiagnostics.checkpoint(result, "dispatch-app-stopping");
+                return false;
+            }
+        }
         ProcessRecord r;
         synchronized (mProcessNames) {
             r = findProcessLocked(info.processName, vuid);
@@ -2588,19 +3248,154 @@ public class VActivityManagerService extends IActivityManager.Stub
                         info.packageName, info.name, intent.getAction())
                 || LinePushBroadcastPolicy.shouldStart(
                         info.packageName, info.processName, intent.getAction())) && r == null) {
-            r = startProcessIfNeedLocked(info.processName, getUserId(vuid), info.packageName);
+            r = startProcessIfNeedLocked(info.processName, userId, info.packageName);
         }
         if (r == null || r.appThread == null) {
+            LinePushDeliveryDiagnostics.checkpoint(result, "target-unavailable");
             return false;
         }
+        LinePushDeliveryDiagnostics.checkpoint(result,
+                "target-ready user=" + getUserId(vuid));
         final ProcessRecord target = r;
-        Runnable dispatch = () -> performScheduleReceiver(
-                target.client, vuid, info, intent, result);
-        if (!mLinePushProcessGuard.protectAndDispatch(
-                target, intent.getAction(), result, dispatch)) {
+        Runnable dispatch = linePush
+                ? () -> performLinePushDispatchIfCurrent(dispatchStopPermit,
+                        target.client, vuid, info, intent, result)
+                : () -> performScheduleReceiver(target.client, vuid, info, intent, result);
+        boolean protectedDispatch;
+        synchronized (this) {
+            int leasesBefore = mLinePushProcessGuard.activeLeaseCount();
+            protectedDispatch = mLinePushProcessGuard.protectAndDispatch(
+                    target, intent.getAction(), result, dispatch);
+            if (leasesBefore != mLinePushProcessGuard.activeLeaseCount()) {
+                mDaemonWorkloadGate.workloadChanged();
+            }
+        }
+        if (!protectedDispatch) {
+            LinePushDeliveryDiagnostics.checkpoint(result, "dispatch-direct");
             dispatch.run();
         }
         return true;
+        } finally {
+            endDaemonWorkloadMutation();
+        }
+    }
+
+    synchronized LinePushStopFence.StopScope beginStaticBroadcastAppStop(String packageName) {
+        return beginLinePushStopLocked(packageName, LinePushStopFence.ALL_USERS);
+    }
+
+    synchronized void endStaticBroadcastAppStop(LinePushStopFence.StopScope scope) {
+        mLinePushStopFence.end(scope);
+    }
+
+    private synchronized LinePushStopFence.StopScope beginLinePushStop(
+            String packageName, int userId) {
+        return beginLinePushStopLocked(packageName, userId);
+    }
+
+    /** Keeps LINE push recovery fenced for a complete package data/binding mutation. */
+    public synchronized LinePushPackageStateMutation beginLinePushPackageStateMutation(
+            String packageName, int userId) {
+        return new LinePushPackageStateMutation(beginLinePushStopLocked(packageName, userId));
+    }
+
+    public synchronized void endLinePushPackageStateMutation(
+            LinePushPackageStateMutation mutation) {
+        if (mutation != null) mLinePushStopFence.end(mutation.scope);
+    }
+
+    private LinePushStopFence.StopScope beginLinePushStopLocked(
+            String packageName, int userId) {
+        LinePushStopFence.StopScope scope = mLinePushStopFence.begin(packageName, userId);
+        if (scope == LinePushStopFence.StopScope.NONE) return scope;
+        mLinePushClosedGateRecovery.cancelPackageUser(packageName, userId);
+        mLinePushProcessGuard.cancelPackageUser(packageName, userId);
+        mDaemonWorkloadGate.workloadChanged();
+        return scope;
+    }
+
+    private synchronized void endLinePushStop(LinePushStopFence.StopScope scope) {
+        mLinePushStopFence.end(scope);
+    }
+
+    private synchronized void performLinePushDispatchIfCurrent(
+            LinePushStopFence.Permit stopPermit, IVClient client, int vuid,
+            ActivityInfo info, Intent intent, PendingResultData result) {
+        if (!mLinePushStopFence.isCurrent(stopPermit)) {
+            LinePushDeliveryDiagnostics.finish(
+                    result == null ? null : result.mToken, "dispatch-stop-epoch-changed");
+            if (result != null) result.finish();
+            return;
+        }
+        performScheduleReceiver(client, vuid, info, intent, result);
+    }
+
+    /** Atomically validates the LINE stop epoch and reopens the gate for one consumed nonce. */
+    public synchronized boolean authorizeLinePushDaemonReopen(long nonce) {
+        LinePushDaemonAuthorizationScope scope = mLinePushDaemonAuthorizations.remove(nonce);
+        if (scope == null || !mLinePushStopFence.isCurrent(scope.stopPermit)
+                || !mTrustedGmsCloudMessagingSupervisor.isDesiredUser(scope.userId)) {
+            return false;
+        }
+        mDaemonWorkloadGate.reopen();
+        return true;
+    }
+
+    /** Drops a consumed nonce when durable recovery suppression rejects the service start. */
+    public synchronized void discardLinePushDaemonAuthorization(long nonce) {
+        mLinePushDaemonAuthorizations.remove(nonce);
+    }
+
+    private synchronized void revokeLinePushDaemonAuthorization(long nonce) {
+        mLinePushDaemonAuthorizations.remove(nonce);
+        DaemonService.revokeLinePushRecovery(nonce);
+    }
+
+    private final class LinePushDaemonAuthorization {
+        private final AtomicLong nonce = new AtomicLong();
+
+        boolean start(Context context, LinePushStopFence.Permit stopPermit, int userId) {
+            if (nonce.get() != 0L) return true;
+            long authorizedNonce = DaemonService.prepareLinePushRecovery(context);
+            if (authorizedNonce == 0L) return false;
+            nonce.set(authorizedNonce);
+            mLinePushDaemonAuthorizations.put(authorizedNonce,
+                    new LinePushDaemonAuthorizationScope(stopPermit, userId));
+            try {
+                DaemonService.startPreparedLinePushRecovery(context, authorizedNonce);
+                return true;
+            } catch (RuntimeException startFailure) {
+                nonce.compareAndSet(authorizedNonce, 0L);
+                mLinePushDaemonAuthorizations.remove(authorizedNonce);
+                DaemonService.revokeLinePushRecovery(authorizedNonce);
+                throw startFailure;
+            }
+        }
+
+        void revoke() {
+            long authorizedNonce = nonce.getAndSet(0L);
+            if (authorizedNonce == 0L) return;
+            revokeLinePushDaemonAuthorization(authorizedNonce);
+        }
+    }
+
+    private static final class LinePushDaemonAuthorizationScope {
+        final LinePushStopFence.Permit stopPermit;
+        final int userId;
+
+        LinePushDaemonAuthorizationScope(LinePushStopFence.Permit stopPermit, int userId) {
+            this.stopPermit = stopPermit;
+            this.userId = userId;
+        }
+    }
+
+    /** Opaque cross-service handle; only VAMS may inspect the underlying stop scope. */
+    public static final class LinePushPackageStateMutation {
+        private final LinePushStopFence.StopScope scope;
+
+        private LinePushPackageStateMutation(LinePushStopFence.StopScope scope) {
+            this.scope = scope;
+        }
     }
 
     private static boolean isStartProcessForBroadcast(String processName, String packageName) {
@@ -2613,8 +3408,10 @@ public class VActivityManagerService extends IActivityManager.Stub
         ComponentName componentName = ComponentUtils.toComponentName(info);
         BroadcastSystem.get().broadcastSent(vuid, info, result);
         try {
+            LinePushDeliveryDiagnostics.checkpoint(result, "schedule-receiver");
             client.scheduleReceiver(info.processName, componentName, intent, result);
         } catch (Throwable e) {
+            LinePushDeliveryDiagnostics.checkpoint(result, "schedule-failed");
             if (result != null) {
                 BroadcastSystem.get().broadcastFinish(result);
             }
@@ -2622,7 +3419,10 @@ public class VActivityManagerService extends IActivityManager.Stub
     }
 
     void onStaticBroadcastFinished(IBinder token) {
-        mLinePushProcessGuard.complete(token);
+        synchronized (this) {
+            mLinePushProcessGuard.complete(token);
+            mDaemonWorkloadGate.workloadChanged();
+        }
     }
 
     @Override

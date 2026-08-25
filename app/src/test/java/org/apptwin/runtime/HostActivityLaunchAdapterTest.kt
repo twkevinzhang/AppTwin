@@ -2,6 +2,7 @@ package org.apptwin.runtime
 
 import android.content.Intent
 import com.lody.virtual.remote.PreparedActivityLaunch
+import java.io.File
 import java.util.concurrent.Callable
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
@@ -12,6 +13,18 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class HostActivityLaunchAdapterTest {
+    @Test
+    fun `visible daemon request captures epoch before starting service`() {
+        val source = File(
+            "src/main/java/org/apptwin/runtime/DaemonWorkloadAuthorization.kt",
+        ).readText()
+        val capture = source.indexOf("daemonWorkloadGateReopenEpoch")
+        val startup = source.indexOf("DaemonService.startup(")
+
+        assertTrue(capture >= 0)
+        assertTrue(startup > capture)
+    }
+
     @Test
     fun `new Group launch starts prepared stub from resumed host and waits for exact ACK`() {
         TestMainThread().use { main ->
@@ -34,6 +47,18 @@ class HostActivityLaunchAdapterTest {
                     started = intent
                 },
                 moveTaskToFront = { _, _ -> error("new launch must not reuse a task") },
+                refreshDaemonFromVisibleHost = { host ->
+                    assertTrue(main.isMainThread())
+                    assertEquals("visible-host", host)
+                    events += "daemon"
+                    41L
+                },
+                awaitDaemonReady = { observedReopenEpoch, timeoutMs ->
+                    assertEquals(41L, observedReopenEpoch)
+                    assertEquals(5_000L, timeoutMs)
+                    events += "daemon-ready"
+                    true
+                },
                 dispatchToMain = main::dispatch,
                 isMainThread = main::isMainThread,
                 awaitAcknowledgement = { launchId, _ ->
@@ -47,8 +72,39 @@ class HostActivityLaunchAdapterTest {
 
             assertTrue(result.isSuccess)
             assertNotSame(preparedIntent, started)
-            assertEquals(listOf("prepare-2", "start", "ack"), events)
+            assertEquals(
+                listOf("daemon", "daemon-ready", "prepare-2", "start", "ack"),
+                events,
+            )
         }
+    }
+
+    @Test
+    fun `closed daemon gate fails before preparing guest workload`() {
+        var prepared = false
+        val adapter = HostActivityLaunchAdapter(
+            prepareActivity = { _, _, _ ->
+                prepared = true
+                error("closed gate must prevent preparation")
+            },
+            resumedHost = { "visible-host" },
+            startActivity = { _, _ -> error("closed gate must prevent launch") },
+            moveTaskToFront = { _, _ -> error("closed gate must prevent reuse") },
+            refreshDaemonFromVisibleHost = { 7L },
+            awaitDaemonReady = { observedReopenEpoch, _ ->
+                assertEquals(7L, observedReopenEpoch)
+                false
+            },
+            dispatchToMain = ::runImmediately,
+            isMainThread = { false },
+            awaitAcknowledgement = { _, _ -> false },
+            cancelAcknowledgement = {},
+        )
+
+        val result = adapter.launch(Intent("test.request"), "com.example.guest", 2)
+
+        assertFalse(result.isSuccess)
+        assertFalse(prepared)
     }
 
     @Test
@@ -182,6 +238,7 @@ class HostActivityLaunchAdapterTest {
     @Test
     fun `launch without resumed AppTwin host fails before prepare`() {
         var prepared = false
+        var daemonRefreshed = false
         val adapter = HostActivityLaunchAdapter<String>(
             prepareActivity = { _, _, _ ->
                 prepared = true
@@ -190,6 +247,10 @@ class HostActivityLaunchAdapterTest {
             resumedHost = { null },
             startActivity = { _, _ -> error("must not start") },
             moveTaskToFront = { _, _ -> error("must not move") },
+            refreshDaemonFromVisibleHost = {
+                daemonRefreshed = true
+                0L
+            },
             dispatchToMain = ::runImmediately,
             isMainThread = { false },
             awaitAcknowledgement = { _, _ -> error("must not await") },
@@ -200,6 +261,41 @@ class HostActivityLaunchAdapterTest {
 
         assertFalse(result.isSuccess)
         assertFalse(prepared)
+        assertFalse(daemonRefreshed)
+    }
+
+    @Test
+    fun `host paused during prepare refreshes daemon first but cannot start guest`() {
+        var resumed = true
+        var daemonRefreshed = false
+        var started = false
+        val adapter = HostActivityLaunchAdapter(
+            prepareActivity = { _, _, _ ->
+                resumed = false
+                PreparedActivityLaunch.hostStartRequired(
+                    Intent("test.prepared"),
+                    "user-2-launch",
+                )
+            },
+            resumedHost = { if (resumed) "visible-host" else null },
+            startActivity = { _, _ -> started = true },
+            moveTaskToFront = { _, _ -> error("must not move") },
+            refreshDaemonFromVisibleHost = {
+                daemonRefreshed = true
+                0L
+            },
+            dispatchToMain = ::runImmediately,
+            isMainThread = { false },
+            awaitAcknowledgement = { _, _ -> error("must not await") },
+            cancelAcknowledgement = {},
+        )
+
+        val result = adapter.launch(Intent("test.request"), "com.example.guest", 2)
+
+        assertFalse(result.isSuccess)
+        assertEquals("AppTwin activity is no longer resumed", result.failureReason)
+        assertTrue(daemonRefreshed)
+        assertFalse(started)
     }
 
     @Test

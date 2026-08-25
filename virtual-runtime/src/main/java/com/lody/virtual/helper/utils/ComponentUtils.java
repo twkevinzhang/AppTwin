@@ -104,6 +104,22 @@ public class ComponentUtils {
     }
 
     public static Intent redirectBroadcastIntent(Intent intent, int userId) {
+        return redirectBroadcastIntent(intent, userId, null, VUserHandle.USER_NULL);
+    }
+
+    /**
+     * Redirects a guest-originated broadcast while attaching sender identity obtained from the
+     * bound VClient, never from caller-controlled Intent extras.
+     */
+    public static Intent redirectBroadcastIntent(Intent intent, int userId,
+            String virtualSenderPackage, int virtualSenderVuid) {
+        return redirectBroadcastIntent(
+                intent, userId, virtualSenderPackage, virtualSenderVuid, null);
+    }
+
+    public static Intent redirectBroadcastIntent(Intent intent, int userId,
+            String virtualSenderPackage, int virtualSenderVuid,
+            String linePushAttestation) {
         Intent newIntent = intent.cloneFilter();
         newIntent.setComponent(null);
         newIntent.setPackage(null);
@@ -134,6 +150,18 @@ public class ComponentUtils {
             if (protectedAction != null) {
                 newIntent.setAction(protectedAction);
             }
+        }
+        if (virtualSenderPackage != null && virtualSenderVuid >= 0) {
+            newIntent.putExtra(BroadcastPackageScope.EXTRA_VIRTUAL_SENDER_PACKAGE,
+                    virtualSenderPackage);
+            newIntent.putExtra(BroadcastPackageScope.EXTRA_VIRTUAL_SENDER_VUID,
+                    virtualSenderVuid);
+            newIntent.putExtra(BroadcastPackageScope.EXTRA_VIRTUAL_SENDER_USER_ID,
+                    VUserHandle.getUserId(virtualSenderVuid));
+        }
+        if (linePushAttestation != null) {
+            newIntent.putExtra(
+                    BroadcastPackageScope.EXTRA_LINE_PUSH_ATTESTATION, linePushAttestation);
         }
         return newIntent;
     }

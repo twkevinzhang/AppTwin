@@ -12,7 +12,6 @@ import android.os.RemoteException;
 
 import com.lody.virtual.client.core.VirtualCore;
 import com.lody.virtual.client.ipc.ServiceManagerNative;
-import com.lody.virtual.client.stub.DaemonService;
 import com.lody.virtual.helper.compat.BundleCompat;
 import com.lody.virtual.server.accounts.VAccountManagerService;
 import com.lody.virtual.server.am.BroadcastSystem;
@@ -37,7 +36,6 @@ public final class BinderProvider extends ContentProvider {
     @Override
     public boolean onCreate() {
         Context context = getContext();
-        DaemonService.startup(context);
         if (!VirtualCore.get().isStartup()) {
             return true;
         }
@@ -67,7 +65,8 @@ public final class BinderProvider extends ContentProvider {
         // Do not start guest services synchronously from ContentProvider.onCreate(). A guest stub
         // provider cannot publish until this BinderProvider returns, so doing so creates a
         // provider-start cycle. VActivityManagerService posts the initial reconciliation after
-        // this main-loop turn; DaemonService and its persisted job provide later retries.
+        // this main-loop turn; a later user-visible daemon start and its persisted repair job
+        // provide independent retries without creating an FGS from provider startup.
         return true;
     }
 
