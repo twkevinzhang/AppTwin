@@ -437,13 +437,21 @@ import static android.content.pm.ActivityInfo.LAUNCH_SINGLE_TOP;
             boolean successorFailed = false;
             boolean startTaskToFront = !clearTask && !clearTop && ComponentUtils.isSameIntent(intent, reuseTask.taskRoot);
             ActivityRecord topBeforeMarking = topActivityInTask(reuseTask);
-            if (startTaskToFront && (topBeforeMarking == null
-                    || topBeforeMarking.process == null
-                    || topBeforeMarking.process.terminalCleanupStarted
-                    || !isProcessEndpointAlive(topBeforeMarking.process))) {
+            boolean hasUsableTopActivity = topBeforeMarking != null
+                    && topBeforeMarking.token != null
+                    && isProcessEndpointAlive(topBeforeMarking.process);
+            if (startTaskToFront && !hasUsableTopActivity) {
                 startTaskToFront = false;
             }
             if (prepareHostLaunch) {
+                if (shouldPrepareFreshTaskAfterStaleReuse(
+                        userId, reuseTask.userId, hasUsableTopActivity)) {
+                    // Package replacement can leave the engine alive after its guest process and
+                    // physical StubActivity task have died. Forget only that stale virtual task;
+                    // the prepared launch will create a new, same-user stub without touching data.
+                    mHistory.remove(reuseTask.taskId);
+                    return prepareActivityInNewTaskLocked(userId, intent, info);
+                }
                 boolean requiresIntentDelivery = clearTarget.deliverIntent || singleTop;
                 boolean launcherTaskReactivation = isLauncherTaskReactivation(
                         intent, topBeforeMarking == null ? null : topBeforeMarking.component);
@@ -516,6 +524,11 @@ import static android.content.pm.ActivityInfo.LAUNCH_SINGLE_TOP;
         return taskId >= 0 && requestedUserId == taskUserId && startTaskToFront
                 && hasExpectedActivityToken
                 && (!requiresIntentDelivery || launcherTaskReactivation);
+    }
+
+    static boolean shouldPrepareFreshTaskAfterStaleReuse(
+            int requestedUserId, int taskUserId, boolean hasUsableTopActivity) {
+        return requestedUserId == taskUserId && !hasUsableTopActivity;
     }
 
     static boolean isLauncherTaskReactivation(Intent intent, ComponentName topComponent) {
