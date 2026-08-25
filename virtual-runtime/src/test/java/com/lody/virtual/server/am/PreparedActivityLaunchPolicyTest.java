@@ -42,6 +42,16 @@ public class PreparedActivityLaunchPolicyTest {
     }
 
     @Test
+    public void staleSameUserTaskFallsBackToFreshPreparedTask() {
+        assertTrue(ActivityStack.shouldPrepareFreshTaskAfterStaleReuse(
+                7, 7, false));
+        assertFalse(ActivityStack.shouldPrepareFreshTaskAfterStaleReuse(
+                7, 7, true));
+        assertFalse(ActivityStack.shouldPrepareFreshTaskAfterStaleReuse(
+                7, 8, false));
+    }
+
+    @Test
     public void launcherReactivationMayReuseOnlyTheExactCurrentTopActivity() {
         assertTrue(ActivityStack.canReactivateLauncherTask(true, true, true));
         assertFalse(ActivityStack.canReactivateLauncherTask(true, true, false));
