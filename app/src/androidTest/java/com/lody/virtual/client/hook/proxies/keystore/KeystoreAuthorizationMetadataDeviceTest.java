@@ -3,6 +3,7 @@ package com.lody.virtual.client.hook.proxies.keystore;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
+import static org.junit.Assert.assertTrue;
 import static org.junit.Assume.assumeTrue;
 
 import android.content.Context;
@@ -31,9 +32,7 @@ public class KeystoreAuthorizationMetadataDeviceTest {
 
     @Test
     public void currentCredentialBoundKeyIsRecognizedAndCleanedUp() throws Exception {
-        assumeTrue("Keystore metadata E2E is opt-in; pass -e " + OPT_IN_ARGUMENT + " 1",
-                "1".equals(InstrumentationRegistry.getArguments()
-                        .getString(OPT_IN_ARGUMENT)));
+        assumeOptedIn();
         Context context = InstrumentationRegistry.getInstrumentation().getTargetContext();
         KeyStore keyStore = KeyStore.getInstance("AndroidKeyStore");
         keyStore.load(null);
@@ -63,6 +62,34 @@ public class KeystoreAuthorizationMetadataDeviceTest {
             keyStore.deleteEntry(ALIAS);
             assertFalse("fixture key must be removed", keyStore.containsAlias(ALIAS));
         }
+    }
+
+    @Test
+    public void permanentlyInvalidatedServiceResponseIsRecognized() throws Exception {
+        assumeOptedIn();
+        Class<?> responseCode = Class.forName("android.system.keystore2.ResponseCode");
+        int expected = responseCode
+                .getField("KEY_PERMANENTLY_INVALIDATED")
+                .getInt(null);
+        Throwable response = (Throwable) Class.forName("android.os.ServiceSpecificException")
+                .getConstructor(int.class, String.class)
+                .newInstance(expected, "test-only response");
+
+        assertTrue(KeystoreResponsePolicy.isPermanentlyInvalidated(response));
+        assertTrue(KeystoreResponsePolicy.requiresKeyReset(response));
+
+        int missing = responseCode.getField("KEY_NOT_FOUND").getInt(null);
+        Throwable missingResponse = (Throwable) Class.forName(
+                        "android.os.ServiceSpecificException")
+                .getConstructor(int.class, String.class)
+                .newInstance(missing, "test-only response");
+        assertTrue(KeystoreResponsePolicy.requiresKeyReset(missingResponse));
+    }
+
+    private static void assumeOptedIn() {
+        assumeTrue("Keystore metadata E2E is opt-in; pass -e " + OPT_IN_ARGUMENT + " 1",
+                "1".equals(InstrumentationRegistry.getArguments()
+                        .getString(OPT_IN_ARGUMENT)));
     }
 
     private static Object getPhysicalKeyEntry(String alias) throws Exception {

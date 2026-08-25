@@ -19,4 +19,12 @@ public class KeystoreResultPolicyTest {
                 "android.system.keystore2.KeyMetadata"));
         assertFalse(KeystoreStub.shouldWrapResultField("java.lang.String"));
     }
+
+    @Test
+    public void wrapsOperationBinderReturnedByCreateOperation() {
+        assertTrue(KeystoreStub.shouldWrapOperationField(
+                "android.system.keystore2.IKeystoreOperation"));
+        assertFalse(KeystoreStub.shouldWrapOperationField(
+                "android.system.keystore2.IKeystoreSecurityLevel"));
+    }
 }

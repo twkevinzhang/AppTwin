@@ -1,8 +1,10 @@
 package com.lody.virtual.client.hook.proxies.credential;
 
+import com.lody.virtual.client.VClientImpl;
 import com.lody.virtual.client.hook.base.BinderInvocationProxy;
 import com.lody.virtual.client.hook.base.BinderInvocationStub;
 import com.lody.virtual.client.hook.base.MethodProxy;
+import com.lody.virtual.helper.utils.VLog;
 
 import java.lang.reflect.Method;
 import java.util.List;
@@ -12,6 +14,9 @@ import java.util.Set;
 public final class CredentialManagerStub extends BinderInvocationProxy {
 
     private static final String SERVICE_NAME = "credential";
+    private static final String FACEBOOK_LITE = "com.facebook.lite";
+    private static final String NO_CREDENTIAL =
+            "android.credentials.GetCredentialException.TYPE_NO_CREDENTIAL";
 
     public CredentialManagerStub() {
         super(loadStubClass(), SERVICE_NAME);
@@ -42,12 +47,46 @@ public final class CredentialManagerStub extends BinderInvocationProxy {
         }
 
         @Override
-        public boolean beforeCall(Object who, Method method, Object... args) {
+        public Object call(Object who, Method method, Object... args) throws Throwable {
             if (args != null && args.length > 0) {
                 clearAllowedProviders(args[0]);
             }
-            return true;
+            String packageName = VClientImpl.get().getCurrentPackage();
+            if (shouldReturnNoCredential(packageName, methodName)
+                    && notifyNoCredential(args)) {
+                // Credential Manager launches its UI as a host activity. Returning from that
+                // activity detaches Facebook Lite's Bloks screen from its in-memory session map,
+                // so keep this one guest on the stable manual-login path.
+                VLog.i("CredentialManagerStub",
+                        "kept Facebook Lite on manual credential entry");
+                FacebookLiteCredentialCompat.monitorManualLoginNavigation();
+                return null;
+            }
+            return method.invoke(who, args);
         }
+    }
+
+    static boolean shouldReturnNoCredential(String packageName, String methodName) {
+        return FACEBOOK_LITE.equals(packageName) && "executeGetCredential".equals(methodName);
+    }
+
+    static boolean notifyNoCredential(Object[] args) {
+        if (args == null) return false;
+        for (Object arg : args) {
+            if (arg == null) continue;
+            try {
+                Method onError = arg.getClass().getMethod(
+                        "onError", String.class, String.class);
+                onError.invoke(arg, NO_CREDENTIAL,
+                        "Host credentials are unavailable inside this AppTwin guest");
+                return true;
+            } catch (NoSuchMethodException ignored) {
+                // This argument is not the credential callback.
+            } catch (ReflectiveOperationException | RuntimeException error) {
+                return false;
+            }
+        }
+        return false;
     }
 
     /**

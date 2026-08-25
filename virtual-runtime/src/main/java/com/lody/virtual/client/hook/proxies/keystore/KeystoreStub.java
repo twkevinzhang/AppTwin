@@ -9,6 +9,7 @@ import com.lody.virtual.os.VUserHandle;
 
 import java.lang.reflect.Array;
 import java.lang.reflect.Field;
+import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.util.ArrayList;
 import java.util.List;
@@ -25,6 +26,8 @@ public final class KeystoreStub extends BinderInvocationProxy {
     private static final String DESCRIPTOR_CLASS = "android.system.keystore2.KeyDescriptor";
     private static final String SECURITY_LEVEL_INTERFACE =
             "android.system.keystore2.IKeystoreSecurityLevel";
+    private static final String OPERATION_INTERFACE =
+            "android.system.keystore2.IKeystoreOperation";
 
     public KeystoreStub() {
         super(loadStubClass("android.system.keystore2.IKeystoreService$Stub"), SERVICE_NAME);
@@ -60,6 +63,7 @@ public final class KeystoreStub extends BinderInvocationProxy {
         @Override
         public Object call(Object who, Method method, Object... args) throws Throwable {
             Owner owner = currentOwner();
+            FacebookLiteAttestationKeyCompat.ensure(owner.packageName, owner.userId);
             List<AliasMutation> mutations = rewriteArguments(owner, args);
             try {
                 Object result = method.invoke(who, args);
@@ -74,9 +78,15 @@ public final class KeystoreStub extends BinderInvocationProxy {
                             owner.packageName, owner.userId);
                     // Re-read so the framework observes KEY_NOT_FOUND and lets the app regenerate
                     // its own key with the current lock-screen and biometric authenticator IDs.
-                    return method.invoke(who, args);
+                    Object regenerated = method.invoke(who, args);
+                    wrapSecurityLevels(regenerated);
+                    return regenerated;
                 }
-                rewriteResultForGuest(owner, result);
+                // Keep the physical descriptor inside AndroidKeyStore's private key object. The
+                // framework reuses it for createOperation; converting it back to the guest alias
+                // makes Keystore2 return KEY_NOT_FOUND (reported as a permanently invalid key).
+                // Public alias enumeration is still converted by ListEntries below.
+                wrapSecurityLevels(result);
                 return result;
             } finally {
                 restoreMutations(mutations);
@@ -139,13 +149,93 @@ public final class KeystoreStub extends BinderInvocationProxy {
         @Override
         public Object call(Object who, Method method, Object... args) throws Throwable {
             Owner owner = currentOwner();
+            Object originalDescriptor = firstDescriptor(args);
+            String originalAlias = descriptorAlias(originalDescriptor);
+            boolean refreshFacebookAttestation = "generateKey".equals(methodName)
+                    && FacebookLiteAttestationKeyCompat.isAttestationAlias(
+                            owner.packageName, originalAlias);
             List<AliasMutation> mutations = rewriteArguments(owner, args);
             try {
                 Object result = method.invoke(who, args);
                 rewriteResultForGuest(owner, result);
+                if (refreshFacebookAttestation) {
+                    FacebookLiteAttestationKeyCompat.refreshWarmupAfterGeneration(
+                            owner.packageName);
+                }
                 return result;
             } finally {
                 restoreMutations(mutations);
+            }
+        }
+    }
+
+    private static final class CreateOperation extends MethodProxy {
+        @Override
+        public String getMethodName() {
+            return "createOperation";
+        }
+
+        @Override
+        public Object call(Object who, Method method, Object... args) throws Throwable {
+            Owner owner = currentOwner();
+            List<AliasMutation> mutations = rewriteArguments(owner, args);
+            try {
+                Object physicalDescriptor = firstOwnedDescriptor(owner, args);
+                try {
+                    Object result = method.invoke(who, args);
+                    return wrapOperationResult(
+                            owner, who, method, physicalDescriptor, result);
+                } catch (InvocationTargetException error) {
+                    if (physicalDescriptor != null
+                            && KeystoreResponsePolicy.requiresKeyReset(error.getCause())
+                            && deleteOwnedGuestKey(
+                                    owner, who, method, physicalDescriptor)) {
+                        VLog.w(TAG,
+                                "removed daemon-invalidated guest key package=%s user=%d",
+                                owner.packageName, owner.userId);
+                    }
+                    throw error;
+                }
+            } finally {
+                restoreMutations(mutations);
+            }
+        }
+    }
+
+    private static final class OperationMethod extends MethodProxy {
+        private final String methodName;
+        private final Owner owner;
+        private final Object securityLevel;
+        private final Method createOperation;
+        private final Object descriptor;
+
+        OperationMethod(String methodName, Owner owner, Object securityLevel,
+                        Method createOperation, Object descriptor) {
+            this.methodName = methodName;
+            this.owner = owner;
+            this.securityLevel = securityLevel;
+            this.createOperation = createOperation;
+            this.descriptor = descriptor;
+        }
+
+        @Override
+        public String getMethodName() {
+            return methodName;
+        }
+
+        @Override
+        public Object call(Object who, Method method, Object... args) throws Throwable {
+            try {
+                return method.invoke(who, args);
+            } catch (InvocationTargetException error) {
+                if (KeystoreResponsePolicy.requiresKeyReset(error.getCause())
+                        && deleteOwnedGuestKey(
+                                owner, securityLevel, createOperation, descriptor)) {
+                    VLog.w(TAG,
+                            "removed operation-invalidated guest key package=%s user=%d",
+                            owner.packageName, owner.userId);
+                }
+                throw error;
             }
         }
     }
@@ -171,6 +261,7 @@ public final class KeystoreStub extends BinderInvocationProxy {
         @Override
         public Object call(Object who, Method method, Object... args) throws Throwable {
             Owner owner = currentOwner();
+            FacebookLiteAttestationKeyCompat.ensure(owner.packageName, owner.userId);
             Object result = method.invoke(who, args);
             if (result == null || !result.getClass().isArray()) return result;
 
@@ -275,6 +366,28 @@ public final class KeystoreStub extends BinderInvocationProxy {
         }
     }
 
+    private static boolean deleteOwnedGuestKey(Owner owner, Object who, Method sourceMethod,
+                                               Object descriptor) {
+        synchronized (descriptor) {
+            List<AliasMutation> mutations = new ArrayList<>();
+            try {
+                rewriteDescriptorArgument(owner, descriptor, mutations);
+                String alias = descriptorAlias(descriptor);
+                return KeystoreAliasPolicy.isOwnedBy(
+                        owner.packageName, owner.userId, alias)
+                        && deletePhysicalKey(who, sourceMethod, descriptor);
+            } catch (ReflectiveOperationException | RuntimeException error) {
+                return false;
+            } finally {
+                try {
+                    restoreMutations(mutations);
+                } catch (IllegalAccessException ignored) {
+                    // The descriptor remains scoped to this guest even if restoration fails.
+                }
+            }
+        }
+    }
+
     private static String descriptorAlias(Object descriptor) throws ReflectiveOperationException {
         if (descriptor == null || !DESCRIPTOR_CLASS.equals(descriptor.getClass().getName())) {
             return null;
@@ -319,15 +432,67 @@ public final class KeystoreStub extends BinderInvocationProxy {
         }
     }
 
+    private static void wrapSecurityLevels(Object result) throws ReflectiveOperationException {
+        if (result == null) return;
+        Class<?> type = result.getClass();
+        if (type.isArray()) {
+            for (int index = 0; index < Array.getLength(result); index++) {
+                wrapSecurityLevels(Array.get(result, index));
+            }
+            return;
+        }
+        if (!type.getName().startsWith("android.system.keystore2.")) return;
+        for (Field field : type.getFields()) {
+            Class<?> fieldType = field.getType();
+            if (shouldWrapResultField(fieldType.getName())) {
+                Object securityLevel = field.get(result);
+                if (securityLevel != null) {
+                    field.set(result, wrapSecurityLevel(securityLevel));
+                }
+            } else if (fieldType.isArray()
+                    || fieldType.getName().startsWith("android.system.keystore2.KeyMetadata")) {
+                wrapSecurityLevels(field.get(result));
+            }
+        }
+    }
+
     static boolean shouldWrapResultField(String fieldTypeName) {
         return SECURITY_LEVEL_INTERFACE.equals(fieldTypeName);
+    }
+
+    static boolean shouldWrapOperationField(String fieldTypeName) {
+        return OPERATION_INTERFACE.equals(fieldTypeName);
+    }
+
+    private static Object wrapOperationResult(Owner owner, Object securityLevel,
+                                              Method createOperation, Object descriptor,
+                                              Object result) {
+        if (descriptor == null || result == null) return result;
+        try {
+            for (Field field : result.getClass().getFields()) {
+                if (!shouldWrapOperationField(field.getType().getName())) continue;
+                Object operation = field.get(result);
+                if (operation == null) continue;
+                MethodInvocationStub<Object> stub = new MethodInvocationStub<>(operation);
+                for (String name : new String[]{"updateAad", "update", "finish"}) {
+                    stub.addMethodProxy(new OperationMethod(
+                            name, owner, securityLevel, createOperation, descriptor));
+                }
+                field.set(result, stub.getProxyInterface());
+            }
+        } catch (ReflectiveOperationException | RuntimeException error) {
+            VLog.w(TAG, "unable to wrap guest keystore operation: %s",
+                    error.getClass().getSimpleName());
+        }
+        return result;
     }
 
     private static Object wrapSecurityLevel(Object securityLevel) {
         if (securityLevel == null) return null;
         MethodInvocationStub<Object> stub = new MethodInvocationStub<>(securityLevel);
+        stub.addMethodProxy(new CreateOperation());
         for (String name : new String[]{
-                "createOperation", "generateKey", "importKey", "importWrappedKey",
+                "generateKey", "importKey", "importWrappedKey",
                 "convertStorageKeyToEphemeral", "deleteKey"
         }) {
             stub.addMethodProxy(new DescriptorMethod(name));

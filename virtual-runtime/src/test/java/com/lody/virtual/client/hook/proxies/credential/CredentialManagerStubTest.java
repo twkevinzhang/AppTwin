@@ -1,7 +1,9 @@
 package com.lody.virtual.client.hook.proxies.credential;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
+import static org.junit.Assert.assertTrue;
 
 import android.os.IBinder;
 import android.os.IInterface;
@@ -50,6 +52,37 @@ public class CredentialManagerStubTest {
     public void leavesUnknownRequestShapesUntouched() {
         assertEquals(0, CredentialManagerStub.clearAllowedProviders(null));
         assertEquals(0, CredentialManagerStub.clearAllowedProviders(new Object()));
+    }
+
+    @Test
+    public void bypassesOnlyFacebookLiteInteractiveCredentialRequests() {
+        assertTrue(CredentialManagerStub.shouldReturnNoCredential(
+                "com.facebook.lite", "executeGetCredential"));
+        assertFalse(CredentialManagerStub.shouldReturnNoCredential(
+                "com.facebook.lite", "executePrepareGetCredential"));
+        assertFalse(CredentialManagerStub.shouldReturnNoCredential(
+                "jp.naver.line.android", "executeGetCredential"));
+    }
+
+    @Test
+    public void reportsNoCredentialThroughTheFrameworkCallback() {
+        FakeCredentialCallback callback = new FakeCredentialCallback();
+
+        assertTrue(CredentialManagerStub.notifyNoCredential(
+                new Object[]{new Object(), callback, "com.facebook.lite"}));
+        assertEquals("android.credentials.GetCredentialException.TYPE_NO_CREDENTIAL",
+                callback.type);
+        assertNotNull(callback.message);
+    }
+
+    public static final class FakeCredentialCallback {
+        String type;
+        String message;
+
+        public void onError(String type, String message) {
+            this.type = type;
+            this.message = message;
+        }
     }
 
     public static final class FakeRequest {
