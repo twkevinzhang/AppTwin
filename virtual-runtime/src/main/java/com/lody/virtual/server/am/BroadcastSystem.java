@@ -15,6 +15,7 @@ import com.lody.virtual.client.env.SpecialComponentList;
 import com.lody.virtual.helper.collection.ArrayMap;
 import com.lody.virtual.helper.utils.BroadcastPackageScope;
 import com.lody.virtual.helper.utils.VLog;
+import com.lody.virtual.os.VUserHandle;
 import com.lody.virtual.remote.PendingResultData;
 import com.lody.virtual.server.pm.PackageSetting;
 import com.lody.virtual.server.pm.VAppManagerService;
@@ -47,6 +48,8 @@ public class BroadcastSystem {
      * MUST < 10000.
      */
     private static final int BROADCAST_TIME_OUT = 8500;
+    private static final String INTERNAL_BROADCAST_PERMISSION_SUFFIX =
+            ".permission.INTERNAL_BROADCAST";
     private static BroadcastSystem gDefault;
 
     private final ArrayMap<String, List<BroadcastReceiver>> mReceivers = new ArrayMap<>();
@@ -138,41 +141,91 @@ public class BroadcastSystem {
             }
             String componentAction = String.format("_VA_%s_%s", info.packageName, info.name);
             IntentFilter componentFilter = new IntentFilter(componentAction);
-            BroadcastReceiver r = new StaticBroadcastReceiver(setting.appId, info, componentFilter);
-            mContext.registerReceiver(r, componentFilter, null, mScheduler);
+            BroadcastReceiver r = new StaticBroadcastReceiver(
+                    setting.appId, info, componentFilter, true);
+            registerReceiver(r, componentFilter, false);
             receivers.add(r);
             for (VPackage.ActivityIntentInfo ci : receiver.intents) {
                 IntentFilter cloneFilter = new IntentFilter(ci.filter);
                 SpecialComponentList.protectIntentFilter(cloneFilter);
-                r = new StaticBroadcastReceiver(setting.appId, info, cloneFilter);
-                mContext.registerReceiver(r, cloneFilter, null, mScheduler);
-                receivers.add(r);
+                IntentFilter internalFilter = new IntentFilter(cloneFilter);
+                SpecialComponentList.retainSystemBroadcastActions(internalFilter, false);
+                if (internalFilter.countActions() > 0) {
+                    r = new StaticBroadcastReceiver(setting.appId, info, internalFilter, true);
+                    registerReceiver(r, internalFilter, false);
+                    receivers.add(r);
+                }
+                IntentFilter systemFilter = new IntentFilter(cloneFilter);
+                SpecialComponentList.retainSystemBroadcastActions(systemFilter, true);
+                if (systemFilter.countActions() > 0) {
+                    r = new StaticBroadcastReceiver(setting.appId, info, systemFilter, false);
+                    registerReceiver(r, systemFilter, true);
+                    receivers.add(r);
+                }
             }
         }
     }
 
+    private void registerReceiver(BroadcastReceiver receiver, IntentFilter filter,
+                                  boolean exported) {
+        String requiredPermission = requiredPermission(mContext.getPackageName(), exported);
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            // Protected wrappers are emitted by another AppTwin process. API 33+ has varied in
+            // how aggressively RECEIVER_NOT_EXPORTED constrains cross-process delivery, so make
+            // the receiver addressable but require an AppTwin signature permission. Untrusted
+            // applications cannot spoof these wrappers.
+            mContext.registerReceiver(receiver, filter, requiredPermission, mScheduler,
+                    receiverFlags());
+        } else {
+            mContext.registerReceiver(receiver, filter, requiredPermission, mScheduler);
+        }
+    }
+
+    static String internalBroadcastPermission(Context context) {
+        return internalBroadcastPermission(context.getPackageName());
+    }
+
+    static String internalBroadcastPermission(String packageName) {
+        return packageName + INTERNAL_BROADCAST_PERMISSION_SUFFIX;
+    }
+
+    static String requiredPermission(String packageName, boolean systemReceiver) {
+        return systemReceiver ? null : internalBroadcastPermission(packageName);
+    }
+
+    static int receiverFlags() {
+        return Context.RECEIVER_EXPORTED;
+    }
+
 
     public void stopApp(String packageName) {
-        synchronized (mBroadcastRecords) {
-            Iterator<Map.Entry<IBinder, BroadcastRecord>> iterator = mBroadcastRecords.entrySet().iterator();
-            while (iterator.hasNext()) {
-                Map.Entry<IBinder, BroadcastRecord> entry = iterator.next();
-                BroadcastRecord record = entry.getValue();
-                if (record.receiverInfo.packageName.equals(packageName)) {
-                    record.pendingResult.finish();
-                    mAMS.onStaticBroadcastFinished(entry.getKey());
-                    iterator.remove();
+        LinePushStopFence.StopScope lineStop =
+                mAMS.beginStaticBroadcastAppStop(packageName);
+        try {
+            synchronized (mBroadcastRecords) {
+                Iterator<Map.Entry<IBinder, BroadcastRecord>> iterator = mBroadcastRecords.entrySet().iterator();
+                while (iterator.hasNext()) {
+                    Map.Entry<IBinder, BroadcastRecord> entry = iterator.next();
+                    BroadcastRecord record = entry.getValue();
+                    if (record.receiverInfo.packageName.equals(packageName)) {
+                        record.pendingResult.finish();
+                        mAMS.onStaticBroadcastFinished(entry.getKey());
+                        LinePushDeliveryDiagnostics.finish(entry.getKey(), "app-stopped");
+                        iterator.remove();
+                    }
                 }
             }
-        }
-        synchronized (mReceivers) {
-            List<BroadcastReceiver> receivers = mReceivers.get(packageName);
-            if (receivers != null) {
-                for (BroadcastReceiver r : receivers) {
-                    mContext.unregisterReceiver(r);
+            synchronized (mReceivers) {
+                List<BroadcastReceiver> receivers = mReceivers.get(packageName);
+                if (receivers != null) {
+                    for (BroadcastReceiver r : receivers) {
+                        mContext.unregisterReceiver(r);
+                    }
                 }
+                mReceivers.remove(packageName);
             }
-            mReceivers.remove(packageName);
+        } finally {
+            mAMS.endStaticBroadcastAppStop(lineStop);
         }
     }
 
@@ -180,11 +233,12 @@ public class BroadcastSystem {
         synchronized (mBroadcastRecords) {
             BroadcastRecord record = mBroadcastRecords.remove(res.mToken);
             if (record == null) {
-                VLog.e(TAG, "Unable to find the BroadcastRecord by token: " + res.mToken);
+                VLog.e(TAG, "Unable to find the BroadcastRecord for completed receiver");
             }
         }
         mTimeoutHandler.removeMessages(0, res.mToken);
         mAMS.onStaticBroadcastFinished(res.mToken);
+        LinePushDeliveryDiagnostics.finish(res.mToken, "completed");
         res.finish();
     }
 
@@ -225,6 +279,7 @@ public class BroadcastSystem {
             if (r != null) {
                 VLog.w(TAG, "Broadcast timeout, cancel to dispatch it.");
                 mAMS.onStaticBroadcastFinished(token);
+                LinePushDeliveryDiagnostics.finish(token, "timeout");
                 r.pendingResult.finish();
             }
         }
@@ -234,13 +289,16 @@ public class BroadcastSystem {
     private final class StaticBroadcastReceiver extends BroadcastReceiver {
         private int appId;
         private ActivityInfo info;
+        private final boolean signatureProtectedWrapper;
         @SuppressWarnings("unused")
         private IntentFilter filter;
 
-        private StaticBroadcastReceiver(int appId, ActivityInfo info, IntentFilter filter) {
+        private StaticBroadcastReceiver(int appId, ActivityInfo info, IntentFilter filter,
+                boolean signatureProtectedWrapper) {
             this.appId = appId;
             this.info = info;
             this.filter = filter;
+            this.signatureProtectedWrapper = signatureProtectedWrapper;
         }
 
         @Override
@@ -253,11 +311,37 @@ public class BroadcastSystem {
             }
             String targetPackage = intent.getStringExtra(
                     BroadcastPackageScope.EXTRA_TARGET_PACKAGE);
-            if (!BroadcastPackageScope.accepts(targetPackage, info.packageName)) {
+            String virtualSenderPackage = intent.getStringExtra(
+                    BroadcastPackageScope.EXTRA_VIRTUAL_SENDER_PACKAGE);
+            int virtualSenderVuid = intent.getIntExtra(
+                    BroadcastPackageScope.EXTRA_VIRTUAL_SENDER_VUID, -1);
+            int virtualSenderUserId = intent.getIntExtra(
+                    BroadcastPackageScope.EXTRA_VIRTUAL_SENDER_USER_ID, VUserHandle.USER_NULL);
+            String linePushAttestation = intent.getStringExtra(
+                    BroadcastPackageScope.EXTRA_LINE_PUSH_ATTESTATION);
+            boolean accepted = BroadcastPackageScope.accepts(targetPackage, info.packageName);
+            boolean lineC2dm = LinePushDeliveryDiagnostics.isLineC2dmWrapper(
+                    intent, info.packageName);
+            if (lineC2dm) {
+                LinePushDeliveryDiagnostics.wrapperScope(
+                        intent.getIntExtra("_VA_|_user_id_", -1),
+                        targetPackage, info.packageName, accepted);
+            }
+            if (!accepted) {
                 return;
             }
             PendingResult result = goAsync();
-            if (!mAMS.handleStaticBroadcast(appId, info, intent, new PendingResultData(result))) {
+            PendingResultData resultData = new PendingResultData(result);
+            if (lineC2dm) {
+                LinePushDeliveryDiagnostics.begin(resultData,
+                        intent.getIntExtra("_VA_|_user_id_", -1),
+                        targetPackage, info.packageName);
+            }
+            if (!mAMS.handleStaticBroadcast(appId, info, intent, resultData,
+                    signatureProtectedWrapper, targetPackage,
+                    virtualSenderPackage, virtualSenderVuid, virtualSenderUserId,
+                    linePushAttestation)) {
+                LinePushDeliveryDiagnostics.finish(resultData.mToken, "entry-rejected");
                 result.finish();
             }
         }

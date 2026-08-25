@@ -20,10 +20,18 @@ import java.util.concurrent.TimeUnit;
 @TargetApi(Build.VERSION_CODES.LOLLIPOP)
 public class DaemonJobService extends JobService {
 
+    static final int JOB_ID = 1;
     static final long PERIODIC_INTERVAL_MILLIS = TimeUnit.MINUTES.toMillis(15);
 
     @Override
     public boolean onStartJob(JobParameters params) {
+        boolean foregroundActive = DaemonService.isForegroundSessionActive();
+        // Evaluate the durable gate even in a fresh process: this is what persists a newly
+        // observed REASON_USER_REQUESTED before the inactive job cancels itself.
+        boolean recoveryAllowed = DaemonService.allowsAutomaticRecovery(this);
+        if (!shouldRunRecovery(foregroundActive, recoveryAllowed)) {
+            return runsAsynchronously();
+        }
         try {
             PrivilegeAppOptimizer.notifyBootFinish();
             VActivityManager.get().reconcileTrustedGmsCloudMessaging();
@@ -52,7 +60,8 @@ public class DaemonJobService extends JobService {
                 return;
             }
 
-            JobInfo jobInfo = new JobInfo.Builder(1, new ComponentName(context, DaemonJobService.class))
+            JobInfo jobInfo = new JobInfo.Builder(
+                    JOB_ID, new ComponentName(context, DaemonJobService.class))
                     .setRequiresCharging(false)
                     .setRequiredNetworkType(JobInfo.NETWORK_TYPE_ANY)
                     .setPeriodic(PERIODIC_INTERVAL_MILLIS)
@@ -63,6 +72,22 @@ public class DaemonJobService extends JobService {
         } catch (Exception ex) {
             ex.printStackTrace();
         }
+    }
+
+    public static void cancelJob(Context context) {
+        try {
+            JobScheduler jobScheduler = (JobScheduler) context.getSystemService(
+                    JOB_SCHEDULER_SERVICE);
+            if (jobScheduler != null) {
+                jobScheduler.cancel(JOB_ID);
+            }
+        } catch (Exception ignored) {
+            // Cancellation is best effort; a later inactive run cancels itself before recovery.
+        }
+    }
+
+    static boolean shouldRunRecovery(boolean foregroundActive, boolean recoveryAllowed) {
+        return foregroundActive && recoveryAllowed;
     }
 
     static boolean runsAsynchronously() {

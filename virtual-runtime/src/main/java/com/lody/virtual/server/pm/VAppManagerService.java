@@ -965,39 +965,46 @@ public class VAppManagerService extends IAppManager.Stub {
         }
         PackageSetting ps = PackageCacheManager.getSetting(packageName);
         if (ps != null) {
-            int[] userIds = getPackageInstalledUsersInternal(packageName);
-            if (!ArrayUtils.contains(userIds, userId)) {
-                return false;
+            VActivityManagerService activityManager = VActivityManagerService.get();
+            VActivityManagerService.LinePushPackageStateMutation lineMutation =
+                    activityManager.beginLinePushPackageStateMutation(packageName, userId);
+            try {
+                int[] userIds = getPackageInstalledUsersInternal(packageName);
+                if (!ArrayUtils.contains(userIds, userId)) {
+                    return false;
+                }
+                if (!VPackageManagerService.get()
+                        .clearRuntimePermissionsInternal(packageName, userId)) {
+                    VLog.e(TAG, "UNINSTALL_PERMISSION_RETRYABLE");
+                    return false;
+                }
+                if (!GuestKeystoreState.clearPackageState(packageName, userId)) {
+                    VLog.e(TAG, "UNINSTALL_KEYSTORE_RETRYABLE");
+                    return false;
+                }
+                if (userIds.length == 1) {
+                    // Self clear is user-scoped. Do not route through the host-only global helper,
+                    // which would kill/erase other virtual users if residual state exists.
+                    activityManager.killAppByPkg(packageName, userId);
+                    FileUtils.deleteDir(
+                            VEnvironment.getDataUserPackageDirectory(userId, packageName));
+                    FileUtils.deleteDir(
+                            VEnvironment.getDeDataUserPackageDirectory(userId, packageName));
+                    FileUtils.deleteDir(
+                            VEnvironment.getVirtualPrivateStorageDir(userId, packageName));
+                } else {
+                    // Just hidden it
+                    activityManager.killAppByPkg(packageName, userId);
+                    ps.setInstalled(userId, false);
+                    mPersistenceLayer.save();
+                    FileUtils.deleteDir(VEnvironment.getDataUserPackageDirectory(userId, packageName));
+                    FileUtils.deleteDir(VEnvironment.getDeDataUserPackageDirectory(userId, packageName));
+                    FileUtils.deleteDir(VEnvironment.getVirtualPrivateStorageDir(userId, packageName));
+                }
+                return true;
+            } finally {
+                activityManager.endLinePushPackageStateMutation(lineMutation);
             }
-            if (!VPackageManagerService.get()
-                    .clearRuntimePermissionsInternal(packageName, userId)) {
-                VLog.e(TAG, "UNINSTALL_PERMISSION_RETRYABLE");
-                return false;
-            }
-            if (!GuestKeystoreState.clearPackageState(packageName, userId)) {
-                VLog.e(TAG, "UNINSTALL_KEYSTORE_RETRYABLE");
-                return false;
-            }
-            if (userIds.length == 1) {
-                // Self clear is user-scoped. Do not route through the host-only global helper,
-                // which would kill/erase other virtual users if residual state exists.
-                VActivityManagerService.get().killAppByPkg(packageName, userId);
-                FileUtils.deleteDir(
-                        VEnvironment.getDataUserPackageDirectory(userId, packageName));
-                FileUtils.deleteDir(
-                        VEnvironment.getDeDataUserPackageDirectory(userId, packageName));
-                FileUtils.deleteDir(
-                        VEnvironment.getVirtualPrivateStorageDir(userId, packageName));
-            } else {
-                // Just hidden it
-                VActivityManagerService.get().killAppByPkg(packageName, userId);
-                ps.setInstalled(userId, false);
-                mPersistenceLayer.save();
-                FileUtils.deleteDir(VEnvironment.getDataUserPackageDirectory(userId, packageName));
-                FileUtils.deleteDir(VEnvironment.getDeDataUserPackageDirectory(userId, packageName));
-                FileUtils.deleteDir(VEnvironment.getVirtualPrivateStorageDir(userId, packageName));
-            }
-            return true;
         }
         return false;
     }
@@ -1026,9 +1033,13 @@ public class VAppManagerService extends IAppManager.Stub {
     }
 
     private boolean clearPackageInternal(String packageName) {
+        VActivityManagerService activityManager = VActivityManagerService.get();
+        VActivityManagerService.LinePushPackageStateMutation lineMutation =
+                activityManager.beginLinePushPackageStateMutation(
+                        packageName, VUserHandle.USER_ALL);
         try {
             BroadcastSystem.get().stopApp(packageName);
-            VActivityManagerService.get().killAppByPkg(packageName, VUserHandle.USER_ALL);
+            activityManager.killAppByPkg(packageName, VUserHandle.USER_ALL);
 
             for (int id : VUserManagerService.get().getUserIds()) {
                 if (!VPackageManagerService.get()
@@ -1043,6 +1054,8 @@ public class VAppManagerService extends IAppManager.Stub {
             return true;
         } catch (Exception e) {
             return false;
+        } finally {
+            activityManager.endLinePushPackageStateMutation(lineMutation);
         }
     }
 
@@ -1058,6 +1071,10 @@ public class VAppManagerService extends IAppManager.Stub {
         }
         PackageSetting ps = PackageCacheManager.getSetting(packageName);
         if (ps != null) {
+            VActivityManagerService activityManager = VActivityManagerService.get();
+            VActivityManagerService.LinePushPackageStateMutation lineMutation =
+                    activityManager.beginLinePushPackageStateMutation(packageName, userId);
+            try {
             if (com.lody.virtual.server.pm.parser.TrustedSignatureOverridePolicy
                     .isTrustedPackage(packageName)) {
                 try {
@@ -1078,7 +1095,6 @@ public class VAppManagerService extends IAppManager.Stub {
             }
             // User-scoped uninstall only removes the binding and private data. Shared code remains
             // available as a revision cache even when this was the last installed user.
-            VActivityManagerService activityManager = VActivityManagerService.get();
             activityManager.killAppByPkg(packageName, userId);
             try {
                 VJobSchedulerService.get().clearPackageState(packageName, userId);
@@ -1131,6 +1147,9 @@ public class VAppManagerService extends IAppManager.Stub {
                     && !hasPackageDataState(packageName, userId);
             if (!terminal) VLog.e(TAG, "UNINSTALL_TERMINAL_RETRYABLE");
             return terminal;
+            } finally {
+                activityManager.endLinePushPackageStateMutation(lineMutation);
+            }
         }
         return com.lody.virtual.server.pm.parser.TrustedSignatureOverridePolicy
                 .isTrustedPackage(packageName)
@@ -1153,13 +1172,15 @@ public class VAppManagerService extends IAppManager.Stub {
 
     /** Clears package-owned runtime state while preserving PackageSetting installed metadata. */
     private boolean clearPackageRuntimeState(String packageName, int userId) {
+        VActivityManagerService activityManager = VActivityManagerService.get();
+        VActivityManagerService.LinePushPackageStateMutation lineMutation =
+                activityManager.beginLinePushPackageStateMutation(packageName, userId);
         try {
             VUserManagerService.get().bumpPackagePendingIntentGenerationOrThrow(
                     packageName, userId);
             if (!VPackageManagerService.get()
                     .clearRuntimePermissionsInternal(packageName, userId)) return false;
             if (!GuestKeystoreState.clearPackageState(packageName, userId)) return false;
-            VActivityManagerService activityManager = VActivityManagerService.get();
             activityManager.killAppByPkg(packageName, userId);
             VJobSchedulerService.get().clearPackageState(packageName, userId);
             VNotificationManagerService.getOrCreate(VirtualCore.get().getContext())
@@ -1180,6 +1201,8 @@ public class VAppManagerService extends IAppManager.Stub {
                     && !hasPackageDataState(packageName, userId);
         } catch (Throwable incomplete) {
             return false;
+        } finally {
+            activityManager.endLinePushPackageStateMutation(lineMutation);
         }
     }
 
@@ -1266,6 +1289,10 @@ public class VAppManagerService extends IAppManager.Stub {
 
     private boolean uninstallPackageFully(PackageSetting ps) {
         String packageName = ps.packageName;
+        VActivityManagerService activityManager = VActivityManagerService.get();
+        VActivityManagerService.LinePushPackageStateMutation lineMutation =
+                activityManager.beginLinePushPackageStateMutation(
+                        packageName, VUserHandle.USER_ALL);
         try {
             if (com.lody.virtual.server.pm.parser.TrustedSignatureOverridePolicy
                     .isTrustedPackage(packageName)) {
@@ -1274,7 +1301,7 @@ public class VAppManagerService extends IAppManager.Stub {
                 }
             }
             BroadcastSystem.get().stopApp(packageName);
-            VActivityManagerService.get().killAppByPkg(packageName, VUserHandle.USER_ALL);
+            activityManager.killAppByPkg(packageName, VUserHandle.USER_ALL);
             VEnvironment.getPackageResourcePath(packageName).delete();
             FileUtils.deleteDir(VEnvironment.getDataAppPackageDirectory(packageName));
             VEnvironment.getOdexFile(packageName).delete();
@@ -1291,6 +1318,8 @@ public class VAppManagerService extends IAppManager.Stub {
         } catch (Exception e) {
             e.printStackTrace();
             return false;
+        } finally {
+            activityManager.endLinePushPackageStateMutation(lineMutation);
         }
     }
 

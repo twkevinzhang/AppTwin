@@ -1,5 +1,6 @@
 package org.apptwin
 
+import android.app.ForegroundServiceStartNotAllowedException
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
@@ -11,9 +12,12 @@ import android.provider.Settings
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.ViewModelProvider
 import com.lody.virtual.client.isolated.IsolatedWorkerProbe
+import com.lody.virtual.client.stub.DaemonJobService
 import org.apptwin.permissions.permissionSettingsDestination
+import org.apptwin.runtime.DaemonWorkloadAuthorization
 import org.apptwin.runtime.GroupAppRuntimeSupport
 import org.apptwin.runtime.mainActivityLaunchHosts
 import org.apptwin.ui.AppTwinApp
@@ -93,6 +97,26 @@ class MainActivity : ComponentActivity() {
         super.onResume()
         mainActivityLaunchHosts.onResumed(this)
         if (::mainViewModel.isInitialized) mainViewModel.refresh()
+    }
+
+    override fun onWindowFocusChanged(hasFocus: Boolean) {
+        super.onWindowFocusChanged(hasFocus)
+        if (!hasFocus || !lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)) return
+        // A resumed activity can still be sleeping or waiting behind a system transition. Waiting
+        // for window focus makes this a genuine user-visible FGS start on Android 12+.
+        try {
+            DaemonWorkloadAuthorization.startFromVisibleHost(this)
+            // This job repairs an already-enabled workload; it never starts the foreground
+            // service. Scheduling it here records an explicit, user-visible entry into AppTwin.
+            DaemonJobService.scheduleJob(this)
+        } catch (exception: RuntimeException) {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S &&
+                exception is ForegroundServiceStartNotAllowedException
+            ) {
+                return
+            }
+            throw exception
+        }
     }
 
     override fun onPause() {

@@ -168,6 +168,16 @@ class MethodProxies {
         }
     }
 
+    /** Android 17 routes the public self-clear API through this sibling Binder method. */
+    static class ClearApplicationUserDataWithoutPermissionReset
+            extends ClearApplicationUserData {
+
+        @Override
+        public String getMethodName() {
+            return "clearApplicationUserDataWithoutPermissionReset";
+        }
+    }
+
 
     static class CrashApplication extends MethodProxy {
 
@@ -538,6 +548,8 @@ class MethodProxies {
                 // feature-id slot.
                 MethodParameterUtils.replaceFirstAppPkg(args);
             }
+            NotificationSettingsIntentIdentity.rewrite(
+                    intent, getAppPkg(), getHostPkg(), getRealUid());
             if (intent.getScheme() != null && intent.getScheme().equals(SCHEME_PACKAGE) && intent.getData() != null) {
                 if (intent.getAction() != null && intent.getAction().startsWith("android.settings.")) {
                     intent.setData(Uri.parse("package:" + getHostPkg()));
@@ -1838,6 +1850,13 @@ class MethodProxies {
                 return method.invoke(who, args);
             }
             Intent intent = (Intent) args[intentIndex];
+            int virtualUserId = VUserHandle.myUserId();
+            LinePushHookDiagnostics.Scope linePushDiagnostics =
+                    LinePushHookDiagnostics.exactScope(
+                            getAppPkg(), getVUid(), virtualUserId,
+                            intent.getAction(), intent.getPackage(),
+                            intent.getComponent() == null, method.getName());
+            LinePushHookDiagnostics.hookEntry(linePushDiagnostics);
             String type = args.length > intentIndex + 1 && args[intentIndex + 1] instanceof String
                     ? (String) args[intentIndex + 1]
                     : null;
@@ -1850,7 +1869,15 @@ class MethodProxies {
             if (VirtualCore.get().getComponentDelegate() != null) {
                 VirtualCore.get().getComponentDelegate().onSendBroadcast(intent);
             }
-            Intent newIntent = handleIntent(intent);
+            if (linePushDiagnostics != null) {
+                // A host delegate may mutate the Intent. Do not let a path that left the exact
+                // GMS-to-LINE scope inherit later diagnostics (or attestation eligibility).
+                linePushDiagnostics = LinePushHookDiagnostics.exactScope(
+                        getAppPkg(), getVUid(), VUserHandle.myUserId(),
+                        intent.getAction(), intent.getPackage(),
+                        intent.getComponent() == null, method.getName());
+            }
+            Intent newIntent = handleIntent(intent, linePushDiagnostics);
             if (newIntent != null) {
                 args[intentIndex] = newIntent;
             } else {
@@ -1878,7 +1905,14 @@ class MethodProxies {
             if (args[args.length - 1] instanceof Integer) {
                 args[args.length - 1] = 0;
             }
-            return method.invoke(who, args);
+            try {
+                Object result = method.invoke(who, args);
+                LinePushHookDiagnostics.systemInvokeResult(linePushDiagnostics);
+                return result;
+            } catch (Throwable failure) {
+                LinePushHookDiagnostics.systemInvokeException(linePushDiagnostics);
+                throw failure;
+            }
         }
 
         static boolean makeMicrogServiceInfoExchangeUnordered(
@@ -1901,7 +1935,8 @@ class MethodProxies {
             return false;
         }
 
-        private Intent handleIntent(final Intent intent) {
+        private Intent handleIntent(final Intent intent,
+                LinePushHookDiagnostics.Scope linePushDiagnostics) {
             final String action = intent.getAction();
             if ("android.intent.action.CREATE_SHORTCUT".equals(action)
                     || "com.android.launcher.action.INSTALL_SHORTCUT".equals(action)) {
@@ -1918,9 +1953,32 @@ class MethodProxies {
                 // intent send to system, do not modify it's action(may have other same intent)
                 return handleMediaScannerIntent(intent);
             } else {
-                return ComponentUtils.redirectBroadcastIntent(intent, VUserHandle.myUserId());
+                String linePushAttestation = null;
+                if (shouldRequestLinePushAttestation(
+                        getAppPkg(), getVUid(), VUserHandle.myUserId(),
+                        intent.getAction(), intent.getPackage(),
+                        intent.getComponent() == null)) {
+                    linePushAttestation = VActivityManager.get()
+                            .issueLinePushBroadcastAttestation(
+                                    intent.getAction(), intent.getPackage());
+                    LinePushHookDiagnostics.attestation(
+                            linePushDiagnostics, linePushAttestation != null);
+                }
+                Intent redirected = ComponentUtils.redirectBroadcastIntent(
+                        intent, VUserHandle.myUserId(), getAppPkg(), getVUid(),
+                        linePushAttestation);
+                LinePushHookDiagnostics.wrapperCreated(
+                        linePushDiagnostics, redirected != null);
+                return redirected;
             }
             return intent;
+        }
+
+        static boolean shouldRequestLinePushAttestation(String senderPackage, int senderVuid,
+                int virtualUserId, String action, String targetPackage, boolean implicit) {
+            return LinePushHookDiagnostics.isExactLineC2dm(
+                    senderPackage, senderVuid, virtualUserId,
+                    action, targetPackage, implicit);
         }
 
         private Intent handleMediaScannerIntent(Intent intent) {

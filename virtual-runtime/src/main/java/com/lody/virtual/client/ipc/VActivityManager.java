@@ -158,6 +158,32 @@ public class VActivityManager {
         }
     }
 
+    public boolean reconcileTrustedGmsCloudMessagingForUsers(int[] desiredUserIds) {
+        int[] exactUsers = desiredUserIds == null ? new int[0] : desiredUserIds.clone();
+        try {
+            return getService().reconcileTrustedGmsCloudMessagingForUsers(exactUsers);
+        } catch (RemoteException e) {
+            return VirtualRuntime.crash(e);
+        }
+    }
+
+    public long getDaemonWorkloadGateReopenEpoch() {
+        try {
+            return getService().getDaemonWorkloadGateReopenEpoch();
+        } catch (RemoteException e) {
+            return VirtualRuntime.crash(e);
+        }
+    }
+
+    public boolean awaitDaemonWorkloadGateOpenAfter(long observedReopenEpoch, long timeoutMs) {
+        try {
+            return getService().awaitDaemonWorkloadGateOpenAfter(
+                    observedReopenEpoch, timeoutMs);
+        } catch (RemoteException e) {
+            return VirtualRuntime.crash(e);
+        }
+    }
+
     public TrustedGmsCloudMessagingState getTrustedGmsCloudMessagingState(int userId) {
         try {
             return getService().getTrustedGmsCloudMessagingState(userId);
@@ -560,6 +586,14 @@ public class VActivityManager {
         Intent newIntent = ComponentUtils.redirectBroadcastIntent(intent, userId);
         if (newIntent != null) {
             VirtualCore.get().getContext().sendBroadcast(newIntent);
+        }
+    }
+
+    public String issueLinePushBroadcastAttestation(String action, String targetPackage) {
+        try {
+            return getService().issueLinePushBroadcastAttestation(action, targetPackage);
+        } catch (RemoteException unavailable) {
+            return null;
         }
     }
 

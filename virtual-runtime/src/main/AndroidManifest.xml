@@ -2,6 +2,12 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools">
 
+    <!-- Cross-process host-only delivery for protected virtual broadcast wrappers. -->
+    <permission
+        android:name="${applicationId}.permission.INTERNAL_BROADCAST"
+        android:protectionLevel="signature" />
+    <uses-permission android:name="${applicationId}.permission.INTERNAL_BROADCAST" />
+
     <uses-permission android:name="com.huawei.authentication.HW_ACCESS_AUTH_SERVICE" />
 
     <uses-permission android:name="com.samsung.svoice.sync.READ_DATABASE" />
@@ -212,6 +218,8 @@
     <uses-permission android:name="com.huawei.android.launcher.permission.CHANGE_BADGE" />
     <uses-permission android:name="android.permission.GET_INTENT_SENDER_INTENT" />
     <uses-permission android:name="android.permission.MANAGE_OWN_CALLS" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
 
     <uses-permission
         android:name="android.permission.WRITE_APN_SETTINGS"
@@ -225,7 +233,13 @@
     <application>
         <service
             android:name="com.lody.virtual.client.stub.DaemonService"
-            android:process="@string/engine_process_name" />
+            android:exported="false"
+            android:foregroundServiceType="specialUse"
+            android:process="@string/engine_process_name">
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="Maintains cloned-app background notifications and user-enabled isolated runtime services" />
+        </service>
 
         <activity
             android:name="com.lody.virtual.client.stub.ShortcutHandleActivity"

@@ -132,6 +132,32 @@ public final class SpecialComponentList {
         }
     }
 
+    /** Keeps only the allowlisted external system actions, or only AppTwin-internal actions. */
+    @SuppressWarnings("unchecked")
+    public static void retainSystemBroadcastActions(IntentFilter filter, boolean retainSystem) {
+        if (filter == null) {
+            return;
+        }
+        Object actions = mirror.android.content.IntentFilter.mActions.get(filter);
+        if (actions instanceof Collection) {
+            retainSystemBroadcastActions((Collection<String>) actions, retainSystem);
+        }
+    }
+
+    static void retainSystemBroadcastActions(Collection<String> actions, boolean retainSystem) {
+        if (actions == null || actions.isEmpty()) {
+            return;
+        }
+        List<String> retainedActions = new ArrayList<>(actions.size());
+        for (String action : actions) {
+            if (SYSTEM_BROADCAST_ACTION.contains(action) == retainSystem) {
+                retainedActions.add(action);
+            }
+        }
+        actions.clear();
+        actions.addAll(retainedActions);
+    }
+
     /**
      * Newer Android releases store IntentFilter actions in an ArraySet instead of a List.
      * Mutate through the Collection contract so both platform representations work.
