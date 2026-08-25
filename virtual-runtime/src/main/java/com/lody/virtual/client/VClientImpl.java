@@ -10,6 +10,7 @@ import android.content.ContentResolver;
 import android.content.Context;
 import android.content.Intent;
 import android.content.pm.ApplicationInfo;
+import android.content.pm.PackageInfo;
 import android.content.pm.PackageManager;
 import android.content.pm.ProviderInfo;
 import android.content.pm.ServiceInfo;
@@ -442,6 +443,16 @@ public final class VClientImpl extends IVClient.Stub {
                 Reflect.on(cl).set("parent", new DelegateLastClassLoader(sharedLibraryPath, parent));
             }
         }
+
+        PackageInfo guestPackageInfo = info.getPackageInfo(getUserId(vuid));
+        GuestCoroutineExceptionCompat.beforeApplicationCreate(
+                packageName,
+                guestPackageInfo == null ? -1 : guestPackageInfo.versionCode,
+                Build.VERSION.SDK_INT,
+                info.apkPath,
+                info.splitCodePaths,
+                cl,
+                VirtualCore.get().getContext());
 
         if (Build.VERSION.SDK_INT >= 30)
             ApplicationConfig.setDefaultInstance.call(new Object[] { null });
