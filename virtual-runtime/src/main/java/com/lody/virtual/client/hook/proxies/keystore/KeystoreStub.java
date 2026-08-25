@@ -43,10 +43,44 @@ public final class KeystoreStub extends BinderInvocationProxy {
         super.onBindMethods();
         addMethodProxy(new GetSecurityLevel());
         addMethodProxy(new ListEntries());
+        addMethodProxy(new GetKeyEntry());
         for (String method : new String[]{
-                "getKeyEntry", "updateSubcomponent", "deleteKey", "grant", "ungrant"
+                "updateSubcomponent", "deleteKey", "grant", "ungrant"
         }) {
             addMethodProxy(new DescriptorMethod(method));
+        }
+    }
+
+    private static final class GetKeyEntry extends MethodProxy {
+        @Override
+        public String getMethodName() {
+            return "getKeyEntry";
+        }
+
+        @Override
+        public Object call(Object who, Method method, Object... args) throws Throwable {
+            Owner owner = currentOwner();
+            List<AliasMutation> mutations = rewriteArguments(owner, args);
+            try {
+                Object result = method.invoke(who, args);
+                Object physicalDescriptor = firstOwnedDescriptor(owner, args);
+                if (physicalDescriptor != null
+                        && KeystoreAuthorizationMetadata.evaluate(
+                                result, getHostContext())
+                        == KeystoreAuthorizationPolicy.Decision.DELETE_PERMANENTLY_INVALID
+                        && deletePhysicalKey(who, method, physicalDescriptor)) {
+                    VLog.w(TAG,
+                            "removed permanently invalid guest key package=%s user=%d",
+                            owner.packageName, owner.userId);
+                    // Re-read so the framework observes KEY_NOT_FOUND and lets the app regenerate
+                    // its own key with the current lock-screen and biometric authenticator IDs.
+                    return method.invoke(who, args);
+                }
+                rewriteResultForGuest(owner, result);
+                return result;
+            } finally {
+                restoreMutations(mutations);
+            }
         }
     }
 
@@ -198,6 +232,46 @@ public final class KeystoreStub extends BinderInvocationProxy {
             throws IllegalAccessException {
         for (int index = mutations.size() - 1; index >= 0; index--) {
             mutations.get(index).restore();
+        }
+    }
+
+    private static Object firstOwnedDescriptor(Owner owner, Object[] args)
+            throws ReflectiveOperationException {
+        if (args == null) return null;
+        for (Object arg : args) {
+            Object descriptor = firstDescriptor(arg);
+            if (descriptor == null) continue;
+            String alias = descriptorAlias(descriptor);
+            if (KeystoreAliasPolicy.isOwnedBy(owner.packageName, owner.userId, alias)) {
+                return descriptor;
+            }
+        }
+        return null;
+    }
+
+    private static Object firstDescriptor(Object value) {
+        if (value == null) return null;
+        if (DESCRIPTOR_CLASS.equals(value.getClass().getName())) return value;
+        if (!value.getClass().isArray()) return null;
+        for (int index = 0; index < Array.getLength(value); index++) {
+            Object descriptor = firstDescriptor(Array.get(value, index));
+            if (descriptor != null) return descriptor;
+        }
+        return null;
+    }
+
+    private static boolean deletePhysicalKey(Object who, Method getKeyEntry,
+                                             Object descriptor) {
+        try {
+            Method deleteKey = getKeyEntry.getDeclaringClass()
+                    .getMethod("deleteKey", descriptor.getClass());
+            deleteKey.invoke(who, descriptor);
+            return true;
+        } catch (ReflectiveOperationException | RuntimeException error) {
+            Throwable cause = error.getCause() != null ? error.getCause() : error;
+            VLog.w(TAG, "unable to remove permanently invalid guest key: %s",
+                    cause.getClass().getSimpleName());
+            return false;
         }
     }
 
