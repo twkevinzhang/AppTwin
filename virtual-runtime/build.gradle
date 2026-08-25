@@ -53,6 +53,27 @@ android {
     }
 }
 
+def generatedGuestCoroutineCompatAssets = layout.buildDirectory.dir(
+        'generated/guestCoroutineCompatAssets')
+
+tasks.register('prepareGuestCoroutineCompatAsset', Sync) {
+    dependsOn ':guest-coroutine-compat:verifyCompatDex'
+    from(project(':guest-coroutine-compat').layout.buildDirectory.file(
+            'generated/compatDexArchive/facebook-lite-coroutine-provider.jar'))
+    into(generatedGuestCoroutineCompatAssets.map { it.dir('guest-compat') })
+}
+
+android.sourceSets.main.assets.srcDir(generatedGuestCoroutineCompatAssets)
+
+tasks.configureEach {
+    if (name.startsWith('merge') && name.endsWith('Assets')) {
+        dependsOn 'prepareGuestCoroutineCompatAsset'
+    }
+    if (name.toLowerCase().contains('lint')) {
+        dependsOn 'prepareGuestCoroutineCompatAsset'
+    }
+}
+
 dependencies {
     testImplementation 'junit:junit:4.13.2'
 }

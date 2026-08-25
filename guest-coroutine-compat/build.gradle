@@ -1,0 +1,131 @@
+plugins {
+    id 'com.android.library'
+}
+
+android {
+    namespace 'org.apptwin.guestcoroutinecompat'
+    compileSdk 36
+
+    defaultConfig {
+        minSdk 21
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_1_8
+        targetCompatibility JavaVersion.VERSION_1_8
+    }
+}
+
+def generatedDexDirectory = layout.buildDirectory.dir('generated/compatDex')
+def generatedDexArchiveDirectory = layout.buildDirectory.dir('generated/compatDexArchive')
+def packageCompatClasses = tasks.register('packageCompatClasses', Jar) {
+    dependsOn 'compileReleaseJavaWithJavac'
+    from(tasks.named('compileReleaseJavaWithJavac').map { it.destinationDirectory })
+    include 'kotlinx/coroutines/android/AndroidExceptionPreHandler.class'
+    archiveFileName = 'guest-coroutine-compat.jar'
+    destinationDirectory = layout.buildDirectory.dir('generated/compatClasses')
+}
+
+tasks.register('generateCompatDex') {
+    dependsOn packageCompatClasses
+    inputs.file(packageCompatClasses.flatMap { it.archiveFile })
+    outputs.file(generatedDexDirectory.map { it.file('classes.dex') })
+
+    doLast {
+        def outputDirectory = generatedDexDirectory.get().asFile
+        delete outputDirectory
+        outputDirectory.mkdirs()
+        def d8 = new File(android.sdkDirectory,
+                "build-tools/${android.buildToolsVersion}/d8")
+        exec {
+            commandLine d8,
+                    '--release',
+                    '--min-api', '21',
+                    '--classpath', tasks.named('compileReleaseJavaWithJavac')
+                            .get().destinationDirectory.get().asFile,
+                    '--output', outputDirectory,
+                    packageCompatClasses.get().archiveFile.get().asFile
+        }
+
+        // Facebook Lite 516101866 rewrites its Kotlin ABI to X.1Kn/X.1Ks/X.1LG/X.16S.
+        // Java cannot declare identifiers beginning with a digit, so compile against same-length
+        // '$' placeholders and patch only those descriptor bytes in the one-class output dex.
+        def dexFile = new File(outputDirectory, 'classes.dex')
+        byte[] bytes = dexFile.bytes
+        [
+                '$Kn': '1Kn',
+                '$Ks': '1Ks',
+                '$LG': '1LG',
+                '$6S': '16S'
+        ].each { source, target ->
+            byte[] sourceBytes = source.getBytes('UTF-8')
+            byte[] targetBytes = target.getBytes('UTF-8')
+            int replacements = 0
+            for (int index = 0; index <= bytes.length - sourceBytes.length; index++) {
+                boolean match = true
+                for (int offset = 0; offset < sourceBytes.length; offset++) {
+                    if (bytes[index + offset] != sourceBytes[offset]) {
+                        match = false
+                        break
+                    }
+                }
+                if (match) {
+                    System.arraycopy(targetBytes, 0, bytes, index, targetBytes.length)
+                    replacements++
+                }
+            }
+            if (replacements == 0) {
+                throw new GradleException("Missing compatibility ABI placeholder ${source}")
+            }
+        }
+
+        def sha1 = java.security.MessageDigest.getInstance('SHA-1')
+        sha1.update(bytes, 32, bytes.length - 32)
+        System.arraycopy(sha1.digest(), 0, bytes, 12, 20)
+        def adler32 = new java.util.zip.Adler32()
+        adler32.update(bytes, 12, bytes.length - 12)
+        long checksum = adler32.value
+        for (int offset = 0; offset < 4; offset++) {
+            bytes[8 + offset] = (byte) ((checksum >> (offset * 8)) & 0xff)
+        }
+        dexFile.bytes = bytes
+    }
+}
+
+tasks.register('packageCompatDex', Zip) {
+    dependsOn 'generateCompatDex'
+    from(generatedDexDirectory.map { it.file('classes.dex') })
+    archiveFileName = 'facebook-lite-coroutine-provider.jar'
+    destinationDirectory = generatedDexArchiveDirectory
+}
+
+tasks.register('verifyCompatDex') {
+    dependsOn 'packageCompatDex'
+    def dexFile = generatedDexDirectory.map { it.file('classes.dex') }
+    inputs.file(dexFile)
+
+    doLast {
+        def output = new ByteArrayOutputStream()
+        def dexdump = new File(android.sdkDirectory,
+                "build-tools/${android.buildToolsVersion}/dexdump")
+        exec {
+            commandLine dexdump, dexFile.get().asFile
+            standardOutput = output
+        }
+        def dump = output.toString('UTF-8')
+        def descriptors = dump.readLines().findAll {
+            it.trim().startsWith('Class descriptor')
+        }
+        def expected = "Class descriptor  : 'Lkotlinx/coroutines/android/AndroidExceptionPreHandler;'"
+        if (descriptors.size() != 1 || descriptors[0].trim() != expected) {
+            throw new GradleException(
+                    "Compatibility dex must contain only AndroidExceptionPreHandler; found ${descriptors}")
+        }
+        if (!dump.contains("Superclass        : 'LX/1Kn;'")
+                || !dump.contains("#0              : 'Lkotlinx/coroutines/CoroutineExceptionHandler;'")
+                || !dump.contains("type          : '(LX/16S;Ljava/lang/Throwable;)V")
+                || dump.contains('LX/$')) {
+            throw new GradleException('Compatibility dex does not match Facebook Lite ABI')
+        }
+    }
+}

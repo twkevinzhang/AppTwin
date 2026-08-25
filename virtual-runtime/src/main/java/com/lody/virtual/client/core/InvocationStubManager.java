@@ -21,6 +21,7 @@ import com.lody.virtual.client.hook.proxies.clipboard.ClipBoardStub;
 import com.lody.virtual.client.hook.proxies.connectivity.ConnectivityStub;
 import com.lody.virtual.client.hook.proxies.content.ContentServiceStub;
 import com.lody.virtual.client.hook.proxies.context_hub.ContextHubServiceStub;
+import com.lody.virtual.client.hook.proxies.credential.CredentialManagerStub;
 import com.lody.virtual.client.hook.proxies.crossprofile.CrossProfileAppsStub;
 import com.lody.virtual.client.hook.proxies.devicepolicy.DevicePolicyManagerStub;
 import com.lody.virtual.client.hook.proxies.display.DisplayStub;
@@ -53,6 +54,7 @@ import com.lody.virtual.client.hook.proxies.restriction.RestrictionStub;
 import com.lody.virtual.client.hook.proxies.role.RoleManagerStub;
 import com.lody.virtual.client.hook.proxies.safetycenter.SafetyCenterManagerStub;
 import com.lody.virtual.client.hook.proxies.search.SearchManagerStub;
+import com.lody.virtual.client.hook.proxies.sensitivecontent.SensitiveContentProtectionManagerStub;
 import com.lody.virtual.client.hook.proxies.shortcut.ShortcutServiceStub;
 import com.lody.virtual.client.hook.proxies.telephony.TelephonyRegistryStub;
 import com.lody.virtual.client.hook.proxies.telephony.TelephonyStub;
@@ -224,6 +226,12 @@ public final class InvocationStubManager {
                 addInjector(new LocaleManagerStub());
                 addInjector(new NsdManagerStub());
                 addInjector(new SafetyCenterManagerStub());
+            }
+            if (Build.VERSION.SDK_INT >= 35) {
+                addInjector(new SensitiveContentProtectionManagerStub());
+            }
+            if (Build.VERSION.SDK_INT >= 34) {
+                addInjector(new CredentialManagerStub());
             }
 		}
 	}
