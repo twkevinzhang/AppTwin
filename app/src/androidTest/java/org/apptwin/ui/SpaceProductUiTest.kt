@@ -219,6 +219,50 @@ class SpaceProductUiTest {
     }
 
     @Test
+    fun homeExportRequiresOverwriteConfirmationAndCancellationDoesNotExport() {
+        var exportedGroup: GroupItem? = null
+        setHome(
+            state = multiSpaceState,
+            onExportSpace = { exportedGroup = it },
+        )
+
+        composeRule.onNodeWithTag("space-manage-$secondSpaceId").performClick()
+        composeRule.onNodeWithTag("export-space-$secondSpaceId").performClick()
+        composeRule.onNodeWithTag("export-space-archive-dialog").assertIsDisplayed()
+        composeRule.onNodeWithTag("confirm-export-space").performClick()
+
+        composeRule.runOnIdle { assertEquals(null, exportedGroup) }
+        composeRule.onNodeWithTag("export-space-overwrite-dialog").assertIsDisplayed()
+        composeRule.onNodeWithText(
+            "新存檔成功後，先前由此 Space 匯出的存檔將立即失效且無法匯入。" +
+                "若選擇與舊檔相同的位置，檔案可能在匯出過程中被覆寫；" +
+                "建議另存新檔並確認成功後，再處理舊檔。",
+        ).assertIsDisplayed()
+        composeRule.onNodeWithTag("cancel-export-space-overwrite").performClick()
+
+        composeRule.onNodeWithTag("export-space-overwrite-dialog").assertDoesNotExist()
+        composeRule.runOnIdle { assertEquals(null, exportedGroup) }
+    }
+
+    @Test
+    fun homeExportSecondConfirmationTargetsExactSpace() {
+        var exportedGroup: GroupItem? = null
+        setHome(
+            state = multiSpaceState,
+            onExportSpace = { exportedGroup = it },
+        )
+
+        composeRule.onNodeWithTag("space-manage-$secondSpaceId").performClick()
+        composeRule.onNodeWithTag("export-space-$secondSpaceId").performClick()
+        composeRule.onNodeWithTag("confirm-export-space").performClick()
+        composeRule.runOnIdle { assertEquals(null, exportedGroup) }
+
+        composeRule.onNodeWithTag("confirm-export-space-overwrite").performClick()
+
+        composeRule.runOnIdle { assertEquals(secondSpace, exportedGroup) }
+    }
+
+    @Test
     fun homeAppLongPressShowsTheSameAppActionsWithoutLaunching() {
         var launched: GroupAppItem? = null
         setHome(state = defaultState, onLaunch = { launched = it })
@@ -301,6 +345,7 @@ class SpaceProductUiTest {
         onAddApp: (String) -> Unit = {},
         onClearAllAppData: (String) -> Unit = {},
         onDeleteSpace: (String) -> Unit = {},
+        onExportSpace: (GroupItem) -> Unit = {},
         onEnableGms: (String, Boolean) -> Unit = { _, _ -> },
         onDisableGms: (String) -> Unit = {},
     ) {
@@ -313,6 +358,7 @@ class SpaceProductUiTest {
                     onAddApp = onAddApp,
                     onClearAllAppData = onClearAllAppData,
                     onDeleteSpace = onDeleteSpace,
+                    onExportSpace = onExportSpace,
                     onEnableGms = onEnableGms,
                     onDisableGms = onDisableGms,
                 )

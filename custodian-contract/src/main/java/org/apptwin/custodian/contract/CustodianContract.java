@@ -7,7 +7,7 @@ public final class CustodianContract {
     public static final String ACTION_BIND = "org.apptwin.custodian.action.BIND";
     public static final String PERMISSION_BIND = "org.apptwin.permission.BIND_CUSTODIAN";
 
-    public static final int PROTOCOL_VERSION = 1;
+    public static final int PROTOCOL_VERSION = 2;
 
     public static final int HEALTH_READY = 1;
     public static final int HEALTH_STORE_UNAVAILABLE = 2;

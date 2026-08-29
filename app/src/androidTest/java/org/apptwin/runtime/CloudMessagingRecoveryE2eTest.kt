@@ -118,7 +118,8 @@ class CloudMessagingRecoveryE2eTest {
     private fun startVisibleDaemonSession(scenario: ActivityScenario<MainActivity>) {
         var observedReopenEpoch = -1L
         scenario.onActivity { activity ->
-            observedReopenEpoch = DaemonWorkloadAuthorization.startFromVisibleHost(activity)
+            observedReopenEpoch = DaemonWorkloadAuthorization.observeReopenEpoch()
+            DaemonWorkloadAuthorization.startFromVisibleHost(activity)
         }
         assertTrue(
             "MainActivity must establish and reopen the visible foreground daemon session",

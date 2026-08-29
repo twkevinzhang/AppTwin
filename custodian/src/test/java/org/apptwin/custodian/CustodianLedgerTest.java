@@ -15,6 +15,8 @@ public class CustodianLedgerTest {
     private static final String DESTINATION = "7fba3b64-10ac-4541-b7e4-14706040e272";
     private static final String OTHER_DESTINATION = "efdb31df-00b8-42ce-b99f-ad7c6159b914";
     private static final String ARCHIVE = "519042cc-8dd9-4aa6-981b-57e5a9f28ce1";
+    private static final String REPLACEMENT_ARCHIVE =
+            "d4c183cb-2015-4924-a22d-b9d6a38b7d12";
     private static final String DIGEST =
             "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
     private static final String OTHER_DIGEST =
@@ -66,6 +68,93 @@ public class CustodianLedgerTest {
         assertEquals(SOURCE, reopened.resolveArchivedOwner(ARCHIVE, LINE, keyspace, DIGEST));
         assertFalse(reopened.release(SOURCE, LINE, keyspace));
         assertFalse(reopened.transfer(SOURCE, DESTINATION, LINE, keyspace));
+    }
+
+    @Test
+    public void currentOwnerCanAtomicallyReplaceArchiveReservation() throws Exception {
+        java.io.File filesDir = temporaryFolder.newFolder();
+        CustodianLedger ledger = new CustodianLedger(filesDir);
+        String keyspace = ledger.register(SOURCE, LINE);
+        assertTrue(ledger.sealArchive(SOURCE, ARCHIVE, LINE, keyspace, DIGEST));
+
+        assertTrue(ledger.sealArchive(
+                SOURCE, REPLACEMENT_ARCHIVE, LINE, keyspace, OTHER_DIGEST));
+        assertNull(ledger.resolveArchivedOwner(ARCHIVE, LINE, keyspace, DIGEST));
+        assertEquals(
+                SOURCE,
+                ledger.resolveArchivedOwner(
+                        REPLACEMENT_ARCHIVE, LINE, keyspace, OTHER_DIGEST));
+
+        CustodianLedger reopened = new CustodianLedger(filesDir);
+        assertNull(reopened.resolveArchivedOwner(ARCHIVE, LINE, keyspace, DIGEST));
+        assertEquals(
+                SOURCE,
+                reopened.resolveArchivedOwner(
+                        REPLACEMENT_ARCHIVE, LINE, keyspace, OTHER_DIGEST));
+    }
+
+    @Test
+    public void sameArchiveIdWithDifferentDigestIsRejectedWithoutChangingReservation()
+            throws Exception {
+        CustodianLedger ledger = new CustodianLedger(temporaryFolder.newFolder());
+        String keyspace = ledger.register(SOURCE, LINE);
+        assertTrue(ledger.sealArchive(SOURCE, ARCHIVE, LINE, keyspace, DIGEST));
+
+        assertFalse(ledger.sealArchive(SOURCE, ARCHIVE, LINE, keyspace, OTHER_DIGEST));
+        assertEquals(SOURCE, ledger.resolveArchivedOwner(ARCHIVE, LINE, keyspace, DIGEST));
+        assertNull(ledger.resolveArchivedOwner(ARCHIVE, LINE, keyspace, OTHER_DIGEST));
+    }
+
+    @Test
+    public void wrongOwnerCannotReplaceArchiveReservation() throws Exception {
+        CustodianLedger ledger = new CustodianLedger(temporaryFolder.newFolder());
+        String keyspace = ledger.register(SOURCE, LINE);
+        assertTrue(ledger.sealArchive(SOURCE, ARCHIVE, LINE, keyspace, DIGEST));
+
+        assertFalse(ledger.sealArchive(
+                DESTINATION, REPLACEMENT_ARCHIVE, LINE, keyspace, OTHER_DIGEST));
+        assertEquals(SOURCE, ledger.resolveArchivedOwner(ARCHIVE, LINE, keyspace, DIGEST));
+        assertNull(ledger.resolveArchivedOwner(
+                REPLACEMENT_ARCHIVE, LINE, keyspace, OTHER_DIGEST));
+    }
+
+    @Test
+    public void replacingArchiveClearsPreviousOwnerAndInvalidatesOldClaim() throws Exception {
+        CustodianLedger ledger = new CustodianLedger(temporaryFolder.newFolder());
+        String keyspace = ledger.register(SOURCE, LINE);
+        assertTrue(ledger.sealArchive(SOURCE, ARCHIVE, LINE, keyspace, DIGEST));
+        assertTrue(ledger.claimArchive(
+                ARCHIVE, SOURCE, DESTINATION, LINE, keyspace, DIGEST));
+
+        assertTrue(ledger.sealArchive(
+                DESTINATION, REPLACEMENT_ARCHIVE, LINE, keyspace, OTHER_DIGEST));
+        assertFalse(ledger.sealArchive(
+                SOURCE, ARCHIVE, LINE, keyspace, DIGEST));
+        assertNull(ledger.resolveArchivedOwner(ARCHIVE, LINE, keyspace, DIGEST));
+        assertEquals(
+                DESTINATION,
+                ledger.resolveArchivedOwner(
+                        REPLACEMENT_ARCHIVE, LINE, keyspace, OTHER_DIGEST));
+        assertFalse(ledger.claimArchive(
+                ARCHIVE, SOURCE, OTHER_DESTINATION, LINE, keyspace, DIGEST));
+        assertTrue(ledger.claimArchive(
+                REPLACEMENT_ARCHIVE,
+                DESTINATION,
+                OTHER_DESTINATION,
+                LINE,
+                keyspace,
+                OTHER_DIGEST));
+        assertFalse(ledger.claimArchive(
+                REPLACEMENT_ARCHIVE,
+                SOURCE,
+                DESTINATION,
+                LINE,
+                keyspace,
+                OTHER_DIGEST));
+        assertEquals(
+                OTHER_DESTINATION,
+                ledger.resolveArchivedOwner(
+                        REPLACEMENT_ARCHIVE, LINE, keyspace, OTHER_DIGEST));
     }
 
     @Test
