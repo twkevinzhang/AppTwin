@@ -16,6 +16,7 @@ import android.os.Process
 import android.provider.Settings
 import java.security.SecureRandom
 import org.apptwin.compatibility.CompatibilityAssessmentPolicy
+import org.apptwin.archive.AndroidSpaceArchiveOperations
 import org.apptwin.compatibility.CompatibilityLimitation
 import org.apptwin.compatibility.DeviceValidation
 import org.apptwin.compatibility.PackageCompatibilityFacts
@@ -155,6 +156,14 @@ internal class AndroidMainOperations(private val application: Application) : Mai
         groupStore,
         gmsOperationReceipts,
     )
+    private val archives = AndroidSpaceArchiveOperations(
+        application = application,
+        groups = groupStore,
+        lifecycle = lifecycle,
+        runtime = runtimeController,
+        revisions = importer,
+        gms = gms,
+    )
     private val deletedGroupCleanup = DeletedGroupCleanup(
         receipts = gmsOperationReceipts,
         disableShortcuts = shortcutPublisher::disable,
@@ -265,6 +274,14 @@ internal class AndroidMainOperations(private val application: Application) : Mai
         check(lifecycle.deleteGroup(groupId)) { "群組資料不存在" }
         return deletedGroupCleanup.execute(group)
     }
+
+    override suspend fun exportSpace(
+        groupId: String,
+        destination: Uri,
+    ): SpaceArchiveExportResult = archives.exportSpace(groupId, destination)
+
+    override suspend fun importSpace(source: Uri): SpaceArchiveImportResult =
+        archives.importSpace(source)
 
     override suspend fun addAppToGroup(groupId: String, packageName: String): Group {
         return when (val result = addClone.execute(groupId, packageName)) {

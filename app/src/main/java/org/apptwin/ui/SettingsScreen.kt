@@ -19,6 +19,7 @@ import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Security
 import androidx.compose.material.icons.filled.Share
+import androidx.compose.material.icons.filled.Unarchive
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.FilledTonalButton
@@ -48,6 +49,7 @@ fun SettingsScreen(
     state: MainUiState,
     onOpenStorageSettings: () -> Unit,
     onExportDiagnostics: () -> Unit,
+    onImportSpace: () -> Unit = {},
     notificationsGranted: Boolean,
     onRequestNotifications: () -> Unit,
     onPermissionAction: (ClonePermissionSummary) -> Unit,
@@ -57,6 +59,35 @@ fun SettingsScreen(
         contentPadding = PaddingValues(20.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
+        item {
+            SettingsCard(
+                icon = { Icon(Icons.Default.Unarchive, contentDescription = null) },
+                title = "匯入空間存檔",
+            ) {
+                Text(
+                    "只會建立新的空間，不會覆寫現有空間。匯入前會驗證格式、檔案大小與 SHA-256。",
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Text(
+                    "存檔未加密，且 LINE 登入金鑰僅能在原裝置與目前 AppTwin 主程式資料仍存在時使用。",
+                    modifier = Modifier.padding(top = 8.dp),
+                    color = MaterialTheme.colorScheme.error,
+                )
+                FilledTonalButton(
+                    modifier = Modifier
+                        .padding(top = 16.dp)
+                        .testTag("import-space-archive"),
+                    enabled = !state.isImportingArchive && state.archiveBusyGroupId == null,
+                    onClick = onImportSpace,
+                ) {
+                    Icon(Icons.Default.Unarchive, contentDescription = null)
+                    Text(
+                        if (state.isImportingArchive) "匯入中…" else "選擇存檔",
+                        modifier = Modifier.padding(start = 8.dp),
+                    )
+                }
+            }
+        }
         item {
             ClonePermissionSettingsCard(
                 permissions = state.clonePermissions,

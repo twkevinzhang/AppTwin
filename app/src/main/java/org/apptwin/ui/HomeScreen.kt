@@ -22,6 +22,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Archive
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Build
 import androidx.compose.material.icons.filled.Delete
@@ -88,6 +89,7 @@ fun HomeScreen(
     onAddApp: (String) -> Unit = {},
     onRenameSpace: (String, String) -> Unit = { _, _ -> },
     onDeleteSpace: (String) -> Unit = {},
+    onExportSpace: (GroupItem) -> Unit = {},
     onEnableGms: (String, Boolean) -> Unit = { _, _ -> },
     onDisableGms: (String) -> Unit = {},
     onClearAllAppData: (String) -> Unit = {},
@@ -101,6 +103,7 @@ fun HomeScreen(
     var collapsedGroupIds by rememberSaveable { mutableStateOf(emptyList<String>()) }
     var renameGroupId by rememberSaveable { mutableStateOf<String?>(null) }
     var deleteGroupId by rememberSaveable { mutableStateOf<String?>(null) }
+    var exportGroupId by rememberSaveable { mutableStateOf<String?>(null) }
     var clearAllGroupId by rememberSaveable { mutableStateOf<String?>(null) }
     var uninstallTargetKey by rememberSaveable { mutableStateOf<String?>(null) }
     var clearStorageTargetKey by rememberSaveable { mutableStateOf<String?>(null) }
@@ -163,9 +166,11 @@ fun HomeScreen(
                                     ExpandableSpaceCard(
                                         item = item,
                                         expanded = item.groupId !in collapsedGroupIds,
-                                        isBusy = state.busyGroupId == item.groupId ||
+                                        isBusy = state.isImportingArchive ||
+                                            state.busyGroupId == item.groupId ||
                                             state.gmsBusyGroupId == item.groupId ||
                                             state.clearingStorageGroupId == item.groupId ||
+                                            state.archiveBusyGroupId == item.groupId ||
                                             state.uninstallingAppKey
                                                 ?.startsWith("${item.groupId}:") == true,
                                         gmsBusyMessage = if (
@@ -190,6 +195,7 @@ fun HomeScreen(
                                         onAddApp = { onAddApp(item.groupId) },
                                         onRename = { renameGroupId = item.groupId },
                                         onDelete = { deleteGroupId = item.groupId },
+                                        onExport = { exportGroupId = item.groupId },
                                         onEnableGms = { grantConsent ->
                                             if (grantConsent) gmsConsentGroupId = item.groupId
                                             else onEnableGms(item.groupId, false)
@@ -215,6 +221,7 @@ fun HomeScreen(
 
     val renamedGroup = state.groups.firstOrNull { it.groupId == renameGroupId }
     val deleteGroup = state.groups.firstOrNull { it.groupId == deleteGroupId }
+    val exportGroup = state.groups.firstOrNull { it.groupId == exportGroupId }
     val clearAllGroup = state.groups.firstOrNull { it.groupId == clearAllGroupId }
     val consentGroup = state.groups.firstOrNull { it.groupId == gmsConsentGroupId }
     val disableGroup = state.groups.firstOrNull { it.groupId == gmsDisableGroupId }
@@ -240,6 +247,16 @@ fun HomeScreen(
             onConfirm = {
                 onDeleteSpace(group.groupId)
                 deleteGroupId = null
+            },
+        )
+    }
+    exportGroup?.let { group ->
+        ExportSpaceArchiveDialog(
+            group = group,
+            onDismiss = { exportGroupId = null },
+            onConfirm = {
+                onExportSpace(group)
+                exportGroupId = null
             },
         )
     }
@@ -307,6 +324,39 @@ fun HomeScreen(
             onSetPermission = { permission, granted -> onSetPermission(app, permission, granted) },
         )
     }
+}
+
+@Composable
+private fun ExportSpaceArchiveDialog(
+    group: GroupItem,
+    onDismiss: () -> Unit,
+    onConfirm: () -> Unit,
+) {
+    AlertDialog(
+        modifier = Modifier.testTag("export-space-archive-dialog"),
+        onDismissRequest = onDismiss,
+        icon = { Icon(Icons.Default.Archive, contentDescription = null) },
+        title = { Text("匯出「${group.name}」？") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Text("存檔會包含此空間的 App、登入狀態、資料及 Google 服務相容資料。")
+                Text(
+                    "此版本不加密；任何取得檔案的人都可能讀取其中的帳號、聊天資料與 token。請只儲存在可信任的位置。",
+                    color = MaterialTheme.colorScheme.error,
+                )
+                Text(
+                    "LINE 登入金鑰只能在同一台裝置、AppTwin 主程式資料仍存在時恢復。",
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        },
+        confirmButton = {
+            Button(modifier = Modifier.testTag("confirm-export-space"), onClick = onConfirm) {
+                Text("選擇存檔位置")
+            }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("取消") } },
+    )
 }
 
 @Composable
@@ -625,6 +675,7 @@ private fun ExpandableSpaceCard(
     onAddApp: () -> Unit,
     onRename: () -> Unit,
     onDelete: () -> Unit,
+    onExport: () -> Unit,
     onEnableGms: (requiresConsent: Boolean) -> Unit,
     onDisableGms: () -> Unit,
     onClearAllAppData: () -> Unit,
@@ -721,6 +772,7 @@ private fun ExpandableSpaceCard(
                         onEnableGms = onEnableGms,
                         onDisableGms = onDisableGms,
                         onClearAllAppData = onClearAllAppData,
+                        onExport = onExport,
                         onDelete = onDelete,
                     )
                 }
@@ -794,6 +846,7 @@ private fun SpaceManagementMenu(
     onEnableGms: (requiresConsent: Boolean) -> Unit,
     onDisableGms: () -> Unit,
     onClearAllAppData: () -> Unit,
+    onExport: () -> Unit,
     onDelete: () -> Unit,
 ) {
     DropdownMenu(expanded = expanded, onDismissRequest = onDismiss) {
@@ -814,6 +867,16 @@ private fun SpaceManagementMenu(
             onClick = {
                 onDismiss()
                 if (gmsEnabled) onDisableGms() else onEnableGms(gmsRequiresConsent)
+            },
+        )
+        DropdownMenuItem(
+            modifier = Modifier.testTag("export-space-${item.groupId}"),
+            text = { Text("匯出空間存檔") },
+            leadingIcon = { Icon(Icons.Default.Archive, contentDescription = null) },
+            enabled = item.apps.isNotEmpty(),
+            onClick = {
+                onDismiss()
+                onExport()
             },
         )
         DropdownMenuItem(

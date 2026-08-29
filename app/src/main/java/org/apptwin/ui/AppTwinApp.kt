@@ -86,6 +86,7 @@ fun AppTwinApp(
     var pendingPermissionAppKey by rememberSaveable { mutableStateOf<String?>(null) }
     var pendingPermissionName by rememberSaveable { mutableStateOf<String?>(null) }
     var pendingSettingsPermission by rememberSaveable { mutableStateOf<String?>(null) }
+    var pendingArchiveExportGroupId by rememberSaveable { mutableStateOf<String?>(null) }
     var settingsPermissionsDeniedPermanently by rememberSaveable {
         mutableStateOf(emptySet<String>())
     }
@@ -126,6 +127,20 @@ fun AppTwinApp(
         }
         pendingSettingsPermission = null
         viewModel.refresh()
+    }
+    val archiveExportLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.CreateDocument("application/zip"),
+    ) { destination ->
+        val groupId = pendingArchiveExportGroupId
+        pendingArchiveExportGroupId = null
+        if (destination != null && groupId != null) {
+            viewModel.exportSpace(groupId, destination)
+        }
+    }
+    val archiveImportLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.OpenDocument(),
+    ) { source ->
+        if (source != null) viewModel.importSpace(source)
     }
     val onSetClonePermission: (org.apptwin.GroupAppItem, String, Boolean) -> Unit =
         { app, permission, granted ->
@@ -239,7 +254,9 @@ fun AppTwinApp(
                                 state.gmsBusyGroupId != null ||
                                 state.launchingAppKey != null ||
                                 state.uninstallingAppKey != null ||
-                                state.clearingStorageGroupId != null
+                                state.clearingStorageGroupId != null ||
+                                state.archiveBusyGroupId != null ||
+                                state.isImportingArchive
                             ) {
                                 LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
                             }
@@ -256,6 +273,12 @@ fun AppTwinApp(
                                     onAddApp = viewModel::openAppPicker,
                                     onRenameSpace = viewModel::renameGroup,
                                     onDeleteSpace = viewModel::deleteGroup,
+                                    onExportSpace = { group ->
+                                        pendingArchiveExportGroupId = group.groupId
+                                        archiveExportLauncher.launch(
+                                            archiveFileName(group.name),
+                                        )
+                                    },
                                     onEnableGms = viewModel::enableGms,
                                     onDisableGms = viewModel::disableGms,
                                     onClearAllAppData = viewModel::clearAllGroupAppData,
@@ -270,6 +293,14 @@ fun AppTwinApp(
                                     state = state,
                                     onOpenStorageSettings = onOpenStorageSettings,
                                     onExportDiagnostics = viewModel::exportDiagnostics,
+                                    onImportSpace = {
+                                        archiveImportLauncher.launch(
+                                            arrayOf(
+                                                "application/zip",
+                                                "application/octet-stream",
+                                            ),
+                                        )
+                                    },
                                     notificationsGranted = notificationsGranted,
                                     onRequestNotifications = {
                                         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
@@ -327,6 +358,15 @@ fun AppTwinApp(
             }
         }
     }
+}
+
+private fun archiveFileName(spaceName: String): String {
+    val safeName = spaceName.trim()
+        .replace(Regex("[^A-Za-z0-9._-]+"), "-")
+        .trim('-')
+        .take(48)
+        .ifEmpty { "space" }
+    return "AppTwin-$safeName.apptwin-space"
 }
 
 private tailrec fun Context.findActivity(): Activity? = when (this) {

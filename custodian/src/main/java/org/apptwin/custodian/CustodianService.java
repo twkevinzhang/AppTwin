@@ -50,6 +50,47 @@ public final class CustodianService extends Service {
         }
 
         @Override
+        public boolean sealArchive(
+                String sourceSpaceId,
+                String archiveId,
+                String packageName,
+                String keyspaceId,
+                String archiveSha256) {
+            enforceTrustedCaller();
+            return ledger.sealArchive(
+                    sourceSpaceId, archiveId, packageName, keyspaceId, archiveSha256);
+        }
+
+        @Override
+        public String resolveArchivedOwner(
+                String archiveId,
+                String packageName,
+                String keyspaceId,
+                String archiveSha256) {
+            enforceTrustedCaller();
+            return ledger.resolveArchivedOwner(
+                    archiveId, packageName, keyspaceId, archiveSha256);
+        }
+
+        @Override
+        public boolean claimArchive(
+                String archiveId,
+                String currentOwnerSpaceId,
+                String destinationSpaceId,
+                String packageName,
+                String keyspaceId,
+                String archiveSha256) {
+            enforceTrustedCaller();
+            return ledger.claimArchive(
+                    archiveId,
+                    currentOwnerSpaceId,
+                    destinationSpaceId,
+                    packageName,
+                    keyspaceId,
+                    archiveSha256);
+        }
+
+        @Override
         public boolean releaseKeyspace(String spaceId, String packageName, String keyspaceId) {
             enforceTrustedCaller();
             return ledger.release(spaceId, packageName, keyspaceId);

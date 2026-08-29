@@ -41,19 +41,32 @@ final class GuestKeystoreState {
     static boolean clearUserState(int userId) {
         try {
             return clearUserState(
-                    androidStore(), userId, CustodianKeyspaceState.readForUser(userId));
+                    androidStore(),
+                    userId,
+                    CustodianKeyspaceState.readForUser(userId),
+                    CustodianKeyspaceState.readRetainedForUser(userId));
         } catch (Exception unavailable) {
             return false;
         }
     }
 
     static boolean clearUserState(
-            Store store, int userId, CustodianKeyspaceState.Record custodian) throws Exception {
+            Store store,
+            int userId,
+            CustodianKeyspaceState.Record custodian,
+            CustodianKeyspaceState.RetainedRecord retained) throws Exception {
+        boolean preserveCustodian = retained != null;
+        if (preserveCustodian
+                && (custodian == null
+                || !retained.keyspaceId.equals(custodian.keyspaceId)
+                || !"jp.naver.line.android".equals(retained.packageName))) {
+            return false;
+        }
         for (String alias : KeystoreAliasPolicy.ownedAliasesForUser(
                 userId, store.aliases())) {
             store.delete(alias);
         }
-        if (custodian != null) {
+        if (custodian != null && !preserveCustodian) {
             for (String alias : CustodianAliasPolicy.ownedAliasesForKeyspace(
                     custodian.keyspaceId, store.aliases())) {
                 store.delete(alias);
@@ -61,7 +74,8 @@ final class GuestKeystoreState {
         }
         List<String> remaining = store.aliases();
         return KeystoreAliasPolicy.ownedAliasesForUser(userId, remaining).isEmpty()
-                && (custodian == null || CustodianAliasPolicy.ownedAliasesForKeyspace(
+                && (custodian == null || preserveCustodian
+                || CustodianAliasPolicy.ownedAliasesForKeyspace(
                         custodian.keyspaceId, remaining).isEmpty());
     }
 

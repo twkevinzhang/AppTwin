@@ -12,4 +12,25 @@ interface ICustodianService {
         String keyspaceId
     );
     boolean releaseKeyspace(String spaceId, String packageName, String keyspaceId);
+    boolean sealArchive(
+        String sourceSpaceId,
+        String archiveId,
+        String packageName,
+        String keyspaceId,
+        String archiveSha256
+    );
+    String resolveArchivedOwner(
+        String archiveId,
+        String packageName,
+        String keyspaceId,
+        String archiveSha256
+    );
+    boolean claimArchive(
+        String archiveId,
+        String currentOwnerSpaceId,
+        String destinationSpaceId,
+        String packageName,
+        String keyspaceId,
+        String archiveSha256
+    );
 }
