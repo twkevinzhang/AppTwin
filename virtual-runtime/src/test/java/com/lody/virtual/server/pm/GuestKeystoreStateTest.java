@@ -56,8 +56,49 @@ public class GuestKeystoreStateTest {
         assertTrue(GuestKeystoreState.clearUserState(
                 store,
                 4,
-                new CustodianKeyspaceState.Record(mappedKeyspace, mappedKeyspace)));
+                new CustodianKeyspaceState.Record(mappedKeyspace, mappedKeyspace),
+                null));
         assertEquals(Arrays.asList("host-key", otherLine), store.aliases());
+    }
+
+    @Test
+    public void userCleanupPreservesOnlyExactRetainedCustodianKeyspace() throws Exception {
+        String retainedKeyspace = "34480577-4e1a-449f-bc5f-b5cbc02e8a7c";
+        String unrelatedKeyspace = "7fba3b64-10ac-4541-b7e4-14706040e272";
+        String legacyLine = KeystoreAliasPolicy.toPhysicalAlias(
+                "jp.naver.line.android", 4, "legacy");
+        String retainedLine = CustodianAliasPolicy.toPhysicalAlias(
+                retainedKeyspace, "jp.naver.line.android", "stable");
+        String unrelatedLine = CustodianAliasPolicy.toPhysicalAlias(
+                unrelatedKeyspace, "jp.naver.line.android", "unrelated");
+        FakeStore store = new FakeStore("host-key", legacyLine, retainedLine, unrelatedLine);
+
+        assertTrue(GuestKeystoreState.clearUserState(
+                store,
+                4,
+                new CustodianKeyspaceState.Record(retainedKeyspace, retainedKeyspace),
+                new CustodianKeyspaceState.RetainedRecord(
+                        "jp.naver.line.android", retainedKeyspace)));
+        assertEquals(Arrays.asList("host-key", retainedLine, unrelatedLine), store.aliases());
+    }
+
+    @Test
+    public void mismatchedRetainedMarkerFailsClosedBeforeDeletingAnything() throws Exception {
+        String mappedKeyspace = "34480577-4e1a-449f-bc5f-b5cbc02e8a7c";
+        String otherKeyspace = "7fba3b64-10ac-4541-b7e4-14706040e272";
+        String legacyLine = KeystoreAliasPolicy.toPhysicalAlias(
+                "jp.naver.line.android", 4, "legacy");
+        String mappedLine = CustodianAliasPolicy.toPhysicalAlias(
+                mappedKeyspace, "jp.naver.line.android", "stable");
+        FakeStore store = new FakeStore(legacyLine, mappedLine);
+
+        assertFalse(GuestKeystoreState.clearUserState(
+                store,
+                4,
+                new CustodianKeyspaceState.Record(mappedKeyspace, mappedKeyspace),
+                new CustodianKeyspaceState.RetainedRecord(
+                        "jp.naver.line.android", otherKeyspace)));
+        assertEquals(Arrays.asList(legacyLine, mappedLine), store.aliases());
     }
 
     @Test
@@ -70,7 +111,8 @@ public class GuestKeystoreStateTest {
         assertFalse(GuestKeystoreState.clearUserState(
                 store,
                 4,
-                new CustodianKeyspaceState.Record(keyspace, keyspace)));
+                new CustodianKeyspaceState.Record(keyspace, keyspace),
+                null));
     }
 
     private static final class FakeStore implements GuestKeystoreState.Store {

@@ -15,6 +15,8 @@ import java.util.UUID;
 public final class CustodianKeyspaceState {
     private static final String SCHEMA_VERSION = "1";
     private static final String FILE_NAME = "line-custodian.properties";
+    private static final String RETAINED_FILE_NAME = "line-custodian-retained.properties";
+    private static final String LINE_PACKAGE = "jp.naver.line.android";
 
     private CustodianKeyspaceState() {
     }
@@ -29,6 +31,28 @@ public final class CustodianKeyspaceState {
 
     public static void writeForUser(int userId, String ownerSpaceId, String keyspaceId) {
         write(fileForUser(userId), new Record(ownerSpaceId, keyspaceId));
+    }
+
+    public static File retainedFileForUser(int userId) {
+        return new File(VEnvironment.getUserSystemDirectory(userId), RETAINED_FILE_NAME);
+    }
+
+    public static RetainedRecord readRetainedForUser(int userId) {
+        return readRetained(retainedFileForUser(userId));
+    }
+
+    public static void writeRetainedForUser(
+            int userId, String packageName, String keyspaceId) {
+        writeRetained(
+                retainedFileForUser(userId), new RetainedRecord(packageName, keyspaceId));
+    }
+
+    public static boolean isExactKeyspaceRetainedForUser(
+            int userId, String packageName, String keyspaceId) {
+        RetainedRecord retained = readRetainedForUser(userId);
+        if (retained == null) return false;
+        return retained.packageName.equals(requireSupportedPackage(packageName))
+                && retained.keyspaceId.equals(canonicalUuid(keyspaceId, "keyspaceId"));
     }
 
     static Record read(File file) {
@@ -48,18 +72,52 @@ public final class CustodianKeyspaceState {
     }
 
     static void write(File destination, Record record) {
-        File parent = destination.getParentFile();
-        if (parent == null || (!parent.isDirectory() && !parent.mkdirs())) {
-            throw new IllegalStateException("Custodian keyspace directory is unavailable");
-        }
         Properties fields = new Properties();
         fields.setProperty("schemaVersion", SCHEMA_VERSION);
         fields.setProperty("ownerSpaceId", canonicalUuid(record.ownerSpaceId, "ownerSpaceId"));
         fields.setProperty("keyspaceId", canonicalUuid(record.keyspaceId, "keyspaceId"));
-        File replacement = new File(parent, "." + FILE_NAME + "-" + UUID.randomUUID());
+        writeAtomically(destination, fields, "AppTwin LINE Custodian keyspace");
+    }
+
+    static RetainedRecord readRetained(File file) {
+        if (!file.isFile()) return null;
+        Properties fields = readProperties(file, "Custodian retained keyspace marker cannot be read");
+        if (!SCHEMA_VERSION.equals(fields.getProperty("schemaVersion"))) {
+            throw new IllegalStateException("Unsupported Custodian retained keyspace schema");
+        }
+        return new RetainedRecord(
+                requireSupportedPackage(fields.getProperty("packageName")),
+                canonicalUuid(fields.getProperty("keyspaceId"), "keyspaceId"));
+    }
+
+    static void writeRetained(File destination, RetainedRecord record) {
+        Properties fields = new Properties();
+        fields.setProperty("schemaVersion", SCHEMA_VERSION);
+        fields.setProperty("packageName", requireSupportedPackage(record.packageName));
+        fields.setProperty("keyspaceId", canonicalUuid(record.keyspaceId, "keyspaceId"));
+        writeAtomically(destination, fields, "AppTwin retained LINE Custodian keyspace");
+    }
+
+    private static Properties readProperties(File file, String failureMessage) {
+        Properties fields = new Properties();
+        try (FileInputStream input = new FileInputStream(file)) {
+            fields.load(input);
+            return fields;
+        } catch (IOException failure) {
+            throw new IllegalStateException(failureMessage);
+        }
+    }
+
+    private static void writeAtomically(File destination, Properties fields, String comment) {
+        File parent = destination.getParentFile();
+        if (parent == null || (!parent.isDirectory() && !parent.mkdirs())) {
+            throw new IllegalStateException("Custodian keyspace directory is unavailable");
+        }
+        File replacement = new File(
+                parent, "." + destination.getName() + "-" + UUID.randomUUID());
         try {
             try (FileOutputStream output = new FileOutputStream(replacement)) {
-                fields.store(output, "AppTwin LINE Custodian keyspace");
+                fields.store(output, comment);
                 output.getFD().sync();
             }
             Files.move(
@@ -72,6 +130,13 @@ public final class CustodianKeyspaceState {
         } finally {
             replacement.delete();
         }
+    }
+
+    private static String requireSupportedPackage(String packageName) {
+        if (!LINE_PACKAGE.equals(packageName)) {
+            throw new IllegalStateException("Unsupported Custodian guest package");
+        }
+        return packageName;
     }
 
     private static String canonicalUuid(String value, String field) {
@@ -91,6 +156,16 @@ public final class CustodianKeyspaceState {
 
         public Record(String ownerSpaceId, String keyspaceId) {
             this.ownerSpaceId = ownerSpaceId;
+            this.keyspaceId = keyspaceId;
+        }
+    }
+
+    public static final class RetainedRecord {
+        public final String packageName;
+        public final String keyspaceId;
+
+        public RetainedRecord(String packageName, String keyspaceId) {
+            this.packageName = packageName;
             this.keyspaceId = keyspaceId;
         }
     }

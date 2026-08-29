@@ -832,6 +832,12 @@ class MainViewModelLifecycleTest {
                 ?.let { DeleteGroupResult.Deleted(it, deleteShortcutWarning) }
                 ?: DeleteGroupResult.NotFound
         }
+        override suspend fun exportSpace(
+            groupId: String,
+            destination: android.net.Uri,
+        ): SpaceArchiveExportResult = error("unused")
+        override suspend fun importSpace(source: android.net.Uri): SpaceArchiveImportResult =
+            error("unused")
         override suspend fun addAppToGroup(groupId: String, packageName: String): Group {
             addedApps += groupId to packageName
             addAppGate?.await()

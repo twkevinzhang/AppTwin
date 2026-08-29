@@ -12,11 +12,13 @@ import android.util.Log
 import com.lody.virtual.client.core.InstallStrategy
 import com.lody.virtual.client.core.VirtualCore
 import com.lody.virtual.client.ipc.VActivityManager
+import com.lody.virtual.client.ipc.VDeviceManager
 import com.lody.virtual.client.ipc.VPackageManager
 import com.lody.virtual.client.hook.proxies.keystore.KeystoreAliasPolicy
 import com.lody.virtual.os.VEnvironment
 import com.lody.virtual.os.VUserManager
 import com.lody.virtual.remote.PreparedActivityLaunch
+import com.lody.virtual.remote.VDeviceInfo
 import com.lody.virtual.server.pm.VUserManagerService
 import java.io.BufferedInputStream
 import java.io.File
@@ -133,6 +135,47 @@ class VirtualRuntimeController internal constructor(
         val user = manager.getUserInfo(binding.internalId) ?: return
         val expected = environmentName(group.id, group.name)
         if (user.name != expected) manager.setUserName(binding.internalId, expected)
+    }
+
+    fun quiesceEnvironment(binding: EnvironmentBinding) {
+        val userId = binding.internalId
+        require(userId > 0) { "預設引擎環境不可封存" }
+        VirtualCore.get().waitForEngine()
+        VPackageManager.get().getInstalledApplications(0, userId)
+            .mapNotNull { it.packageName }
+            .distinct()
+            .forEach { packageName -> VActivityManager.get().killAppByPkg(packageName, userId) }
+    }
+
+    fun readDeviceInfo(binding: EnvironmentBinding): VDeviceInfo {
+        require(binding.internalId > 0) { "預設引擎環境不可封存" }
+        VirtualCore.get().waitForEngine()
+        return VDeviceManager.get().getDeviceInfo(binding.internalId)
+    }
+
+    fun restoreDeviceInfo(binding: EnvironmentBinding, deviceInfo: VDeviceInfo) {
+        require(binding.internalId > 0) { "預設引擎環境不可還原" }
+        VirtualCore.get().waitForEngine()
+        VDeviceManager.get().remote.updateDeviceInfo(binding.internalId, deviceInfo)
+    }
+
+    /** Installs the archived package binding without starting guest code before data restore. */
+    fun preparePackageForRestore(group: Group, app: GroupApp) {
+        require(group.contains(app.packageName)) { "GroupApp does not belong to this Group" }
+        val binding = requireHealthyEnvironment(group)
+        custodianKeyspaces.prepare(group, app)
+        val revision = requireNotNull(revisionProvider.activeRuntimeRevision(app.packageName)) {
+            "沒有可還原的 active revision：${app.packageName}"
+        }
+        val core = VirtualCore.get()
+        core.waitForEngine()
+        prepareVirtualExternalStorage(binding.internalId)
+        RuntimePackageSynchronizer(VirtualCorePackageGateway(core))
+            .synchronize(revision, binding.internalId)
+        markGuestCodeReadOnly(core, app.packageName)
+        check(core.isAppInstalledAsUser(binding.internalId, app.packageName)) {
+            "無法建立 ${app.packageName} 的還原套件綁定"
+        }
     }
 
     override fun deleteEnvironment(binding: EnvironmentBinding) {

@@ -2,6 +2,7 @@ package org.apptwin
 
 import android.app.Application
 import android.content.Context
+import android.net.Uri
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
@@ -93,6 +94,8 @@ data class MainUiState(
     val uninstallingAppKey: String? = null,
     val clearingStorageAppKey: String? = null,
     val clearingStorageGroupId: String? = null,
+    val archiveBusyGroupId: String? = null,
+    val isImportingArchive: Boolean = false,
     val shortcutAppKey: String? = null,
     val repairingAppKey: String? = null,
     val allFilesGranted: Boolean = false,
@@ -142,6 +145,15 @@ internal sealed interface DeleteGroupResult {
     ) : DeleteGroupResult
 }
 
+internal data class SpaceArchiveExportResult(
+    val groupName: String,
+    val bytesWritten: Long,
+)
+
+internal data class SpaceArchiveImportResult(
+    val group: Group,
+)
+
 /** Blocking application operations. MainViewModel always invokes these on its IO dispatcher. */
 internal interface MainOperations {
     suspend fun loadGroupSnapshot(): MainGroupSnapshot
@@ -150,6 +162,8 @@ internal interface MainOperations {
     suspend fun createGroup(name: String): Group
     suspend fun renameGroup(groupId: String, name: String): Group?
     suspend fun deleteGroup(groupId: String): DeleteGroupResult
+    suspend fun exportSpace(groupId: String, destination: Uri): SpaceArchiveExportResult
+    suspend fun importSpace(source: Uri): SpaceArchiveImportResult
     suspend fun addAppToGroup(groupId: String, packageName: String): Group
     suspend fun launchGroupApp(item: GroupAppItem): RuntimeLaunchResult
     suspend fun uninstallGroupApp(item: GroupAppItem): GroupAppRemovalResult
@@ -468,7 +482,11 @@ class MainViewModel internal constructor(
     }
 
     fun createGroup(name: String) {
-        if (uiState.isCreatingGroup) return
+        if (
+            uiState.isCreatingGroup ||
+            uiState.isImportingArchive ||
+            uiState.archiveBusyGroupId != null
+        ) return
         uiState = uiState.copy(isCreatingGroup = true)
         viewModelScope.launch {
             val result = runCatching {
@@ -501,6 +519,8 @@ class MainViewModel internal constructor(
     fun deleteGroup(groupId: String) {
         if (
             uiState.busyGroupId != null ||
+            uiState.archiveBusyGroupId != null ||
+            uiState.isImportingArchive ||
             uiState.gmsBusyGroupId == groupId ||
             uiState.uninstallingAppKey != null ||
             uiState.clearingStorageAppKey != null ||
@@ -532,6 +552,50 @@ class MainViewModel internal constructor(
                 showMessage("刪除群組失敗：${error.userMessage()}")
                 refresh()
             }
+        }
+    }
+
+    fun exportSpace(groupId: String, destination: Uri) {
+        if (
+            uiState.archiveBusyGroupId != null ||
+            uiState.isImportingArchive ||
+            uiState.busyGroupId != null
+        ) return
+        uiState = uiState.copy(archiveBusyGroupId = groupId)
+        viewModelScope.launch {
+            val result = runCatching {
+                withContext(ioDispatcher) { operations.exportSpace(groupId, destination) }
+            }
+            uiState = uiState.copy(archiveBusyGroupId = null)
+            result.onSuccess { exported ->
+                val mebibytes = exported.bytesWritten / (1024 * 1024)
+                showMessage("已匯出「${exported.groupName}」存檔（${mebibytes} MB）")
+            }.onFailure { error ->
+                showMessage("匯出存檔失敗：${error.userMessage()}")
+            }
+            refresh()
+        }
+    }
+
+    fun importSpace(source: Uri) {
+        if (
+            uiState.archiveBusyGroupId != null ||
+            uiState.isImportingArchive ||
+            uiState.busyGroupId != null
+        ) return
+        uiState = uiState.copy(isImportingArchive = true)
+        viewModelScope.launch {
+            val result = runCatching {
+                withContext(ioDispatcher) { operations.importSpace(source) }
+            }
+            uiState = uiState.copy(isImportingArchive = false)
+            result.onSuccess { imported ->
+                navigate(MainDestination.HOME)
+                showMessage("已從存檔建立新的「${imported.group.name}」")
+            }.onFailure { error ->
+                showMessage("匯入存檔失敗：${error.userMessage()}")
+            }
+            refresh()
         }
     }
 

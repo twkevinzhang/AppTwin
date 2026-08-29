@@ -16,8 +16,45 @@ import org.apptwin.custodian.contract.ICustodianService
 import org.apptwin.groups.Group
 import org.apptwin.groups.GroupApp
 
-internal fun interface CustodianKeyspaceRegistrar {
+internal interface CustodianKeyspaceRegistrar {
     fun prepare(group: Group, app: GroupApp)
+
+    fun retainForArchive(group: Group, packageName: String): String
+
+    fun cancelArchiveRetention(group: Group)
+
+    fun sealArchive(
+        sourceSpaceId: String,
+        archiveId: String,
+        packageName: String,
+        keyspaceId: String,
+        archiveSha256: String,
+    )
+
+    fun resolveArchivedOwner(
+        archiveId: String,
+        packageName: String,
+        keyspaceId: String,
+        archiveSha256: String,
+    ): String?
+
+    fun claimArchive(
+        archiveId: String,
+        currentOwnerSpaceId: String,
+        destinationGroup: Group,
+        packageName: String,
+        keyspaceId: String,
+        archiveSha256: String,
+    )
+
+    fun reassignArchive(
+        archiveId: String,
+        currentOwnerSpaceId: String,
+        destinationSpaceId: String,
+        packageName: String,
+        keyspaceId: String,
+        archiveSha256: String,
+    )
 }
 
 /** Registers LINE's stable keyspace before the first guest process starts. */
@@ -55,6 +92,106 @@ internal class AndroidCustodianKeyspaceRegistrar(context: Context) : CustodianKe
         CustodianKeyspaceState.writeForUser(binding.internalId, group.id, keyspace)
     }
 
+    override fun retainForArchive(group: Group, packageName: String): String {
+        val binding = requireNotNull(group.environmentBinding) { "Space environment is missing" }
+        val state = requireNotNull(CustodianKeyspaceState.readForUser(binding.internalId)) {
+            "Space 沒有可封存的 Custodian keyspace"
+        }
+        check(state.ownerSpaceId == group.id) { "Custodian owner does not match Space" }
+        CustodianKeyspaceState.writeRetainedForUser(
+            binding.internalId,
+            packageName,
+            state.keyspaceId,
+        )
+        return state.keyspaceId
+    }
+
+    override fun cancelArchiveRetention(group: Group) {
+        val userId = group.environmentBinding?.internalId ?: return
+        val marker = CustodianKeyspaceState.retainedFileForUser(userId)
+        check(!marker.exists() || marker.delete()) { "無法取消 Custodian 存檔保留" }
+    }
+
+    override fun sealArchive(
+        sourceSpaceId: String,
+        archiveId: String,
+        packageName: String,
+        keyspaceId: String,
+        archiveSha256: String,
+    ) {
+        val sealed = withService { service ->
+            service.sealArchive(
+                sourceSpaceId,
+                archiveId,
+                packageName,
+                keyspaceId,
+                archiveSha256,
+            )
+        }
+        check(sealed) { "Custodian 拒絕封存 reservation" }
+    }
+
+    override fun resolveArchivedOwner(
+        archiveId: String,
+        packageName: String,
+        keyspaceId: String,
+        archiveSha256: String,
+    ): String? = withService { service ->
+        service.resolveArchivedOwner(archiveId, packageName, keyspaceId, archiveSha256)
+    }
+
+    override fun claimArchive(
+        archiveId: String,
+        currentOwnerSpaceId: String,
+        destinationGroup: Group,
+        packageName: String,
+        keyspaceId: String,
+        archiveSha256: String,
+    ) {
+        val destinationBinding = requireNotNull(destinationGroup.environmentBinding) {
+            "Destination Space environment is missing"
+        }
+        reassignArchive(
+            archiveId,
+            currentOwnerSpaceId,
+            destinationGroup.id,
+            packageName,
+            keyspaceId,
+            archiveSha256,
+        )
+        CustodianKeyspaceState.writeForUser(
+            destinationBinding.internalId,
+            destinationGroup.id,
+            keyspaceId,
+        )
+        CustodianKeyspaceState.writeRetainedForUser(
+            destinationBinding.internalId,
+            packageName,
+            keyspaceId,
+        )
+    }
+
+    override fun reassignArchive(
+        archiveId: String,
+        currentOwnerSpaceId: String,
+        destinationSpaceId: String,
+        packageName: String,
+        keyspaceId: String,
+        archiveSha256: String,
+    ) {
+        val claimed = withService { service ->
+            service.claimArchive(
+                archiveId,
+                currentOwnerSpaceId,
+                destinationSpaceId,
+                packageName,
+                keyspaceId,
+                archiveSha256,
+            )
+        }
+        check(claimed) { "Custodian archive ownership 已變更或正在使用" }
+    }
+
     private fun verifyInstalledCustodian() {
         val packageManager = appContext.packageManager
         check(
@@ -66,6 +203,7 @@ internal class AndroidCustodianKeyspaceRegistrar(context: Context) : CustodianKe
     }
 
     private fun <T> withService(block: (ICustodianService) -> T): T {
+        verifyInstalledCustodian()
         val result = AtomicReference<ICustodianService?>()
         val failure = AtomicReference<Throwable?>()
         val connected = CountDownLatch(1)
