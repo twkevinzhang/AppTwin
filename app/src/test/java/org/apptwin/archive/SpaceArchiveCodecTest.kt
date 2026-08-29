@@ -57,6 +57,61 @@ class SpaceArchiveCodecTest {
     }
 
     @Test
+    fun `all compression levels round trip the same payload`() {
+        val workspace = Files.createTempDirectory("space-archive-compression-roundtrip").toFile()
+        val root = workspace.resolve("user").apply { mkdirs() }
+        val payload = buildString {
+            repeat(4_096) { append("AppTwin archive compression fixture\n") }
+        }
+        root.resolve("state.txt").writeText(payload)
+
+        SpaceArchiveCompression.entries.forEach { compression ->
+            val archive = ByteArrayOutputStream().also { output ->
+                SpaceArchiveWriter.write(
+                    output = output,
+                    manifest = manifest(),
+                    sources = listOf(SpaceArchiveSource("user", root)),
+                    compression = compression,
+                )
+            }.toByteArray()
+            val staging = workspace.resolve("staging-${compression.name.lowercase()}")
+
+            SpaceArchiveReader().readAndExtract(ByteArrayInputStream(archive), staging)
+
+            assertEquals(payload, staging.resolve("payload/user/state.txt").readText())
+        }
+    }
+
+    @Test
+    fun `high compression is no larger than low compression for compressible data`() {
+        val workspace = Files.createTempDirectory("space-archive-compression-size").toFile()
+        val root = workspace.resolve("user").apply { mkdirs() }
+        root.resolve("compressible.txt").writeText(
+            buildString {
+                repeat(16_384) { index ->
+                    append("repeated-space-state-")
+                    append(index % 16)
+                    append('\n')
+                }
+            },
+        )
+
+        fun archiveSize(compression: SpaceArchiveCompression): Int =
+            ByteArrayOutputStream().also { output ->
+                SpaceArchiveWriter.write(
+                    output = output,
+                    manifest = manifest(),
+                    sources = listOf(SpaceArchiveSource("user", root)),
+                    compression = compression,
+                )
+            }.size()
+
+        assertTrue(
+            archiveSize(SpaceArchiveCompression.HIGH) <= archiveSize(SpaceArchiveCompression.LOW),
+        )
+    }
+
+    @Test
     fun `tampered payload is rejected before staging is created`() {
         val fixture = validArchive("original".toByteArray())
         val tampered = rewriteZip(fixture) { name, bytes ->

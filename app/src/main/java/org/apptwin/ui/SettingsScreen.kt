@@ -26,6 +26,9 @@ import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.SegmentedButton
+import androidx.compose.material3.SegmentedButtonDefaults
+import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -39,6 +42,7 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import org.apptwin.MainUiState
+import org.apptwin.archive.SpaceArchiveCompression
 import org.apptwin.permissions.ClonePermissionAction
 import org.apptwin.permissions.ClonePermissionCategory
 import org.apptwin.permissions.ClonePermissionSummary
@@ -47,6 +51,7 @@ import org.apptwin.permissions.ClonePermissionVirtualScope
 @Composable
 fun SettingsScreen(
     state: MainUiState,
+    onArchiveCompressionChange: (SpaceArchiveCompression) -> Unit = {},
     onOpenStorageSettings: () -> Unit,
     onExportDiagnostics: () -> Unit,
     onImportSpace: () -> Unit = {},
@@ -59,6 +64,12 @@ fun SettingsScreen(
         contentPadding = PaddingValues(20.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
+        item {
+            ArchiveExportSettingsCard(
+                archiveCompression = state.archiveCompression,
+                onArchiveCompressionChange = onArchiveCompressionChange,
+            )
+        }
         item {
             SettingsCard(
                 icon = { Icon(Icons.Default.Unarchive, contentDescription = null) },
@@ -171,6 +182,61 @@ fun SettingsScreen(
             }
         }
     }
+}
+
+@Composable
+private fun ArchiveExportSettingsCard(
+    archiveCompression: SpaceArchiveCompression,
+    onArchiveCompressionChange: (SpaceArchiveCompression) -> Unit,
+) {
+    SettingsCard(
+        modifier = Modifier.testTag("archive-export-settings-card"),
+        icon = { Icon(Icons.Default.Folder, contentDescription = null) },
+        title = "匯出空間設定",
+    ) {
+        Text(
+            "壓縮比率",
+            fontWeight = FontWeight.SemiBold,
+        )
+        SingleChoiceSegmentedButtonRow(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(top = 12.dp),
+        ) {
+            SpaceArchiveCompression.entries.forEachIndexed { index, compression ->
+                SegmentedButton(
+                    selected = archiveCompression == compression,
+                    onClick = { onArchiveCompressionChange(compression) },
+                    shape = SegmentedButtonDefaults.itemShape(
+                        index = index,
+                        count = SpaceArchiveCompression.entries.size,
+                    ),
+                    modifier = Modifier
+                        .testTag("archive-compression-${compression.name.lowercase()}"),
+                ) {
+                    Text(archiveCompressionTitle(compression))
+                }
+            }
+        }
+        Text(
+            archiveCompressionDescription(archiveCompression),
+            modifier = Modifier.padding(top = 12.dp),
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            style = MaterialTheme.typography.bodySmall,
+        )
+    }
+}
+
+private fun archiveCompressionTitle(compression: SpaceArchiveCompression): String = when (compression) {
+    SpaceArchiveCompression.HIGH -> "高"
+    SpaceArchiveCompression.MEDIUM -> "中"
+    SpaceArchiveCompression.LOW -> "低"
+}
+
+private fun archiveCompressionDescription(compression: SpaceArchiveCompression): String = when (compression) {
+    SpaceArchiveCompression.HIGH -> "檔案通常較小，匯出較慢"
+    SpaceArchiveCompression.MEDIUM -> "檔案大小與匯出速度較為平衡"
+    SpaceArchiveCompression.LOW -> "匯出較快，檔案通常較大"
 }
 
 @Composable
