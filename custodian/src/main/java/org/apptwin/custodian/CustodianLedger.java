@@ -110,7 +110,9 @@ final class CustodianLedger {
             return false;
         }
         if (current.hasArchiveReservation()) {
-            return archive.equals(current.archiveId) && digest.equals(current.archiveSha256);
+            if (archive.equals(current.archiveId)) {
+                return digest.equals(current.archiveSha256);
+            }
         }
         write(file, new Record(
                 keyspace, source, guestPackage, archive, digest, null));

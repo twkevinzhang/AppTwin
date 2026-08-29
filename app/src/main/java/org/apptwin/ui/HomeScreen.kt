@@ -104,6 +104,7 @@ fun HomeScreen(
     var renameGroupId by rememberSaveable { mutableStateOf<String?>(null) }
     var deleteGroupId by rememberSaveable { mutableStateOf<String?>(null) }
     var exportGroupId by rememberSaveable { mutableStateOf<String?>(null) }
+    var exportOverwriteGroupId by rememberSaveable { mutableStateOf<String?>(null) }
     var clearAllGroupId by rememberSaveable { mutableStateOf<String?>(null) }
     var uninstallTargetKey by rememberSaveable { mutableStateOf<String?>(null) }
     var clearStorageTargetKey by rememberSaveable { mutableStateOf<String?>(null) }
@@ -222,6 +223,9 @@ fun HomeScreen(
     val renamedGroup = state.groups.firstOrNull { it.groupId == renameGroupId }
     val deleteGroup = state.groups.firstOrNull { it.groupId == deleteGroupId }
     val exportGroup = state.groups.firstOrNull { it.groupId == exportGroupId }
+    val exportOverwriteGroup = state.groups.firstOrNull {
+        it.groupId == exportOverwriteGroupId
+    }
     val clearAllGroup = state.groups.firstOrNull { it.groupId == clearAllGroupId }
     val consentGroup = state.groups.firstOrNull { it.groupId == gmsConsentGroupId }
     val disableGroup = state.groups.firstOrNull { it.groupId == gmsDisableGroupId }
@@ -255,8 +259,18 @@ fun HomeScreen(
             group = group,
             onDismiss = { exportGroupId = null },
             onConfirm = {
-                onExportSpace(group)
+                exportOverwriteGroupId = group.groupId
                 exportGroupId = null
+            },
+        )
+    }
+    exportOverwriteGroup?.let { group ->
+        ExportSpaceArchiveOverwriteDialog(
+            group = group,
+            onDismiss = { exportOverwriteGroupId = null },
+            onConfirm = {
+                onExportSpace(group)
+                exportOverwriteGroupId = null
             },
         )
     }
@@ -352,10 +366,49 @@ private fun ExportSpaceArchiveDialog(
         },
         confirmButton = {
             Button(modifier = Modifier.testTag("confirm-export-space"), onClick = onConfirm) {
-                Text("選擇存檔位置")
+                Text("下一步")
             }
         },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("取消") } },
+        dismissButton = {
+            TextButton(
+                modifier = Modifier.testTag("cancel-export-space"),
+                onClick = onDismiss,
+            ) { Text("取消") }
+        },
+    )
+}
+
+@Composable
+private fun ExportSpaceArchiveOverwriteDialog(
+    group: GroupItem,
+    onDismiss: () -> Unit,
+    onConfirm: () -> Unit,
+) {
+    AlertDialog(
+        modifier = Modifier.testTag("export-space-overwrite-dialog"),
+        onDismissRequest = onDismiss,
+        icon = { Icon(Icons.Default.Archive, contentDescription = null) },
+        title = { Text("取代「${group.name}」的先前存檔？") },
+        text = {
+            Text(
+                "新存檔成功後，先前由此 Space 匯出的存檔將立即失效且無法匯入。" +
+                    "若選擇與舊檔相同的位置，檔案可能在匯出過程中被覆寫；" +
+                    "建議另存新檔並確認成功後，再處理舊檔。",
+                color = MaterialTheme.colorScheme.error,
+            )
+        },
+        confirmButton = {
+            Button(
+                modifier = Modifier.testTag("confirm-export-space-overwrite"),
+                onClick = onConfirm,
+            ) { Text("繼續匯出") }
+        },
+        dismissButton = {
+            TextButton(
+                modifier = Modifier.testTag("cancel-export-space-overwrite"),
+                onClick = onDismiss,
+            ) { Text("取消") }
+        },
     )
 }
 
