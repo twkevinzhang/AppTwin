@@ -1,14 +1,17 @@
 package com.lody.virtual.client.hook.proxies.keystore;
 
-import android.os.Build;
 import android.app.Application;
+import android.content.pm.PackageInfo;
+import android.os.Build;
 import android.security.keystore.KeyGenParameterSpec;
 import android.security.keystore.KeyPermanentlyInvalidatedException;
 import android.security.keystore.KeyProperties;
 import android.security.keystore.StrongBoxUnavailableException;
 
-import com.lody.virtual.helper.utils.VLog;
 import com.lody.virtual.client.VClientImpl;
+import com.lody.virtual.client.ipc.VPackageManager;
+import com.lody.virtual.helper.utils.VLog;
+import com.lody.virtual.os.VUserHandle;
 
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
@@ -17,7 +20,9 @@ import java.security.KeyStore;
 import java.security.ProviderException;
 import java.security.Signature;
 import java.util.Calendar;
+import java.util.Collections;
 import java.util.Date;
+import java.util.IdentityHashMap;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -25,6 +30,8 @@ import java.util.concurrent.ConcurrentHashMap;
 final class FacebookLiteAttestationKeyCompat {
     private static final String TAG = "FacebookLiteKeyCompat";
     private static final String PACKAGE_NAME = "com.facebook.lite";
+    private static final int VERSION_525_0_0_6_108 = 516101866;
+    private static final int VERSION_526_0_0_5_107 = 516201887;
     private static final String GUEST_ALIAS = "w6CmevIyM/PL6Q5uUDw=";
     private static final byte[] PROBE = new byte[]{0x41, 0x70, 0x70, 0x54, 0x77, 0x69, 0x6e};
     private static final ThreadLocal<Boolean> IN_PROGRESS = new ThreadLocal<>();
@@ -43,22 +50,45 @@ final class FacebookLiteAttestationKeyCompat {
 
     static void refreshWarmupAfterGeneration(String packageName) {
         if (!supportsPackage(packageName) || Boolean.TRUE.equals(IN_PROGRESS.get())) return;
+        refreshWarmup(packageName, currentVersionCode(packageName));
+    }
+
+    private static void refreshWarmup(String packageName, int versionCode) {
         try {
             Application application = VClientImpl.get().getCurrentApplication();
             if (application == null) return;
-            Class<?> helperClass = application.getClassLoader().loadClass("X.0Fs");
-            Field providerField = helperClass.getField("A05");
+            WarmupAbi abi = warmupAbiForVersion(versionCode);
+            if (abi == null) return;
+            Class<?> helperClass = application.getClassLoader().loadClass(abi.helperClass);
+            Field providerField = helperClass.getField(abi.providerField);
             Object provider = providerField.get(null);
             Method get = provider.getClass().getMethod("get");
             Object helper = get.invoke(provider);
             Method warmup = helperClass.getMethod("A02", boolean.class);
-            warmup.invoke(helper, false);
-            VLog.i(TAG, "refreshed Facebook Lite attestation warmup after key generation");
+            warmup.invoke(helper, abi.force);
+            VLog.i(TAG, "refreshed Facebook Lite attestation warmup");
         } catch (ReflectiveOperationException | RuntimeException error) {
             Throwable cause = error.getCause() != null ? error.getCause() : error;
             VLog.w(TAG, "unable to refresh Facebook Lite attestation warmup: %s",
                     cause.getClass().getSimpleName());
         }
+    }
+
+    static WarmupAbi warmupAbiForVersion(int versionCode) {
+        switch (versionCode) {
+            case VERSION_525_0_0_6_108:
+                return new WarmupAbi("X.0Fs", "A05", false);
+            case VERSION_526_0_0_5_107:
+                return new WarmupAbi("X.0Fg", "A05", true);
+            default:
+                return null;
+        }
+    }
+
+    private static int currentVersionCode(String packageName) {
+        PackageInfo packageInfo = VPackageManager.get().getPackageInfo(
+                packageName, 0, VUserHandle.myUserId());
+        return packageInfo == null ? -1 : packageInfo.versionCode;
     }
 
     static void ensure(String packageName, int userId) {
@@ -93,8 +123,31 @@ final class FacebookLiteAttestationKeyCompat {
             signature.update(PROBE);
             signature.sign();
             return true;
-        } catch (KeyPermanentlyInvalidatedException invalidated) {
-            return false;
+        } catch (Exception error) {
+            if (hasCauseOfType(error, KeyPermanentlyInvalidatedException.class)) return false;
+            throw error;
+        }
+    }
+
+    static boolean hasCauseOfType(Throwable error, Class<? extends Throwable> causeType) {
+        if (causeType == null) return false;
+        Set<Throwable> visited = Collections.newSetFromMap(new IdentityHashMap<>());
+        for (Throwable cause = error; cause != null && visited.add(cause);
+                cause = cause.getCause()) {
+            if (causeType.isInstance(cause)) return true;
+        }
+        return false;
+    }
+
+    static final class WarmupAbi {
+        final String helperClass;
+        final String providerField;
+        final boolean force;
+
+        WarmupAbi(String helperClass, String providerField, boolean force) {
+            this.helperClass = helperClass;
+            this.providerField = providerField;
+            this.force = force;
         }
     }
 

@@ -58,8 +58,10 @@ def generatedGuestCoroutineCompatAssets = layout.buildDirectory.dir(
 
 tasks.register('prepareGuestCoroutineCompatAsset', Sync) {
     dependsOn ':guest-coroutine-compat:verifyCompatDex'
-    from(project(':guest-coroutine-compat').layout.buildDirectory.file(
-            'generated/compatDexArchive/facebook-lite-coroutine-provider.jar'))
+    from(project(':guest-coroutine-compat').layout.buildDirectory.dir(
+            'generated/compatDexArchive')) {
+        include 'facebook-lite-coroutine-provider-*.jar'
+    }
     into(generatedGuestCoroutineCompatAssets.map { it.dir('guest-compat') })
 }
 

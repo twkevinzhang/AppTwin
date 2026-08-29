@@ -3,6 +3,8 @@ package com.lody.virtual.client.hook.proxies.credential;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
+import static org.junit.Assert.assertNull;
+import static org.junit.Assert.assertSame;
 import static org.junit.Assert.assertTrue;
 
 import android.os.IBinder;
@@ -75,6 +77,71 @@ public class CredentialManagerStubTest {
         assertNotNull(callback.message);
     }
 
+    @Test
+    public void preparesManualNavigationBeforeFrameworkError() {
+        List<String> calls = new ArrayList<>();
+        OrderingCredentialCallback callback = new OrderingCredentialCallback(calls);
+
+        assertTrue(CredentialManagerStub.prepareAndNotifyManualLogin(
+                new Object[]{callback},
+                () -> calls.add("prepare-navigation")));
+
+        assertEquals(Arrays.asList(
+                "prepare-navigation", "framework-onError"), calls);
+    }
+
+    @Test
+    public void facebookLiteNavigationCompatGatesBothVerifiedVersionsExactly() {
+        assertEquals("516101866",
+                FacebookLiteCredentialCompat.abiIdForVersion(516101866));
+        assertEquals("516201887",
+                FacebookLiteCredentialCompat.abiIdForVersion(516201887));
+        assertNull(FacebookLiteCredentialCompat.abiIdForVersion(516201886));
+        assertNull(FacebookLiteCredentialCompat.abiIdForVersion(516201888));
+    }
+
+    @Test
+    public void facebookLiteVisibleDelegateSelectionIsIdentityScopedAndFailClosed() {
+        Object delegate = new Object();
+        assertSame(delegate, FacebookLiteCredentialCompat.uniqueIdentityCandidate(
+                Arrays.asList(delegate, delegate)));
+        assertNull(FacebookLiteCredentialCompat.uniqueIdentityCandidate(
+                Arrays.asList(delegate, new Object())));
+        assertNull(FacebookLiteCredentialCompat.uniqueIdentityCandidate(
+                new ArrayList<>()));
+    }
+
+    @Test
+    public void facebookLiteSessionRekeyRequiresOneDifferentIntegerKey() {
+        Map<Object, Object> sessions = new HashMap<>();
+        sessions.put(41, new Object());
+        assertTrue(FacebookLiteCredentialCompat.hasUniqueMismatchedIntegerKey(42, sessions));
+
+        assertFalse(FacebookLiteCredentialCompat.hasUniqueMismatchedIntegerKey(41, sessions));
+        sessions.put(40, new Object());
+        assertFalse(FacebookLiteCredentialCompat.hasUniqueMismatchedIntegerKey(42, sessions));
+
+        sessions.clear();
+        sessions.put("41", new Object());
+        assertFalse(FacebookLiteCredentialCompat.hasUniqueMismatchedIntegerKey(42, sessions));
+    }
+
+    @Test
+    public void facebookLiteOfficialSessionMarkerAcceptsOnlyKnownPopulatedShapes() {
+        assertTrue(FacebookLiteCredentialCompat.isOfficialSessionMarker(
+                true, null, 0, 0, false));
+        assertTrue(FacebookLiteCredentialCompat.isOfficialSessionMarker(
+                false, "X.1by", 0, 0, false));
+        assertTrue(FacebookLiteCredentialCompat.isOfficialSessionMarker(
+                false, null, 1, 1, true));
+        assertFalse(FacebookLiteCredentialCompat.isOfficialSessionMarker(
+                false, null, 1, 1, false));
+        assertFalse(FacebookLiteCredentialCompat.isOfficialSessionMarker(
+                false, null, 1, 0, true));
+        assertFalse(FacebookLiteCredentialCompat.isOfficialSessionMarker(
+                false, "X.1bz", 0, 0, false));
+    }
+
     public static final class FakeCredentialCallback {
         String type;
         String message;
@@ -82,6 +149,18 @@ public class CredentialManagerStubTest {
         public void onError(String type, String message) {
             this.type = type;
             this.message = message;
+        }
+    }
+
+    public static final class OrderingCredentialCallback {
+        private final List<String> calls;
+
+        OrderingCredentialCallback(List<String> calls) {
+            this.calls = calls;
+        }
+
+        public void onError(String type, String message) {
+            calls.add("framework-onError");
         }
     }
 

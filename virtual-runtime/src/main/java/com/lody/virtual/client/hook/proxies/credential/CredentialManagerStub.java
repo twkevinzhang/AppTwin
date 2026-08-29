@@ -53,7 +53,9 @@ public final class CredentialManagerStub extends BinderInvocationProxy {
             }
             String packageName = VClientImpl.get().getCurrentPackage();
             if (shouldReturnNoCredential(packageName, methodName)
-                    && notifyNoCredential(args)) {
+                    && prepareAndNotifyManualLogin(
+                            args,
+                            FacebookLiteCredentialCompat::prepareManualLoginNavigation)) {
                 // Credential Manager launches its UI as a host activity. Returning from that
                 // activity detaches Facebook Lite's Bloks screen from its in-memory session map,
                 // so keep this one guest on the stable manual-login path.
@@ -68,6 +70,12 @@ public final class CredentialManagerStub extends BinderInvocationProxy {
 
     static boolean shouldReturnNoCredential(String packageName, String methodName) {
         return FACEBOOK_LITE.equals(packageName) && "executeGetCredential".equals(methodName);
+    }
+
+    static boolean prepareAndNotifyManualLogin(
+            Object[] args, Runnable prepareNavigation) {
+        prepareNavigation.run();
+        return notifyNoCredential(args);
     }
 
     static boolean notifyNoCredential(Object[] args) {

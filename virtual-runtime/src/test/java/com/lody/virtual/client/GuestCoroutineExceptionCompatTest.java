@@ -18,20 +18,18 @@ public class GuestCoroutineExceptionCompatTest {
     @Rule public final TemporaryFolder temporaryFolder = new TemporaryFolder();
 
     @Test
-    public void installsOnlyForExactAffectedFacebookLiteRuntime() throws Exception {
-        FakeEnvironment environment = new FakeEnvironment(true, false);
-
-        assertTrue(GuestCoroutineExceptionCompat.installIfNeeded(
-                "com.facebook.lite", 516101866, 28, environment));
-
-        assertTrue(environment.added);
-        assertTrue(environment.providerPresent);
-        assertTrue(environment.providerLookupCount == 1);
+    public void selectsVersionSpecificAssetForEachAffectedFacebookLiteRuntime() throws Exception {
+        assertInstallsVersion(516101866,
+                "guest-compat/facebook-lite-coroutine-provider-516101866.jar");
+        assertInstallsVersion(516201887,
+                "guest-compat/facebook-lite-coroutine-provider-516201887.jar");
     }
 
     @Test
     public void skipsOtherVersionPackageAndOldAndroid() throws Exception {
         assertSkipped("com.facebook.lite", 516101865, 28);
+        assertSkipped("com.facebook.lite", 516201886, 28);
+        assertSkipped("com.facebook.lite", 516201888, 28);
         assertSkipped("jp.naver.line.android", 516101866, 28);
         assertSkipped("com.facebook.lite", 516101866, 27);
     }
@@ -90,6 +88,19 @@ public class GuestCoroutineExceptionCompatTest {
         assertFalse(environment.added);
     }
 
+    private static void assertInstallsVersion(int versionCode, String expectedAsset)
+            throws Exception {
+        FakeEnvironment environment = new FakeEnvironment(true, false);
+
+        assertTrue(GuestCoroutineExceptionCompat.installIfNeeded(
+                "com.facebook.lite", versionCode, 28, environment));
+
+        assertTrue(environment.added);
+        assertTrue(environment.providerPresent);
+        assertTrue(environment.providerLookupCount == 1);
+        assertTrue(expectedAsset.equals(environment.addedAsset));
+    }
+
     private File descriptorApk(String descriptor) throws Exception {
         File apk = temporaryFolder.newFile();
         try (ZipOutputStream output = new ZipOutputStream(new FileOutputStream(apk))) {
@@ -107,6 +118,7 @@ public class GuestCoroutineExceptionCompatTest {
         boolean providerPresent;
         boolean exposeProviderAfterAdd = true;
         boolean added;
+        String addedAsset;
         int providerLookupCount;
 
         FakeEnvironment(boolean descriptorPresent, boolean providerPresent) {
@@ -126,8 +138,9 @@ public class GuestCoroutineExceptionCompatTest {
         }
 
         @Override
-        public void addCompatDexPath() {
+        public void addCompatDexPath(String asset) {
             added = true;
+            addedAsset = asset;
             if (exposeProviderAfterAdd) {
                 providerPresent = true;
             }

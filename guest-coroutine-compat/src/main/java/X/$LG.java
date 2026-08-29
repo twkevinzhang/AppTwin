@@ -1,5 +1,5 @@
 package X;
 
-/** Compile-time placeholder; the generated dex rewrites this name to Facebook Lite's X.1LG. */
+/** Compile-time placeholder rewritten to the version-specific coroutine handler key ABI. */
 public final class $LG implements $Ks {
 }

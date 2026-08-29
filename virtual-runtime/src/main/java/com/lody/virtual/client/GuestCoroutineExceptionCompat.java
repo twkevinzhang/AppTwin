@@ -21,14 +21,15 @@ final class GuestCoroutineExceptionCompat {
 
     private static final String TAG = "GuestCoroutineCompat";
     private static final String FACEBOOK_LITE = "com.facebook.lite";
-    private static final int FACEBOOK_LITE_VERSION = 516101866;
+    private static final int FACEBOOK_LITE_VERSION_516101866 = 516101866;
+    private static final int FACEBOOK_LITE_VERSION_516201887 = 516201887;
     private static final int MIN_SUPPORTED_SDK = 28;
     private static final String PROVIDER_CLASS =
             "kotlinx.coroutines.android.AndroidExceptionPreHandler";
     private static final String DESCRIPTOR =
             "META-INF/services/kotlinx.coroutines.CoroutineExceptionHandler";
-    private static final String ASSET =
-            "guest-compat/facebook-lite-coroutine-provider.jar";
+    private static final String ASSET_PREFIX =
+            "guest-compat/facebook-lite-coroutine-provider-";
 
     private GuestCoroutineExceptionCompat() {
     }
@@ -52,19 +53,31 @@ final class GuestCoroutineExceptionCompat {
 
     static boolean installIfNeeded(String packageName, int versionCode, int sdkInt,
             Environment environment) throws Exception {
-        if (!FACEBOOK_LITE.equals(packageName)
-                || versionCode != FACEBOOK_LITE_VERSION
-                || sdkInt < MIN_SUPPORTED_SDK) {
+        if (!FACEBOOK_LITE.equals(packageName) || sdkInt < MIN_SUPPORTED_SDK) {
+            return false;
+        }
+        String asset = assetForVersion(versionCode);
+        if (asset == null) {
             return false;
         }
         if (!environment.descriptorContainsProvider() || environment.providerClassExists()) {
             return false;
         }
-        environment.addCompatDexPath();
+        environment.addCompatDexPath(asset);
         // Do not resolve the provider here. Facebook installs its transformed Kotlin/coroutine
         // ABI from secondary dex after Application startup; resolving now permanently poisons
         // the class in ART before its superclass is available.
         return true;
+    }
+
+    private static String assetForVersion(int versionCode) {
+        switch (versionCode) {
+            case FACEBOOK_LITE_VERSION_516101866:
+            case FACEBOOK_LITE_VERSION_516201887:
+                return ASSET_PREFIX + versionCode + ".jar";
+            default:
+                return null;
+        }
     }
 
     interface Environment {
@@ -72,7 +85,7 @@ final class GuestCoroutineExceptionCompat {
 
         boolean providerClassExists() throws Exception;
 
-        void addCompatDexPath() throws Exception;
+        void addCompatDexPath(String asset) throws Exception;
     }
 
     private static final class RuntimeEnvironment implements Environment {
@@ -115,11 +128,11 @@ final class GuestCoroutineExceptionCompat {
         }
 
         @Override
-        public void addCompatDexPath() throws Exception {
+        public void addCompatDexPath(String asset) throws Exception {
             if (!(classLoader instanceof BaseDexClassLoader)) {
                 throw new IllegalStateException("Guest loader is not BaseDexClassLoader");
             }
-            File dexFile = materializeDex(hostContext);
+            File dexFile = materializeDex(hostContext, asset);
             Method addDexPath = BaseDexClassLoader.class.getDeclaredMethod(
                     "addDexPath", String.class);
             addDexPath.setAccessible(true);
@@ -151,14 +164,15 @@ final class GuestCoroutineExceptionCompat {
         return false;
     }
 
-    private static File materializeDex(Context context) throws Exception {
+    private static File materializeDex(Context context, String asset) throws Exception {
         File directory = new File(context.getCodeCacheDir(), "guest-compat");
         if (!directory.isDirectory() && !directory.mkdirs()) {
             throw new IllegalStateException("Unable to create compatibility directory");
         }
-        File target = new File(directory, "facebook-lite-coroutine-provider.jar");
-        File temporary = new File(directory, "facebook-lite-coroutine-provider.jar.tmp");
-        try (InputStream input = context.getAssets().open(ASSET);
+        String fileName = asset.substring(asset.lastIndexOf('/') + 1);
+        File target = new File(directory, fileName);
+        File temporary = new File(directory, fileName + ".tmp");
+        try (InputStream input = context.getAssets().open(asset);
              FileOutputStream output = new FileOutputStream(temporary)) {
             byte[] buffer = new byte[8192];
             int read;

@@ -1,5 +1,5 @@
 package X;
 
-/** Compile-time placeholder; the generated dex rewrites this name to Facebook Lite's X.16S. */
+/** Compile-time placeholder rewritten to the version-specific coroutine context ABI. */
 public interface $6S {
 }
