@@ -117,6 +117,45 @@ class MainViewModelLifecycleTest {
     }
 
     @Test
+    fun `archive compression is loaded and persisted through ViewModel`() = runTest {
+        val dispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(dispatcher)
+        val settings = FakeArchiveExportSettingsStore(
+            org.apptwin.archive.SpaceArchiveCompression.HIGH,
+        )
+        val operations = FakeOperations()
+        val first = MainViewModel(
+            application = Application(),
+            savedStateHandle = SavedStateHandle(),
+            operations = operations,
+            ioDispatcher = dispatcher,
+            archiveExportSettingsStore = settings,
+        )
+        advanceUntilIdle()
+
+        assertEquals(
+            org.apptwin.archive.SpaceArchiveCompression.HIGH,
+            first.uiState.archiveCompression,
+        )
+        first.setArchiveCompression(org.apptwin.archive.SpaceArchiveCompression.LOW)
+
+        val recreated = MainViewModel(
+            application = Application(),
+            savedStateHandle = SavedStateHandle(),
+            operations = operations,
+            ioDispatcher = dispatcher,
+            archiveExportSettingsStore = settings,
+        )
+        advanceUntilIdle()
+
+        assertEquals(org.apptwin.archive.SpaceArchiveCompression.LOW, settings.value)
+        assertEquals(
+            org.apptwin.archive.SpaceArchiveCompression.LOW,
+            recreated.uiState.archiveCompression,
+        )
+    }
+
+    @Test
     fun `diagnostics report is exposed once and consumed by matching id`() = runTest {
         val dispatcher = StandardTestDispatcher(testScheduler)
         Dispatchers.setMain(dispatcher)
@@ -835,6 +874,7 @@ class MainViewModelLifecycleTest {
         override suspend fun exportSpace(
             groupId: String,
             destination: android.net.Uri,
+            compression: org.apptwin.archive.SpaceArchiveCompression,
         ): SpaceArchiveExportResult = error("unused")
         override suspend fun importSpace(source: android.net.Uri): SpaceArchiveImportResult =
             error("unused")
@@ -927,6 +967,16 @@ class MainViewModelLifecycleTest {
 
         override fun markCompleted() {
             completed = true
+        }
+    }
+
+    private class FakeArchiveExportSettingsStore(
+        var value: org.apptwin.archive.SpaceArchiveCompression,
+    ) : org.apptwin.archive.ArchiveExportSettingsStore {
+        override fun load(): org.apptwin.archive.SpaceArchiveCompression = value
+
+        override fun save(compression: org.apptwin.archive.SpaceArchiveCompression) {
+            value = compression
         }
     }
 

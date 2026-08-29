@@ -26,12 +26,14 @@ object SpaceArchiveWriter {
         output: OutputStream,
         manifest: SpaceArchiveManifest,
         sources: List<SpaceArchiveSource>,
+        compression: SpaceArchiveCompression = SpaceArchiveCompression.MEDIUM,
     ): SpaceArchiveWriteResult {
         validateManifest(manifest)
         val prepared = prepareSources(sources)
         val files = mutableListOf<SpaceArchiveFile>()
         try {
             val zip = ZipOutputStream(BufferedOutputStream(output))
+            zip.setLevel(compression.deflaterLevel)
             writeEntry(zip, MANIFEST_ENTRY, encodeManifest(manifest))
             prepared.forEach { source ->
                 source.files.forEach { file ->
@@ -71,13 +73,14 @@ object SpaceArchiveWriter {
         destination: File,
         manifest: SpaceArchiveManifest,
         sources: List<SpaceArchiveSource>,
+        compression: SpaceArchiveCompression = SpaceArchiveCompression.MEDIUM,
     ): SpaceArchiveWriteResult {
         destination.parentFile?.let { parent ->
             if (!parent.isDirectory && !parent.mkdirs()) {
                 throw SpaceArchiveException("Archive destination directory is unavailable")
             }
         }
-        return FileOutputStream(destination).use { write(it, manifest, sources) }
+        return FileOutputStream(destination).use { write(it, manifest, sources, compression) }
     }
 
     private fun prepareSources(sources: List<SpaceArchiveSource>): List<PreparedSource> {

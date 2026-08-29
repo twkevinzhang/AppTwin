@@ -58,3 +58,20 @@ Then：
 - B 匯出成功，Custodian owner／keyspace 不變，reservation 改為 B。
 - A 在建立 Space 前因 reservation 不符而拒絕；B 則因目前 owner Space 仍存在而拒絕。
 - LINE 仍可直接進入原帳號，Space 數量不變，沒有 FATAL EXCEPTION 或 ANR。
+
+## Archive compression setting E2E
+
+Given：設定頁的「匯出空間設定」使用全域、持久化的壓縮程度，預設為「中」。
+
+When：
+
+1. 分別選擇高／中／低，關閉並重新啟動 AppTwin。
+2. 使用高與低設定將同一個 LINE Space 匯出到不同檔名。
+3. 驗證兩份 ZIP 的格式、index、payload SHA-256 與 Custodian reservation。
+
+Then：
+
+- 設定在重啟後保持；高／中／低分別使用 DEFLATE 9／6／1。
+- 高表示通常較小但較慢，中表示大小與速度平衡，低表示通常較大但較快；UI 不宣稱固定壓縮百分比。
+- 各等級的 archive 均可被相同 reader 還原，archive schema 與 Custodian protocol 不變。
+- 後匯出的 archive 依 latest-only 規則取代前一份 reservation；原 Space 與 LINE 登入狀態不受影響。

@@ -46,7 +46,11 @@ internal class AndroidSpaceArchiveOperations(
     private val custodian: AndroidCustodianKeyspaceRegistrar =
         AndroidCustodianKeyspaceRegistrar(application),
 ) {
-    fun exportSpace(groupId: String, destination: Uri): SpaceArchiveExportResult {
+    fun exportSpace(
+        groupId: String,
+        destination: Uri,
+        compression: SpaceArchiveCompression,
+    ): SpaceArchiveExportResult {
         val group = requireNotNull(groups.find(groupId)) { "找不到這個空間" }
         require(group.health == GroupHealth.HEALTHY) { "空間目前無法封存" }
         require(group.apps.any { it.packageName == CustodianContract.LINE_PACKAGE }) {
@@ -89,7 +93,7 @@ internal class AndroidSpaceArchiveOperations(
             descriptor.use { parcel ->
                 FileOutputStream(parcel.fileDescriptor).use { fileOutput ->
                     val counting = CountingOutputStream(DigestOutputStream(fileOutput, digest))
-                    SpaceArchiveWriter.write(counting, manifest, sources)
+                    SpaceArchiveWriter.write(counting, manifest, sources, compression)
                     counting.flush()
                     fileOutput.fd.sync()
                     bytesWritten = counting.count

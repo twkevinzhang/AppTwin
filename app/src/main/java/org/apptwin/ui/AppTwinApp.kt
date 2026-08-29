@@ -291,6 +291,7 @@ fun AppTwinApp(
                                 )
                                 else -> SettingsScreen(
                                     state = state,
+                                    onArchiveCompressionChange = viewModel::setArchiveCompression,
                                     onOpenStorageSettings = onOpenStorageSettings,
                                     onExportDiagnostics = viewModel::exportDiagnostics,
                                     onImportSpace = {

@@ -15,6 +15,9 @@ import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.withContext
+import org.apptwin.archive.ArchiveExportSettingsStore
+import org.apptwin.archive.SharedPreferencesArchiveExportSettingsStore
+import org.apptwin.archive.SpaceArchiveCompression
 import org.apptwin.groups.Group
 import org.apptwin.compatibility.CompatibilityLevel
 import org.apptwin.groups.GroupApp
@@ -96,6 +99,7 @@ data class MainUiState(
     val clearingStorageGroupId: String? = null,
     val archiveBusyGroupId: String? = null,
     val isImportingArchive: Boolean = false,
+    val archiveCompression: SpaceArchiveCompression = SpaceArchiveCompression.MEDIUM,
     val shortcutAppKey: String? = null,
     val repairingAppKey: String? = null,
     val allFilesGranted: Boolean = false,
@@ -162,7 +166,11 @@ internal interface MainOperations {
     suspend fun createGroup(name: String): Group
     suspend fun renameGroup(groupId: String, name: String): Group?
     suspend fun deleteGroup(groupId: String): DeleteGroupResult
-    suspend fun exportSpace(groupId: String, destination: Uri): SpaceArchiveExportResult
+    suspend fun exportSpace(
+        groupId: String,
+        destination: Uri,
+        compression: SpaceArchiveCompression,
+    ): SpaceArchiveExportResult
     suspend fun importSpace(source: Uri): SpaceArchiveImportResult
     suspend fun addAppToGroup(groupId: String, packageName: String): Group
     suspend fun launchGroupApp(item: GroupAppItem): RuntimeLaunchResult
@@ -219,12 +227,19 @@ private object CompletedOnboardingStore : OnboardingStore {
     override fun markCompleted() = Unit
 }
 
+private object DefaultArchiveExportSettingsStore : ArchiveExportSettingsStore {
+    override fun load(): SpaceArchiveCompression = SpaceArchiveCompression.MEDIUM
+    override fun save(compression: SpaceArchiveCompression) = Unit
+}
+
 class MainViewModel internal constructor(
     application: Application,
     private val savedStateHandle: SavedStateHandle,
     private val operations: MainOperations,
     private val ioDispatcher: CoroutineDispatcher,
     private val onboardingStore: OnboardingStore = CompletedOnboardingStore,
+    private val archiveExportSettingsStore: ArchiveExportSettingsStore =
+        DefaultArchiveExportSettingsStore,
 ) : AndroidViewModel(application) {
     @OptIn(ExperimentalCoroutinesApi::class)
     constructor(application: Application, savedStateHandle: SavedStateHandle) : this(
@@ -233,6 +248,7 @@ class MainViewModel internal constructor(
         operations = AndroidMainOperations(application),
         ioDispatcher = Dispatchers.IO.limitedParallelism(1),
         onboardingStore = AndroidOnboardingStore(application),
+        archiveExportSettingsStore = SharedPreferencesArchiveExportSettingsStore(application),
     )
 
     private var pendingLaunch: PendingLaunch? = null
@@ -249,6 +265,7 @@ class MainViewModel internal constructor(
                 ?: MainDestination.HOME,
             appPickerGroupId = savedStateHandle.get<String>(APP_PICKER_GROUP_KEY),
             showOnboarding = !onboardingStore.isCompleted(),
+            archiveCompression = archiveExportSettingsStore.load(),
         ),
     )
         private set
@@ -561,10 +578,13 @@ class MainViewModel internal constructor(
             uiState.isImportingArchive ||
             uiState.busyGroupId != null
         ) return
+        val compression = uiState.archiveCompression
         uiState = uiState.copy(archiveBusyGroupId = groupId)
         viewModelScope.launch {
             val result = runCatching {
-                withContext(ioDispatcher) { operations.exportSpace(groupId, destination) }
+                withContext(ioDispatcher) {
+                    operations.exportSpace(groupId, destination, compression)
+                }
             }
             uiState = uiState.copy(archiveBusyGroupId = null)
             result.onSuccess { exported ->
@@ -575,6 +595,12 @@ class MainViewModel internal constructor(
             }
             refresh()
         }
+    }
+
+    fun setArchiveCompression(compression: SpaceArchiveCompression) {
+        if (uiState.archiveCompression == compression) return
+        archiveExportSettingsStore.save(compression)
+        uiState = uiState.copy(archiveCompression = compression)
     }
 
     fun importSpace(source: Uri) {

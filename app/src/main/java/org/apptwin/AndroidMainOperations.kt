@@ -17,6 +17,7 @@ import android.provider.Settings
 import java.security.SecureRandom
 import org.apptwin.compatibility.CompatibilityAssessmentPolicy
 import org.apptwin.archive.AndroidSpaceArchiveOperations
+import org.apptwin.archive.SpaceArchiveCompression
 import org.apptwin.compatibility.CompatibilityLimitation
 import org.apptwin.compatibility.DeviceValidation
 import org.apptwin.compatibility.PackageCompatibilityFacts
@@ -278,7 +279,8 @@ internal class AndroidMainOperations(private val application: Application) : Mai
     override suspend fun exportSpace(
         groupId: String,
         destination: Uri,
-    ): SpaceArchiveExportResult = archives.exportSpace(groupId, destination)
+        compression: SpaceArchiveCompression,
+    ): SpaceArchiveExportResult = archives.exportSpace(groupId, destination, compression)
 
     override suspend fun importSpace(source: Uri): SpaceArchiveImportResult =
         archives.importSpace(source)
