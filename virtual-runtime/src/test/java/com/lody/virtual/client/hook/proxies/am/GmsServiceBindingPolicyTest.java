@@ -8,6 +8,32 @@ import org.junit.Test;
 public class GmsServiceBindingPolicyTest {
 
     @Test
+    public void selectsExplicitPackageWithoutVirtualResolution() {
+        assertTrue(GmsServiceBindingPolicy.GMS_PACKAGE.equals(
+                GmsServiceBindingPolicy.selectServicePackage(
+                        GmsServiceBindingPolicy.GMS_PACKAGE, null, null)));
+    }
+
+    @Test
+    public void selectsExplicitComponentWithoutVirtualResolution() {
+        assertTrue(GmsServiceBindingPolicy.GMS_PACKAGE.equals(
+                GmsServiceBindingPolicy.selectServicePackage(
+                        null, GmsServiceBindingPolicy.GMS_PACKAGE, null)));
+    }
+
+    @Test
+    public void fallsBackToResolvedPackageForImplicitIntent() {
+        assertTrue(GmsServiceBindingPolicy.GMS_PACKAGE.equals(
+                GmsServiceBindingPolicy.selectServicePackage(
+                        null, null, GmsServiceBindingPolicy.GMS_PACKAGE)));
+    }
+
+    @Test
+    public void leavesUnresolvedImplicitIntentUnscoped() {
+        assertTrue(GmsServiceBindingPolicy.selectServicePackage(null, null, null) == null);
+    }
+
+    @Test
     public void rejectsGuestBindingToGmsWearableService() {
         assertTrue(GmsServiceBindingPolicy.shouldRejectUnavailableWearableBinding(
                 "jp.naver.line.android",
@@ -29,6 +55,14 @@ public class GmsServiceBindingPolicyTest {
                 "jp.naver.line.android",
                 GmsServiceBindingPolicy.WEARABLE_BIND_ACTION,
                 "example.service"));
+    }
+
+    @Test
+    public void allowsUnresolvedImplicitWearableAction() {
+        assertFalse(GmsServiceBindingPolicy.shouldRejectUnavailableWearableBinding(
+                "jp.naver.line.android",
+                GmsServiceBindingPolicy.WEARABLE_BIND_ACTION,
+                GmsServiceBindingPolicy.selectServicePackage(null, null, null)));
     }
 
     @Test

@@ -18,6 +18,39 @@ import org.junit.Test;
 /** Structural integration checks for the Binder-authenticated MCS reconnect bridge. */
 public class VActivityManagerServiceTrustedMcsBridgeTest {
     @Test
+    public void serviceProcessStartNeverWaitsForProcessGateWhileHoldingVamsMonitor()
+            throws Exception {
+        String source = readServiceSource();
+
+        assertTrue(source.contains(
+                "public ComponentName startService(\n"
+                        + "            IBinder caller, Intent service, String resolvedType, int userId)"));
+        assertFalse(source.contains(
+                "public synchronized ComponentName startService("));
+    }
+
+    @Test
+    public void processKeepAliveRetentionRunsOnlyAfterProcessGateExit() throws Exception {
+        String source = readServiceSource();
+        int blockingStart = source.indexOf(
+                "private ProcessRecord startProcessIfNeedLocked(String processName, int userId,");
+        int bindingStart = source.indexOf(
+                "private ProcessRecord tryStartProcessForBinding(", blockingStart);
+        String blockingBody = source.substring(blockingStart, bindingStart);
+        int gateExit = blockingBody.indexOf("mProcessStartGate.exit();");
+        int retain = blockingBody.indexOf("retainStartedProcessIfAuthorized(started);");
+
+        assertTrue(gateExit >= 0);
+        assertTrue(retain > gateExit);
+
+        int attach = source.indexOf("private ProcessRecord attachClient(");
+        int deferredRetention = source.indexOf(
+                "private void retainStartedProcessIfAuthorized(", attach);
+        String attachBody = source.substring(attach, deferredRetention);
+        assertFalse(attachBody.contains("mGmsBackgroundKeepAlive.retain("));
+    }
+
+    @Test
     public void reconnectObservationRunsBeforeAnyTargetProcessOrServiceDispatch() throws Exception {
         String source = readServiceSource();
         int common = source.indexOf(

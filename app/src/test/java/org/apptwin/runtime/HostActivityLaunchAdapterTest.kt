@@ -47,11 +47,14 @@ class HostActivityLaunchAdapterTest {
                     started = intent
                 },
                 moveTaskToFront = { _, _ -> error("new launch must not reuse a task") },
+                observeDaemonReopenEpoch = {
+                    events += "observe"
+                    41L
+                },
                 refreshDaemonFromVisibleHost = { host ->
                     assertTrue(main.isMainThread())
                     assertEquals("visible-host", host)
                     events += "daemon"
-                    41L
                 },
                 awaitDaemonReady = { observedReopenEpoch, timeoutMs ->
                     assertEquals(41L, observedReopenEpoch)
@@ -73,7 +76,7 @@ class HostActivityLaunchAdapterTest {
             assertTrue(result.isSuccess)
             assertNotSame(preparedIntent, started)
             assertEquals(
-                listOf("daemon", "daemon-ready", "prepare-2", "start", "ack"),
+                listOf("observe", "daemon", "daemon-ready", "prepare-2", "start", "ack"),
                 events,
             )
         }
@@ -90,7 +93,8 @@ class HostActivityLaunchAdapterTest {
             resumedHost = { "visible-host" },
             startActivity = { _, _ -> error("closed gate must prevent launch") },
             moveTaskToFront = { _, _ -> error("closed gate must prevent reuse") },
-            refreshDaemonFromVisibleHost = { 7L },
+            observeDaemonReopenEpoch = { 7L },
+            refreshDaemonFromVisibleHost = {},
             awaitDaemonReady = { observedReopenEpoch, _ ->
                 assertEquals(7L, observedReopenEpoch)
                 false
@@ -249,7 +253,6 @@ class HostActivityLaunchAdapterTest {
             moveTaskToFront = { _, _ -> error("must not move") },
             refreshDaemonFromVisibleHost = {
                 daemonRefreshed = true
-                0L
             },
             dispatchToMain = ::runImmediately,
             isMainThread = { false },
@@ -282,7 +285,6 @@ class HostActivityLaunchAdapterTest {
             moveTaskToFront = { _, _ -> error("must not move") },
             refreshDaemonFromVisibleHost = {
                 daemonRefreshed = true
-                0L
             },
             dispatchToMain = ::runImmediately,
             isMainThread = { false },

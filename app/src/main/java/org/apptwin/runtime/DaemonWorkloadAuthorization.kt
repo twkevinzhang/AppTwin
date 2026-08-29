@@ -52,10 +52,9 @@ internal object DaemonWorkloadAuthorization {
         return resolved.distinct().sorted().toIntArray()
     }
 
-    fun startFromVisibleHost(context: Context): Long {
-        // Capture before requesting the service. The waiter must observe the distinct reopen made
-        // by this onStartCommand, not an OPEN state left by an older foreground session.
-        val observedReopenEpoch = VActivityManager.get().daemonWorkloadGateReopenEpoch
+    fun observeReopenEpoch(): Long = VActivityManager.get().daemonWorkloadGateReopenEpoch
+
+    fun startFromVisibleHost(context: Context) {
         val enabledUsers = loadEnabledVirtualUserIds(context)
         if (enabledUsers == null) {
             // Durable state could not be read completely. Preserve the runtime's last known exact
@@ -64,6 +63,5 @@ internal object DaemonWorkloadAuthorization {
         } else {
             DaemonService.startup(context, enabledUsers)
         }
-        return observedReopenEpoch
     }
 }

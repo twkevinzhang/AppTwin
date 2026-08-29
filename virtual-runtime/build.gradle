@@ -75,5 +75,6 @@ tasks.configureEach {
 }
 
 dependencies {
+    implementation project(':custodian-contract')
     testImplementation 'junit:junit:4.13.2'
 }

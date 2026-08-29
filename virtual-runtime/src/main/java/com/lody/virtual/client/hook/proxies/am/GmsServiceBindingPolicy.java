@@ -8,6 +8,19 @@ final class GmsServiceBindingPolicy {
     private GmsServiceBindingPolicy() {
     }
 
+    static String selectServicePackage(
+            String requestedPackage,
+            String requestedComponentPackage,
+            String resolvedPackage) {
+        if (requestedPackage != null) {
+            return requestedPackage;
+        }
+        if (requestedComponentPackage != null) {
+            return requestedComponentPackage;
+        }
+        return resolvedPackage;
+    }
+
     static boolean shouldRejectUnavailableWearableBinding(
             boolean serverOwnedCall,
             String callerPackage,

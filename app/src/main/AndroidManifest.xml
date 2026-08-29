@@ -2,6 +2,12 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools">
 
+    <queries>
+        <package android:name="org.apptwin.custodian" />
+    </queries>
+
+    <uses-permission android:name="org.apptwin.permission.BIND_CUSTODIAN" />
+
     <!-- AndroidX uses this signature permission to emulate non-exported dynamic receivers on API <= 32. -->
     <permission
         android:name="org.apptwin.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION"

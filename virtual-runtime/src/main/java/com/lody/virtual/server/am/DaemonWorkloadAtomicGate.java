@@ -92,12 +92,33 @@ final class DaemonWorkloadAtomicGate {
                     || snapshot.hasWorkload()) {
                 return false;
             }
-            boolean stopped = action.getAsBoolean();
-            if (stopped) {
-                shutdownCommitted = true;
-                generation++;
-            }
-            return stopped;
+            // Commit the closed gate before asking Android to stop the Service, then release the
+            // VAMS monitor. stopSelfResult() is a system Binder call and must never run while this
+            // lock excludes every other runtime Binder request.
+            shutdownCommitted = true;
+            generation++;
+        }
+
+        final boolean stopped;
+        try {
+            stopped = action.getAsBoolean();
+        } catch (Throwable error) {
+            reopenAfterFailedStop();
+            throw error;
+        }
+        if (!stopped) reopenAfterFailedStop();
+        return stopped;
+    }
+
+    private void reopenAfterFailedStop() {
+        synchronized (lock) {
+            // A newer DaemonService start may already have reopened the gate while the stop action
+            // was in flight. Preserve that newer handshake instead of publishing another epoch.
+            if (!shutdownCommitted) return;
+            shutdownCommitted = false;
+            generation++;
+            reopenEpoch++;
+            lock.notifyAll();
         }
     }
 }

@@ -137,7 +137,39 @@ public class VActivityManagerService extends IActivityManager.Stub
     }
 
     /** Returns the centralized, fail-safe daemon ownership view for this engine process. */
-    public synchronized DaemonWorkloadSnapshot getDaemonWorkloadSnapshot() {
+    public DaemonWorkloadSnapshot getDaemonWorkloadSnapshot() {
+        final DaemonWorkloadSnapshot beforeActivityQuery;
+        synchronized (this) {
+            beforeActivityQuery = getNonActivityDaemonWorkloadSnapshotLocked();
+        }
+        if (beforeActivityQuery.hasNonActivityWorkload()) return beforeActivityQuery;
+
+        // optimizeTasksLocked() performs an Android system Binder query. Never hold the VAMS
+        // monitor across that call: foreground launch handshakes also need this monitor and must
+        // remain available even when the platform task service is slow.
+        ActivityStack.DaemonActivityWorkload activities = mMainStack.snapshotDaemonWorkload();
+        synchronized (this) {
+            if (activities.workloadChanged) mDaemonWorkloadGate.workloadChanged();
+            DaemonWorkloadSnapshot afterActivityQuery =
+                    getNonActivityDaemonWorkloadSnapshotLocked();
+            if (afterActivityQuery.hasNonActivityWorkload()) return afterActivityQuery;
+            boolean observationStable = beforeActivityQuery.getWorkloadGeneration()
+                    == afterActivityQuery.getWorkloadGeneration();
+            return new DaemonWorkloadSnapshot(
+                    afterActivityQuery.getWorkloadGeneration(),
+                    afterActivityQuery.getGmsDesiredUserCount(),
+                    activities.taskCount,
+                    activities.activityCount,
+                    afterActivityQuery.getActiveVirtualServiceCount(),
+                    afterActivityQuery.getPendingPreparedLaunchCount(),
+                    afterActivityQuery.getKeepAliveBindingCount(),
+                    afterActivityQuery.getLineLeaseCount(),
+                    afterActivityQuery.isObservationReliable() && observationStable
+                            && activities.observationReliable);
+        }
+    }
+
+    private DaemonWorkloadSnapshot getNonActivityDaemonWorkloadSnapshotLocked() {
         int activeServices = 0;
         synchronized (mHistory) {
             for (ServiceRecord service : mHistory) {
@@ -163,22 +195,7 @@ public class VActivityManagerService extends IActivityManager.Stub
                 keepAlive == null ? 0 : keepAlive.activeBindingCount(),
                 lineGuard == null ? 0 : lineGuard.activeLeaseCount(),
                 nonActivityObservationReliable);
-        if (nonActivitySnapshot.hasNonActivityWorkload()) {
-            return nonActivitySnapshot;
-        }
-
-        ActivityStack.DaemonActivityWorkload activities = mMainStack.snapshotDaemonWorkload();
-        if (activities.workloadChanged) mDaemonWorkloadGate.workloadChanged();
-        return new DaemonWorkloadSnapshot(
-                mDaemonWorkloadGate.generation(),
-                nonActivitySnapshot.getGmsDesiredUserCount(),
-                activities.taskCount,
-                activities.activityCount,
-                nonActivitySnapshot.getActiveVirtualServiceCount(),
-                nonActivitySnapshot.getPendingPreparedLaunchCount(),
-                nonActivitySnapshot.getKeepAliveBindingCount(),
-                nonActivitySnapshot.getLineLeaseCount(),
-                nonActivityObservationReliable && activities.observationReliable);
+        return nonActivitySnapshot;
     }
 
     public boolean runIfDaemonWorkloadStillIdle(long expectedGeneration,
@@ -833,7 +850,7 @@ public class VActivityManagerService extends IActivityManager.Stub
 
 
     @Override
-    public synchronized ComponentName startService(
+    public ComponentName startService(
             IBinder caller, Intent service, String resolvedType, int userId) {
         enforceCallerUserOrHost(userId);
         if (!beginDaemonWorkloadAcquisition()) return null;
@@ -1900,20 +1917,6 @@ public class VActivityManagerService extends IActivityManager.Stub
                 mPidsSelfLocked.put(app.pid, app);
             }
         }
-        synchronized (this) {
-            if (beginDaemonWorkloadAcquisition()) {
-                try {
-                    int bindingsBefore = mGmsBackgroundKeepAlive.activeBindingCount();
-                    mGmsBackgroundKeepAlive.retain(app);
-                    if (bindingsBefore != mGmsBackgroundKeepAlive.activeBindingCount()) {
-                        mDaemonWorkloadGate.workloadChanged();
-                    }
-                } finally {
-                    endDaemonWorkloadMutation();
-                }
-            }
-        }
-
         boolean needsDeathLink = previousClientBinder == null
                 || !previousClientBinder.equals(clientBinder) || previousPid != pid;
         if (!needsDeathLink) {
@@ -1933,6 +1936,24 @@ public class VActivityManagerService extends IActivityManager.Stub
             return null;
         }
         return app;
+    }
+
+    /**
+     * Retention can call Android's service manager and mutate the daemon workload gate. It must
+     * run only after ProcessStartGate is released so a Stub attach callback never waits for the
+     * VAMS monitor while another VAMS entry point waits for process creation.
+     */
+    private void retainStartedProcessIfAuthorized(ProcessRecord app) {
+        if (app == null || !beginDaemonWorkloadAcquisition()) return;
+        try {
+            int bindingsBefore = mGmsBackgroundKeepAlive.activeBindingCount();
+            mGmsBackgroundKeepAlive.retain(app);
+            if (bindingsBefore != mGmsBackgroundKeepAlive.activeBindingCount()) {
+                mDaemonWorkloadGate.workloadChanged();
+            }
+        } finally {
+            endDaemonWorkloadMutation();
+        }
     }
 
     private void onProcessDead(ProcessRecord record) {
@@ -2043,12 +2064,16 @@ public class VActivityManagerService extends IActivityManager.Stub
     private ProcessRecord startProcessIfNeedLocked(String processName, int userId,
                                                     String packageName,
                                                     boolean isolatedProcess) {
+        final ProcessRecord started;
         mProcessStartGate.enter();
         try {
-            return startProcessWithGateHeld(processName, userId, packageName, isolatedProcess);
+            started = startProcessWithGateHeld(
+                    processName, userId, packageName, isolatedProcess);
         } finally {
             mProcessStartGate.exit();
         }
+        retainStartedProcessIfAuthorized(started);
+        return started;
     }
 
     private ProcessRecord tryStartProcessForBinding(String processName, int userId,
@@ -2072,11 +2097,15 @@ public class VActivityManagerService extends IActivityManager.Stub
                     + " process=" + processName + " user=" + userId);
             return null;
         }
+        final ProcessRecord started;
         try {
-            return startProcessWithGateHeld(processName, userId, packageName, isolatedProcess);
+            started = startProcessWithGateHeld(
+                    processName, userId, packageName, isolatedProcess);
         } finally {
             mProcessStartGate.exit();
         }
+        retainStartedProcessIfAuthorized(started);
+        return started;
     }
 
     private ProcessRecord findLiveLogicalProcess(String processName, int userId,
