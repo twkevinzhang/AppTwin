@@ -55,6 +55,8 @@ class VirtualRuntimeController internal constructor(
     context: Context,
     private val revisionProvider: ActiveRuntimeRevisionProvider,
     diagnosticsSink: RuntimeDiagnosticsSink,
+    private val custodianKeyspaces: CustodianKeyspaceRegistrar =
+        AndroidCustodianKeyspaceRegistrar(context),
 ) : GroupEnvironmentRuntime, GroupAppRemovalRuntime {
     constructor(context: Context) : this(
         context,
@@ -78,6 +80,7 @@ class VirtualRuntimeController internal constructor(
                 activity.getSystemService(Context.ACTIVITY_SERVICE) as ActivityManager
             activityManager.moveTaskToFront(taskId, 0)
         },
+        observeDaemonReopenEpoch = DaemonWorkloadAuthorization::observeReopenEpoch,
         refreshDaemonFromVisibleHost = DaemonWorkloadAuthorization::startFromVisibleHost,
         awaitDaemonReady = { observedReopenEpoch, timeoutMs ->
             VActivityManager.get().awaitDaemonWorkloadGateOpenAfter(
@@ -235,6 +238,7 @@ class VirtualRuntimeController internal constructor(
     ): RuntimeLaunchResult = runCatching {
         require(group.contains(app.packageName)) { "GroupApp does not belong to this Group" }
         val binding = requireHealthyEnvironment(group)
+        custodianKeyspaces.prepare(group, app)
         val environmentId = binding.internalId
         val packageName = app.packageName
         val core = VirtualCore.get()
@@ -471,7 +475,8 @@ internal class HostActivityLaunchAdapter<Host : Any>(
     private val resumedHost: () -> Host?,
     private val startActivity: (Host, Intent) -> Unit,
     private val moveTaskToFront: (Host, Int) -> Unit,
-    private val refreshDaemonFromVisibleHost: (Host) -> Long = { 0L },
+    private val observeDaemonReopenEpoch: () -> Long = { 0L },
+    private val refreshDaemonFromVisibleHost: (Host) -> Unit = {},
     private val awaitDaemonReady: (Long, Long) -> Boolean = { _, _ -> true },
     private val dispatchToMain: (Runnable) -> Boolean,
     private val isMainThread: () -> Boolean,
@@ -500,6 +505,13 @@ internal class HostActivityLaunchAdapter<Host : Any>(
             "AppTwin must be resumed to launch a guest activity",
         )
 
+        // The epoch query is a runtime Binder call. Keep it off the Android main thread so a busy
+        // engine cannot turn a bounded guest launch into a host ANR.
+        val observedReopenEpoch = runCatching(observeDaemonReopenEpoch).getOrElse { error ->
+            return PreparedActivityLaunch.failure(
+                error.message ?: "Unable to observe the AppTwin background service gate",
+            )
+        }
         val daemonStart = callOnMain {
             check(resumedHost() === host) {
                 "AppTwin activity is no longer resumed"
@@ -515,7 +527,7 @@ internal class HostActivityLaunchAdapter<Host : Any>(
                 daemonStartError.message ?: "Unable to start the AppTwin background service",
             )
         }
-        val observedReopenEpoch = daemonStart.getOrThrow()
+        daemonStart.getOrThrow()
         if (!awaitDaemonReady(observedReopenEpoch, daemonReadyTimeoutMs)) {
             return PreparedActivityLaunch.failure(
                 "AppTwin background service did not become ready",

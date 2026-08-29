@@ -5,6 +5,8 @@ import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 
 import com.lody.virtual.client.hook.proxies.keystore.KeystoreAliasPolicy;
+import com.lody.virtual.client.hook.proxies.keystore.CustodianAliasPolicy;
+import com.lody.virtual.client.hook.proxies.keystore.CustodianKeyspaceState;
 
 import org.junit.Test;
 
@@ -37,6 +39,38 @@ public class GuestKeystoreStateTest {
 
         assertFalse(GuestKeystoreState.clearPackageState(
                 store, "com.facebook.lite", 1));
+    }
+
+    @Test
+    public void userCleanupDeletesLegacyAndOnlyTheMappedCustodianKeyspace() throws Exception {
+        String mappedKeyspace = "34480577-4e1a-449f-bc5f-b5cbc02e8a7c";
+        String otherKeyspace = "7fba3b64-10ac-4541-b7e4-14706040e272";
+        String legacyLine = KeystoreAliasPolicy.toPhysicalAlias(
+                "jp.naver.line.android", 4, "legacy");
+        String mappedLine = CustodianAliasPolicy.toPhysicalAlias(
+                mappedKeyspace, "jp.naver.line.android", "stable");
+        String otherLine = CustodianAliasPolicy.toPhysicalAlias(
+                otherKeyspace, "jp.naver.line.android", "other");
+        FakeStore store = new FakeStore("host-key", legacyLine, mappedLine, otherLine);
+
+        assertTrue(GuestKeystoreState.clearUserState(
+                store,
+                4,
+                new CustodianKeyspaceState.Record(mappedKeyspace, mappedKeyspace)));
+        assertEquals(Arrays.asList("host-key", otherLine), store.aliases());
+    }
+
+    @Test
+    public void userCleanupFailsClosedWhenCustodianAliasSurvives() throws Exception {
+        String keyspace = "34480577-4e1a-449f-bc5f-b5cbc02e8a7c";
+        FakeStore store = new FakeStore(CustodianAliasPolicy.toPhysicalAlias(
+                keyspace, "jp.naver.line.android", "stable"));
+        store.ignoreDelete = true;
+
+        assertFalse(GuestKeystoreState.clearUserState(
+                store,
+                4,
+                new CustodianKeyspaceState.Record(keyspace, keyspace)));
     }
 
     private static final class FakeStore implements GuestKeystoreState.Store {

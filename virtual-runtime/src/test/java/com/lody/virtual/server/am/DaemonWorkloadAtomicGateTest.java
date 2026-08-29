@@ -45,7 +45,7 @@ public class DaemonWorkloadAtomicGateTest {
     }
 
     @Test
-    public void matchingReliableIdleGenerationRunsActionInsideGate() {
+    public void matchingReliableIdleGenerationCommitsGateAndRunsAction() {
         Object lock = new Object();
         DaemonWorkloadAtomicGate gate = new DaemonWorkloadAtomicGate(lock);
         gate.reopen();
@@ -63,6 +63,40 @@ public class DaemonWorkloadAtomicGateTest {
         assertTrue(actionRan.get());
         assertTrue(gate.isShutdownCommitted());
         assertFalse(gate.tryBeginWorkloadAcquisition());
+    }
+
+    @Test
+    public void slowStopActionDoesNotHoldRuntimeGateLock() throws Exception {
+        DaemonWorkloadAtomicGate gate = new DaemonWorkloadAtomicGate(new Object());
+        gate.reopen();
+        long expected = gate.generation();
+        CountDownLatch actionStarted = new CountDownLatch(1);
+        CountDownLatch releaseAction = new CountDownLatch(1);
+        ExecutorService executor = Executors.newFixedThreadPool(2);
+        try {
+            Future<Boolean> stop = executor.submit(() -> gate.runIfStillIdle(
+                    expected,
+                    () -> idle(expected),
+                    () -> {
+                        actionStarted.countDown();
+                        try {
+                            return releaseAction.await(1, TimeUnit.SECONDS);
+                        } catch (InterruptedException interrupted) {
+                            Thread.currentThread().interrupt();
+                            return false;
+                        }
+                    }));
+            assertTrue(actionStarted.await(1, TimeUnit.SECONDS));
+
+            Future<Long> gateProbe = executor.submit(gate::reopenEpoch);
+            gateProbe.get(1, TimeUnit.SECONDS);
+
+            releaseAction.countDown();
+            assertTrue(stop.get(1, TimeUnit.SECONDS));
+        } finally {
+            releaseAction.countDown();
+            executor.shutdownNow();
+        }
     }
 
     @Test

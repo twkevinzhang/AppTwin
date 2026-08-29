@@ -6,6 +6,10 @@ import com.lody.virtual.client.hook.base.MethodInvocationStub;
 import com.lody.virtual.client.hook.base.MethodProxy;
 import com.lody.virtual.helper.utils.VLog;
 import com.lody.virtual.os.VUserHandle;
+import com.lody.virtual.os.VUserInfo;
+import com.lody.virtual.os.VUserManager;
+
+import org.apptwin.custodian.contract.CustodianContract;
 
 import java.lang.reflect.Array;
 import java.lang.reflect.Field;
@@ -105,16 +109,59 @@ public final class KeystoreStub extends BinderInvocationProxy {
     private static Owner currentOwner() {
         String packageName = VClientImpl.get().getCurrentPackage();
         int userId = VUserHandle.getUserId(VClientImpl.get().getVUid());
-        return new Owner(packageName, userId);
+        if (!CustodianKeyOwnerPolicy.requiresCustodian(packageName)) {
+            return new Owner(packageName, userId, null);
+        }
+        CustodianKeyspaceState.Record state = CustodianKeyspaceState.readForUser(userId);
+        if (state == null) {
+            return new Owner(packageName, userId, null);
+        }
+        VUserInfo user = VUserManager.get().getUserInfo(userId);
+        String stableOwner = user == null
+                ? null
+                : CustodianKeyOwnerPolicy.stableOwnerId(packageName, user.name);
+        if (!state.ownerSpaceId.equals(stableOwner)) {
+            throw new IllegalStateException("Custodian Space ownership is inconsistent");
+        }
+        int signature = com.lody.virtual.client.core.VirtualCore.get()
+                .getUnHookPackageManager()
+                .checkSignatures(CustodianContract.HOST_PACKAGE, CustodianContract.CUSTODIAN_PACKAGE);
+        if (signature != android.content.pm.PackageManager.SIGNATURE_MATCH) {
+            throw new IllegalStateException("Custodian is missing or untrusted");
+        }
+        return new Owner(packageName, userId, state.keyspaceId);
     }
 
     private static final class Owner {
         final String packageName;
         final int userId;
+        final String custodianKeyspaceId;
 
-        Owner(String packageName, int userId) {
+        Owner(String packageName, int userId, String custodianKeyspaceId) {
             this.packageName = packageName;
             this.userId = userId;
+            this.custodianKeyspaceId = custodianKeyspaceId;
+        }
+
+        String toPhysicalAlias(String guestAlias) {
+            return custodianKeyspaceId == null
+                    ? KeystoreAliasPolicy.toPhysicalAlias(packageName, userId, guestAlias)
+                    : CustodianAliasPolicy.toPhysicalAlias(
+                            custodianKeyspaceId, packageName, guestAlias);
+        }
+
+        String toGuestAlias(String physicalAlias) {
+            return custodianKeyspaceId == null
+                    ? KeystoreAliasPolicy.toGuestAlias(packageName, userId, physicalAlias)
+                    : CustodianAliasPolicy.toGuestAlias(
+                            custodianKeyspaceId, packageName, physicalAlias);
+        }
+
+        boolean owns(String physicalAlias) {
+            return custodianKeyspaceId == null
+                    ? KeystoreAliasPolicy.isOwnedBy(packageName, userId, physicalAlias)
+                    : CustodianAliasPolicy.isOwnedBy(
+                            custodianKeyspaceId, packageName, physicalAlias);
         }
     }
 
@@ -270,8 +317,7 @@ public final class KeystoreStub extends BinderInvocationProxy {
             for (int index = 0; index < Array.getLength(result); index++) {
                 Object descriptor = Array.get(result, index);
                 String physicalAlias = descriptorAlias(descriptor);
-                String guestAlias = KeystoreAliasPolicy.toGuestAlias(
-                        owner.packageName, owner.userId, physicalAlias);
+                String guestAlias = owner.toGuestAlias(physicalAlias);
                 if (guestAlias != null) {
                     setDescriptorAlias(descriptor, guestAlias);
                     owned.add(descriptor);
@@ -311,8 +357,7 @@ public final class KeystoreStub extends BinderInvocationProxy {
         Field alias = value.getClass().getField("alias");
         String original = (String) alias.get(value);
         if (original == null) return;
-        String physical = KeystoreAliasPolicy.toPhysicalAlias(
-                owner.packageName, owner.userId, original);
+        String physical = owner.toPhysicalAlias(original);
         if (!physical.equals(original)) {
             mutations.add(new AliasMutation(value, alias, original));
             alias.set(value, physical);
@@ -333,7 +378,7 @@ public final class KeystoreStub extends BinderInvocationProxy {
             Object descriptor = firstDescriptor(arg);
             if (descriptor == null) continue;
             String alias = descriptorAlias(descriptor);
-            if (KeystoreAliasPolicy.isOwnedBy(owner.packageName, owner.userId, alias)) {
+            if (owner.owns(alias)) {
                 return descriptor;
             }
         }
@@ -373,8 +418,7 @@ public final class KeystoreStub extends BinderInvocationProxy {
             try {
                 rewriteDescriptorArgument(owner, descriptor, mutations);
                 String alias = descriptorAlias(descriptor);
-                return KeystoreAliasPolicy.isOwnedBy(
-                        owner.packageName, owner.userId, alias)
+                return owner.owns(alias)
                         && deletePhysicalKey(who, sourceMethod, descriptor);
             } catch (ReflectiveOperationException | RuntimeException error) {
                 return false;
@@ -405,8 +449,7 @@ public final class KeystoreStub extends BinderInvocationProxy {
         if (result == null) return;
         Class<?> type = result.getClass();
         if (DESCRIPTOR_CLASS.equals(type.getName())) {
-            String guestAlias = KeystoreAliasPolicy.toGuestAlias(
-                    owner.packageName, owner.userId, descriptorAlias(result));
+            String guestAlias = owner.toGuestAlias(descriptorAlias(result));
             if (guestAlias != null) setDescriptorAlias(result, guestAlias);
             return;
         }

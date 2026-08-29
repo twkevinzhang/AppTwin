@@ -969,23 +969,28 @@ class MethodProxies {
                 return method.invoke(who, args);
             }
             ServiceInfo serviceInfo = VirtualCore.get().resolveServiceInfo(service, userId);
+            String callerPackage = serverOwnedCall ? null : getAppPkg();
+            String servicePackage = GmsServiceBindingPolicy.selectServicePackage(
+                    service.getPackage(),
+                    service.getComponent() == null
+                            ? null : service.getComponent().getPackageName(),
+                    serviceInfo == null ? null : serviceInfo.packageName);
+            // A fresh Space may not contain virtual GMS, so resolveServiceInfo() returns null.
+            // Still reject the exact optional Wearable bind when the guest explicitly targeted
+            // physical GMS; allowing it to escape leaves LINE waiting for a Binder indefinitely.
+            if (GmsServiceBindingPolicy.shouldRejectUnavailableWearableBinding(
+                    serverOwnedCall, callerPackage, service.getAction(), servicePackage)) {
+                VLog.i("VA-GmsRoute",
+                        "reject unavailable wearable binding caller=%s resolved=%s",
+                        callerPackage, serviceInfo != null);
+                return 0;
+            }
             if (serviceInfo != null) {
                 prepareVirtualServiceIntent(service, args);
                 // AccountManager and other runtime services bind from the server process. That
                 // process has no guest VClient binding, so resolving getAppPkg() would use its
                 // default VUID and can incorrectly cross a guest Group boundary. The wearable
                 // fallback is a guest-only policy; keep it off server-owned routing.
-                String callerPackage = serverOwnedCall ? null : getAppPkg();
-                if (GmsServiceBindingPolicy.shouldRejectUnavailableWearableBinding(
-                        serverOwnedCall, callerPackage, service.getAction(),
-                        serviceInfo.packageName)) {
-                    // The virtual Wearable service cannot publish a useful Binder without a
-                    // physical companion. Report bind failure so optional clients can continue
-                    // through their supported no-Wear fallback instead of waiting indefinitely.
-                    VLog.i("VA-GmsRoute", "reject unavailable wearable binding caller=%s",
-                            callerPackage);
-                    return 0;
-                }
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
                     service.setComponent(new ComponentName(serviceInfo.packageName, serviceInfo.name));
                 }

@@ -1,6 +1,8 @@
 package com.lody.virtual.server.pm;
 
 import com.lody.virtual.client.hook.proxies.keystore.KeystoreAliasPolicy;
+import com.lody.virtual.client.hook.proxies.keystore.CustodianAliasPolicy;
+import com.lody.virtual.client.hook.proxies.keystore.CustodianKeyspaceState;
 
 import java.security.KeyStore;
 import java.util.ArrayList;
@@ -38,16 +40,29 @@ final class GuestKeystoreState {
 
     static boolean clearUserState(int userId) {
         try {
-            Store store = androidStore();
-            for (String alias : KeystoreAliasPolicy.ownedAliasesForUser(
-                    userId, store.aliases())) {
-                store.delete(alias);
-            }
-            return KeystoreAliasPolicy.ownedAliasesForUser(
-                    userId, store.aliases()).isEmpty();
+            return clearUserState(
+                    androidStore(), userId, CustodianKeyspaceState.readForUser(userId));
         } catch (Exception unavailable) {
             return false;
         }
+    }
+
+    static boolean clearUserState(
+            Store store, int userId, CustodianKeyspaceState.Record custodian) throws Exception {
+        for (String alias : KeystoreAliasPolicy.ownedAliasesForUser(
+                userId, store.aliases())) {
+            store.delete(alias);
+        }
+        if (custodian != null) {
+            for (String alias : CustodianAliasPolicy.ownedAliasesForKeyspace(
+                    custodian.keyspaceId, store.aliases())) {
+                store.delete(alias);
+            }
+        }
+        List<String> remaining = store.aliases();
+        return KeystoreAliasPolicy.ownedAliasesForUser(userId, remaining).isEmpty()
+                && (custodian == null || CustodianAliasPolicy.ownedAliasesForKeyspace(
+                        custodian.keyspaceId, remaining).isEmpty());
     }
 
     static boolean clearPackageState(Store store, String packageName, int userId)
