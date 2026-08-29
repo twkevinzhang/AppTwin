@@ -1,6 +1,6 @@
 package X;
 
-/** Compile-time placeholder; the generated dex rewrites this name to Facebook Lite's X.1Kn. */
+/** Compile-time placeholder rewritten to the version-specific context element base ABI. */
 public abstract class $Kn {
     protected $Kn($Ks key) {
     }

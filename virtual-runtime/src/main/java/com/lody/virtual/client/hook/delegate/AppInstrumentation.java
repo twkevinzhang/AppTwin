@@ -15,6 +15,7 @@ import com.lody.virtual.client.VClientImpl;
 import com.lody.virtual.client.core.VirtualCore;
 import com.lody.virtual.client.fixer.ActivityFixer;
 import com.lody.virtual.client.fixer.ContextFixer;
+import com.lody.virtual.client.fixer.GuestEdgeToEdgeCompat;
 import com.lody.virtual.client.interfaces.IInjector;
 import com.lody.virtual.client.ipc.ActivityClientRecord;
 import com.lody.virtual.client.ipc.VActivityManager;
@@ -92,6 +93,7 @@ public final class AppInstrumentation extends InstrumentationDelegate implements
                 activity.setRequestedOrientation(info.screenOrientation);
             }
         }
+        GuestEdgeToEdgeCompat.apply(activity, info);
         try {
             super.callActivityOnCreate(activity, icicle);
         } catch (Throwable e) {
