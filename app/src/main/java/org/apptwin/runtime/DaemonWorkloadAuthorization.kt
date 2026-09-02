@@ -4,12 +4,22 @@ import android.content.Context
 import com.lody.virtual.client.ipc.VActivityManager
 import com.lody.virtual.client.stub.DaemonService
 import java.io.File
+import java.util.UUID
 import org.apptwin.gms.FileGmsProfileRepository
 import org.apptwin.gms.model.GmsDesiredState
 import org.apptwin.groups.FileGroupStore
 
 /** Exact durable GMS workload that the virtual-runtime daemon may recover. */
 internal object DaemonWorkloadAuthorization {
+    private data class VisibleAuthorization(
+        val generation: String,
+        val desiredUserIds: IntArray,
+        val sessionToken: String,
+    )
+
+    @Volatile
+    private var visibleAuthorization: VisibleAuthorization? = null
+
     fun loadEnabledVirtualUserIds(context: Context): IntArray? = runCatching {
         val appContext = context.applicationContext
         val durableGroupsRoot = File(appContext.filesDir, "groups")
@@ -54,14 +64,56 @@ internal object DaemonWorkloadAuthorization {
 
     fun observeReopenEpoch(): Long = VActivityManager.get().daemonWorkloadGateReopenEpoch
 
+    @Synchronized
     fun startFromVisibleHost(context: Context) {
+        val appContext = context.applicationContext
+        val generationBefore = DaemonAuthorizationGeneration.current(appContext.filesDir)
         val enabledUsers = loadEnabledVirtualUserIds(context)
+        val generationAfter = DaemonAuthorizationGeneration.current(appContext.filesDir)
+        visibleAuthorization = null
         if (enabledUsers == null) {
             // Durable state could not be read completely. Preserve the runtime's last known exact
             // allowlist rather than authoritatively replacing it with an incomplete observation.
             DaemonService.startup(context)
         } else {
-            DaemonService.startup(context, enabledUsers)
+            val sessionToken = UUID.randomUUID().toString()
+            DaemonService.startup(context, enabledUsers, sessionToken)
+            if (
+                generationBefore != null &&
+                generationBefore == generationAfter &&
+                DaemonAuthorizationGeneration.current(appContext.filesDir) == generationAfter
+            ) {
+                visibleAuthorization = VisibleAuthorization(
+                    generation = generationAfter,
+                    desiredUserIds = enabledUsers.clone(),
+                    sessionToken = sessionToken,
+                )
+            }
         }
+    }
+
+    /**
+     * Reuses only the exact authorization published by the current visible host session.
+     * Any repository mutation, engine restart, closed gate, in-flight reconciliation, or changed
+     * desired-user set makes the runtime reject the token and falls back to the full handshake.
+     */
+    fun isVisibleSessionReady(context: Context): Boolean {
+        val authorization = visibleAuthorization ?: return false
+        val appContext = context.applicationContext
+        if (DaemonAuthorizationGeneration.current(appContext.filesDir) != authorization.generation) {
+            visibleAuthorization = null
+            return false
+        }
+        val ready = runCatching {
+            VActivityManager.get().isDaemonLaunchReady(
+                authorization.sessionToken,
+                authorization.desiredUserIds.clone(),
+            )
+        }.getOrDefault(false)
+        if (DaemonAuthorizationGeneration.current(appContext.filesDir) != authorization.generation) {
+            visibleAuthorization = null
+            return false
+        }
+        return ready
     }
 }

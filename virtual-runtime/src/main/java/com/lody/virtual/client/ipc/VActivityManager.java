@@ -175,6 +175,16 @@ public class VActivityManager {
         }
     }
 
+    public boolean isDaemonLaunchReady(String expectedSessionToken,
+            int[] expectedDesiredUserIds) {
+        try {
+            return getService().isDaemonLaunchReady(
+                    expectedSessionToken, expectedDesiredUserIds);
+        } catch (RemoteException e) {
+            return VirtualRuntime.crash(e);
+        }
+    }
+
     public boolean awaitDaemonWorkloadGateOpenAfter(long observedReopenEpoch, long timeoutMs) {
         try {
             return getService().awaitDaemonWorkloadGateOpenAfter(

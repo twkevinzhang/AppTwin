@@ -48,6 +48,8 @@ public class DaemonService extends Service {
     private static final String NOTIFICATION_CHANNEL_ID = "virtual_runtime_daemon";
     private static final String EXTRA_DESIRED_GMS_USER_IDS =
             "_VA_|_daemon_desired_gms_user_ids_";
+    private static final String EXTRA_LAUNCH_AUTHORIZATION_TOKEN =
+            "_VA_|_daemon_launch_authorization_token_";
     private static final String EXTRA_LINE_PUSH_RECOVERY_NONCE =
             "_VA_|_daemon_line_push_recovery_nonce_";
     private static final int MAX_PENDING_LINE_RECOVERY_NONCES = 64;
@@ -157,6 +159,12 @@ public class DaemonService extends Service {
 
     /** Visible startup carrying the host repository's authoritative enabled-user allowlist. */
     public static void startup(Context context, int[] desiredGmsUserIds) {
+        startup(context, desiredGmsUserIds, null);
+    }
+
+    /** Visible startup whose completed exact reconciliation may be reused by a guest launch. */
+    public static void startup(Context context, int[] desiredGmsUserIds,
+            String launchAuthorizationToken) {
         Context appContext = context.getApplicationContext();
         long visibleStartAt = System.currentTimeMillis();
         recordVisibleStart(appContext, visibleStartAt);
@@ -164,7 +172,8 @@ public class DaemonService extends Service {
         // then either observe the old suppression or the new timestamp, never a cleared marker
         // paired with the stale timestamp that originally caused suppression.
         writeRecoverySuppression(appContext, false, visibleStartAt);
-        startForegroundDaemon(appContext, desiredGmsUserIds, 0L);
+        startForegroundDaemon(
+                appContext, desiredGmsUserIds, launchAuthorizationToken, 0L);
     }
 
     /**
@@ -182,7 +191,7 @@ public class DaemonService extends Service {
         if (!allowsAutomaticRecovery(appContext)) {
             return false;
         }
-        startForegroundDaemon(appContext, desiredGmsUserIds, 0L);
+        startForegroundDaemon(appContext, desiredGmsUserIds, null, 0L);
         return true;
     }
 
@@ -204,7 +213,7 @@ public class DaemonService extends Service {
         if (nonce == 0L || !pendingLineRecoveryNonces.contains(nonce)) {
             throw new IllegalStateException("LINE push recovery authorization is not pending");
         }
-        startForegroundDaemon(context.getApplicationContext(), null, nonce);
+        startForegroundDaemon(context.getApplicationContext(), null, null, nonce);
     }
 
     /** Revokes a LINE-only start Intent that has not yet reached onStartCommand(). */
@@ -213,10 +222,13 @@ public class DaemonService extends Service {
     }
 
     private static void startForegroundDaemon(Context appContext, int[] desiredGmsUserIds,
-            long linePushRecoveryNonce) {
+            String launchAuthorizationToken, long linePushRecoveryNonce) {
         Intent intent = new Intent(appContext, DaemonService.class);
         if (desiredGmsUserIds != null) {
             intent.putExtra(EXTRA_DESIRED_GMS_USER_IDS, desiredGmsUserIds.clone());
+        }
+        if (launchAuthorizationToken != null) {
+            intent.putExtra(EXTRA_LAUNCH_AUTHORIZATION_TOKEN, launchAuthorizationToken);
         }
         if (linePushRecoveryNonce != 0L) {
             intent.putExtra(EXTRA_LINE_PUSH_RECOVERY_NONCE, linePushRecoveryNonce);
@@ -591,14 +603,23 @@ public class DaemonService extends Service {
         try {
             int[] desiredGmsUserIds = intent == null
                     ? null : intent.getIntArrayExtra(EXTRA_DESIRED_GMS_USER_IDS);
+            String launchAuthorizationToken = intent == null
+                    ? null : intent.getStringExtra(EXTRA_LAUNCH_AUTHORIZATION_TOKEN);
+            boolean exactReconciliationAccepted = false;
             if (linePushRecovery == LinePushRecoveryAuthorization.AUTHORIZED) {
                 // The authenticated wrapper already proved an existing durable GMS scope. Do not
                 // let a LINE delivery perturb MCS retry/timeout state or exact desired-user data.
             } else if (desiredGmsUserIds == null) {
                 VActivityManager.get().reconcileTrustedGmsCloudMessaging();
             } else {
-                VActivityManager.get().reconcileTrustedGmsCloudMessagingForUsers(
+                exactReconciliationAccepted =
+                        VActivityManager.get().reconcileTrustedGmsCloudMessagingForUsers(
                         desiredGmsUserIds.clone());
+            }
+            if (exactReconciliationAccepted && activityManager != null
+                    && launchAuthorizationToken != null) {
+                activityManager.recordDaemonLaunchAuthorization(
+                        launchAuthorizationToken, desiredGmsUserIds.clone());
             }
         } catch (Throwable ignored) {
             // The engine may still be initializing. Its active-session fallback and persisted

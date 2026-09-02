@@ -79,6 +79,12 @@ final class DaemonWorkloadAtomicGate {
         }
     }
 
+    boolean isOpenAt(long expectedReopenEpoch) {
+        synchronized (lock) {
+            return !shutdownCommitted && reopenEpoch == expectedReopenEpoch;
+        }
+    }
+
     boolean runIfStillIdle(long expectedGeneration,
             Supplier<DaemonWorkloadSnapshot> freshSnapshot,
             BooleanSupplier action) {

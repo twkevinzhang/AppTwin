@@ -13,6 +13,18 @@ import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 
 public class DaemonWorkloadAtomicGateTest {
+
+    @Test
+    public void readinessRequiresOpenGateAtExpectedEpoch() {
+        DaemonWorkloadAtomicGate gate = new DaemonWorkloadAtomicGate(new Object());
+
+        assertFalse(gate.isOpenAt(0L));
+        gate.reopen();
+        long currentEpoch = gate.reopenEpoch();
+
+        assertTrue(gate.isOpenAt(currentEpoch));
+        assertFalse(gate.isOpenAt(currentEpoch + 1L));
+    }
     @Test
     public void freshEngineRejectsBackgroundAcquisitionUntilVisibleSessionReopens() {
         DaemonWorkloadAtomicGate gate = new DaemonWorkloadAtomicGate(new Object());
