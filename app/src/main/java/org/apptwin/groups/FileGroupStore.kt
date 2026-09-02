@@ -8,6 +8,7 @@ import java.nio.file.Files
 import java.nio.file.StandardCopyOption
 import java.util.Properties
 import java.util.UUID
+import org.apptwin.runtime.DaemonAuthorizationGeneration
 
 /** Persists Group identity, immutable environment ownership, and GroupApp membership. */
 class FileGroupStore internal constructor(private val filesRoot: File) : GroupStore {
@@ -33,6 +34,7 @@ class FileGroupStore internal constructor(private val filesRoot: File) : GroupSt
         check(snapshot.groups.none { it.environmentBinding == environmentBinding }) {
             "Environment binding already belongs to another Group"
         }
+        DaemonAuthorizationGeneration.invalidateBeforeMutation(filesRoot)
         ensureRoot()
         val staging = File(root, ".staging-${group.id}")
         check(staging.mkdirs()) { "Unable to create Group staging root" }
@@ -137,6 +139,7 @@ class FileGroupStore internal constructor(private val filesRoot: File) : GroupSt
     @Synchronized
     override fun delete(groupId: String): Boolean {
         val directory = resolveGroupDirectory(groupId) ?: return false
+        DaemonAuthorizationGeneration.invalidateBeforeMutation(filesRoot)
         check(directory.deleteRecursively()) { "Unable to delete Group directory" }
         return true
     }

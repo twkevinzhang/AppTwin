@@ -29,6 +29,7 @@ import android.os.Parcel;
 import android.os.Process;
 import android.os.RemoteException;
 import android.os.SystemClock;
+import android.text.TextUtils;
 
 import com.lody.virtual.client.IVClient;
 import com.lody.virtual.client.core.VirtualCore;
@@ -100,6 +101,8 @@ public class VActivityManagerService extends IActivityManager.Stub
     private static final String TAG = VActivityManagerService.class.getSimpleName();
     private final DaemonWorkloadAtomicGate mDaemonWorkloadGate =
             new DaemonWorkloadAtomicGate(this);
+    private String mDaemonLaunchAuthorizationToken;
+    private long mDaemonLaunchAuthorizationReopenEpoch = -1L;
     private final GmsReconciliationReliability mGmsReconciliationReliability =
             new GmsReconciliationReliability(this);
     private final LinePushStopFence mLinePushStopFence = new LinePushStopFence();
@@ -214,6 +217,58 @@ public class VActivityManagerService extends IActivityManager.Stub
     public long getDaemonWorkloadGateReopenEpoch() {
         com.lody.virtual.server.VirtualUserAccessPolicy.enforceHost();
         return mDaemonWorkloadGate.reopenEpoch();
+    }
+
+    @Override
+    public boolean isDaemonLaunchReady(String expectedSessionToken,
+            int[] expectedDesiredUserIds) {
+        com.lody.virtual.server.VirtualUserAccessPolicy.enforceHost();
+        if (TextUtils.isEmpty(expectedSessionToken) || expectedDesiredUserIds == null) return false;
+        Set<Integer> expected = new HashSet<>();
+        for (int userId : expectedDesiredUserIds) {
+            if (userId <= 0 || !expected.add(userId)) return false;
+        }
+        synchronized (this) {
+            TrustedGmsCloudMessagingSupervisor supervisor =
+                    mTrustedGmsCloudMessagingSupervisor;
+            return DaemonService.isForegroundSessionActive()
+                    && TextUtils.equals(expectedSessionToken,
+                            mDaemonLaunchAuthorizationToken)
+                    && mDaemonWorkloadGate.isOpenAt(
+                            mDaemonLaunchAuthorizationReopenEpoch)
+                    && supervisor != null
+                    && mGmsBackgroundKeepAlive != null
+                    && mLinePushProcessGuard != null
+                    && mDaemonWorkloadMutationsInFlight == 0
+                    && mGmsReconciliationReliability.isComplete()
+                    && supervisor.durableDesiredUsers().equals(expected);
+        }
+    }
+
+    /** Records the exact visible-start session only after its desired-user reconciliation. */
+    public synchronized boolean recordDaemonLaunchAuthorization(
+            String sessionToken, int[] desiredUserIds) {
+        if (TextUtils.isEmpty(sessionToken) || desiredUserIds == null
+                || !DaemonService.isForegroundSessionActive()
+                || mTrustedGmsCloudMessagingSupervisor == null
+                || mGmsBackgroundKeepAlive == null
+                || mLinePushProcessGuard == null
+                || mDaemonWorkloadMutationsInFlight != 0
+                || !mGmsReconciliationReliability.isComplete()) {
+            return false;
+        }
+        Set<Integer> expected = new HashSet<>();
+        for (int userId : desiredUserIds) {
+            if (userId <= 0 || !expected.add(userId)) return false;
+        }
+        if (!mTrustedGmsCloudMessagingSupervisor.durableDesiredUsers().equals(expected)) {
+            return false;
+        }
+        long reopenEpoch = mDaemonWorkloadGate.reopenEpoch();
+        if (!mDaemonWorkloadGate.isOpenAt(reopenEpoch)) return false;
+        mDaemonLaunchAuthorizationToken = sessionToken;
+        mDaemonLaunchAuthorizationReopenEpoch = reopenEpoch;
+        return true;
     }
 
     @Override

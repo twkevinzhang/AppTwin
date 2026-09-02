@@ -136,6 +136,8 @@ interface IActivityManager {
 
     long getDaemonWorkloadGateReopenEpoch();
 
+    boolean isDaemonLaunchReady(String expectedSessionToken, in int[] expectedDesiredUserIds);
+
     boolean awaitDaemonWorkloadGateOpenAfter(long observedReopenEpoch, long timeoutMs);
 
     TrustedGmsCloudMessagingState getTrustedGmsCloudMessagingState(int userId);

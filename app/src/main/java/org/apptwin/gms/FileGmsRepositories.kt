@@ -27,6 +27,7 @@ import org.apptwin.gms.operations.GmsOperationPhase
 import org.apptwin.gms.operations.GmsOperationStore
 import org.apptwin.gms.ports.GmsCapabilityEvidenceRepository
 import org.apptwin.gms.ports.GmsProfileRepository
+import org.apptwin.runtime.DaemonAuthorizationGeneration
 import org.apptwin.groups.CURRENT_GROUP_SCHEMA_VERSION
 
 data class GmsDataWarning(
@@ -56,7 +57,7 @@ internal class GmsDataIssueRecorder {
 
 /** Per-Group durable state rooted at groups/<groupId>/data/gms. */
 class FileGmsProfileRepository internal constructor(
-    filesRoot: File,
+    private val filesRoot: File,
     private val directorySync: (File) -> Unit,
     private val issues: GmsDataIssueRecorder = GmsDataIssueRecorder(),
 ) : GmsProfileRepository {
@@ -83,6 +84,7 @@ class FileGmsProfileRepository internal constructor(
 
     @Synchronized
     override fun save(profile: GmsProfile) {
+        DaemonAuthorizationGeneration.invalidateBeforeMutation(filesRoot)
         files.write(profile.groupId, files.profileFile(profile.groupId), ProfileCodec.encode(profile))
     }
 

@@ -155,7 +155,7 @@ public class DaemonRuntimeSafetyPolicyTest {
         String entry = source.substring(recovery, helper);
         assertTrue(entry.contains("allowsAutomaticRecovery(appContext)"));
         assertTrue(entry.contains(
-                "startForegroundDaemon(appContext, desiredGmsUserIds, 0L)"));
+                "startForegroundDaemon(appContext, desiredGmsUserIds, null, 0L)"));
         assertFalse(entry.contains("recordVisibleStart"));
         assertFalse(entry.contains("writeRecoverySuppression"));
     }
@@ -171,7 +171,7 @@ public class DaemonRuntimeSafetyPolicyTest {
         assertTrue(recoveryEntry.contains("authorizeLinePushRecovery()"));
         assertTrue(recoveryEntry.contains("startPreparedLinePushRecovery("));
         assertTrue(recoveryEntry.contains(
-                "startForegroundDaemon(context.getApplicationContext(), null, nonce)"));
+                "startForegroundDaemon(context.getApplicationContext(), null, null, nonce)"));
         assertFalse(recoveryEntry.contains("recordVisibleStart"));
         assertFalse(recoveryEntry.contains("writeRecoverySuppression"));
 
