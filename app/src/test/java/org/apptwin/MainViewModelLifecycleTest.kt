@@ -310,6 +310,64 @@ class MainViewModelLifecycleTest {
     }
 
     @Test
+    fun `failed initial group load keeps launch blocked until recovery can be retried`() = runTest {
+        val dispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(dispatcher)
+        val operations = FakeOperations(
+            loadGroupError = IllegalStateException("group index unavailable"),
+        )
+        val viewModel = viewModel(SavedStateHandle(), operations, dispatcher)
+        advanceUntilIdle()
+        val item = GroupAppItem(
+            groupId = GROUP_ID,
+            groupName = "工作",
+            groupHealth = GroupHealth.HEALTHY,
+            app = GroupApp(APP_PACKAGE, 2L, GroupAppState.ENABLED),
+            appLabel = "測試 App",
+            versionName = "1.0",
+            sourceInstalled = true,
+            launchStatus = "可使用",
+        )
+
+        viewModel.launchGroupApp(item.groupId, item.app.packageName)
+        advanceUntilIdle()
+
+        assertTrue(operations.launchedApps.isEmpty())
+        assertTrue(viewModel.uiState.message.orEmpty().contains("讀取空間失敗"))
+    }
+
+    @Test
+    fun `refresh during first recovery load does not cancel startup recovery`() = runTest {
+        val dispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(dispatcher)
+        val firstGroupLoadGate = CompletableDeferred<Unit>()
+        val operations = FakeOperations(
+            groups = listOf(
+                group().copy(apps = listOf(GroupApp(APP_PACKAGE, 2L, GroupAppState.ENABLED))),
+            ),
+            installedEntries = listOf(appItem().entry),
+            firstGroupLoadGate = firstGroupLoadGate,
+        )
+        val viewModel = viewModel(SavedStateHandle(), operations, dispatcher)
+        runCurrent()
+
+        viewModel.refresh()
+        runCurrent()
+
+        assertEquals(1, operations.loadGroupCalls)
+        firstGroupLoadGate.complete(Unit)
+        advanceUntilIdle()
+
+        assertEquals(2, operations.loadGroupCalls)
+        assertEquals(1, operations.gmsReconcileCalls)
+        val item = viewModel.uiState.groups.single().apps.single()
+        viewModel.launchGroupApp(item)
+        advanceUntilIdle()
+
+        assertEquals(listOf(APP_PACKAGE), operations.launchedApps.map { it.app.packageName })
+    }
+
+    @Test
     fun `late picker lookup cannot override newer navigation`() = runTest {
         val dispatcher = StandardTestDispatcher(testScheduler)
         Dispatchers.setMain(dispatcher)
@@ -735,16 +793,165 @@ class MainViewModelLifecycleTest {
     }
 
     @Test
-    fun `cold shortcut waits for installed app enrichment before launching exact clone`() = runTest {
-        val dispatcher = StandardTestDispatcher(testScheduler)
-        Dispatchers.setMain(dispatcher)
+    fun `cold shortcut launches on priority lane before installed app enrichment completes`() = runTest {
+        val mainDispatcher = StandardTestDispatcher(testScheduler, "main")
+        val ioDispatcher = StandardTestDispatcher(testScheduler, "io")
+        val launchDispatcher = StandardTestDispatcher(testScheduler, "launch")
+        Dispatchers.setMain(mainDispatcher)
+        val secondGroupLoadGate = CompletableDeferred<Unit>()
         val refreshGate = CompletableDeferred<Unit>()
         val operations = FakeOperations(
             groups = listOf(
                 group().copy(apps = listOf(GroupApp(APP_PACKAGE, 2L, GroupAppState.ENABLED))),
             ),
             installedEntries = listOf(appItem().entry),
+            secondGroupLoadGate = secondGroupLoadGate,
             refreshGate = refreshGate,
+            expectedLaunchDispatcher = launchDispatcher,
+            launchResult = RuntimeLaunchResult.Started(
+                packageName = APP_PACKAGE,
+                processPrefix = "org.apptwin:p7",
+                dataDirectory = "/data/user/7/$APP_PACKAGE",
+            ),
+        )
+        val viewModel = viewModel(
+            SavedStateHandle(),
+            operations,
+            ioDispatcher,
+            launchDispatcher,
+        )
+        runCurrent()
+
+        viewModel.launchGroupApp(GROUP_ID, APP_PACKAGE)
+        runCurrent()
+
+        assertTrue(operations.launchedApps.isEmpty())
+        assertFalse(viewModel.uiState.groups.single().apps.single().sourceInstalled)
+
+        secondGroupLoadGate.complete(Unit)
+        runCurrent()
+
+        assertEquals(1, operations.launchedApps.size)
+        assertTrue(operations.launchRanOnExpectedDispatcher)
+        assertEquals(1, operations.gmsReconcileCalls)
+
+        refreshGate.complete(Unit)
+        advanceUntilIdle()
+
+        assertEquals(1, operations.launchedApps.size)
+        assertEquals(GROUP_ID, operations.launchedApps.single().groupId)
+        assertEquals(APP_PACKAGE, operations.launchedApps.single().app.packageName)
+        assertEquals(1, operations.gmsReconcileCalls)
+    }
+
+    @Test
+    fun `home launch is available during source enrichment without unlocking source actions`() =
+        runTest {
+            val mainDispatcher = StandardTestDispatcher(testScheduler, "main")
+            val ioDispatcher = StandardTestDispatcher(testScheduler, "io")
+            val launchDispatcher = StandardTestDispatcher(testScheduler, "launch")
+            Dispatchers.setMain(mainDispatcher)
+            val refreshGate = CompletableDeferred<Unit>()
+            val operations = FakeOperations(
+                groups = listOf(
+                    group().copy(
+                        apps = listOf(GroupApp(APP_PACKAGE, 2L, GroupAppState.ENABLED)),
+                    ),
+                ),
+                installedEntries = listOf(appItem().entry),
+                refreshGate = refreshGate,
+                expectedLaunchDispatcher = launchDispatcher,
+                launchResult = RuntimeLaunchResult.Started(
+                    packageName = APP_PACKAGE,
+                    processPrefix = "org.apptwin:p7",
+                    dataDirectory = "/data/user/7/$APP_PACKAGE",
+                ),
+            )
+            val viewModel = viewModel(
+                SavedStateHandle(),
+                operations,
+                ioDispatcher,
+                launchDispatcher,
+            )
+            runCurrent()
+            val item = viewModel.uiState.groups.single().apps.single()
+
+            assertFalse(item.sourceInstalled)
+            assertTrue(item.canAttemptLaunch)
+            viewModel.launchGroupApp(item)
+            runCurrent()
+
+            assertEquals(1, operations.launchedApps.size)
+            assertTrue(operations.launchRanOnExpectedDispatcher)
+            assertFalse(viewModel.uiState.groups.single().apps.single().sourceInstalled)
+
+            refreshGate.complete(Unit)
+            advanceUntilIdle()
+        }
+
+    @Test
+    fun `a second launch cannot overlap an active launch`() = runTest {
+        val dispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(dispatcher)
+        val secondPackage = "com.example.second"
+        val launchGate = CompletableDeferred<Unit>()
+        val operations = FakeOperations(
+            groups = listOf(
+                group().copy(
+                    apps = listOf(
+                        GroupApp(APP_PACKAGE, 2L, GroupAppState.ENABLED),
+                        GroupApp(secondPackage, 3L, GroupAppState.ENABLED),
+                    ),
+                ),
+            ),
+            installedEntries = listOf(
+                appItem().entry,
+                InstalledAppEntry("第二個 App", secondPackage, "1.0", 1),
+            ),
+            launchGate = launchGate,
+            launchResult = RuntimeLaunchResult.Started(
+                packageName = APP_PACKAGE,
+                processPrefix = "org.apptwin:p7",
+                dataDirectory = "/data/user/7/$APP_PACKAGE",
+            ),
+        )
+        val viewModel = viewModel(SavedStateHandle(), operations, dispatcher)
+        advanceUntilIdle()
+        val first = viewModel.uiState.groups.single().apps.first()
+        val second = viewModel.uiState.groups.single().apps.last()
+
+        viewModel.launchGroupApp(first)
+        runCurrent()
+        viewModel.launchGroupApp(second)
+        runCurrent()
+
+        assertEquals(listOf(APP_PACKAGE), operations.launchedApps.map { it.app.packageName })
+        assertEquals(1, operations.maxConcurrentLaunches)
+
+        launchGate.complete(Unit)
+        advanceUntilIdle()
+        viewModel.launchGroupApp(second)
+        advanceUntilIdle()
+
+        assertEquals(listOf(APP_PACKAGE, secondPackage), operations.launchedApps.map {
+            it.app.packageName
+        })
+        assertEquals(1, operations.maxConcurrentLaunches)
+    }
+
+    @Test
+    fun `stale enrichment cannot overwrite state after priority launch begins`() = runTest {
+        val dispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(dispatcher)
+        val refreshGate = CompletableDeferred<Unit>()
+        val launchGate = CompletableDeferred<Unit>()
+        val operations = FakeOperations(
+            groups = listOf(
+                group().copy(apps = listOf(GroupApp(APP_PACKAGE, 2L, GroupAppState.ENABLED))),
+            ),
+            installedEntries = listOf(appItem().entry),
+            refreshGate = refreshGate,
+            launchGate = launchGate,
             launchResult = RuntimeLaunchResult.Started(
                 packageName = APP_PACKAGE,
                 processPrefix = "org.apptwin:p7",
@@ -753,18 +960,69 @@ class MainViewModelLifecycleTest {
         )
         val viewModel = viewModel(SavedStateHandle(), operations, dispatcher)
         runCurrent()
+        val item = viewModel.uiState.groups.single().apps.single()
 
-        viewModel.launchGroupApp(GROUP_ID, APP_PACKAGE)
+        viewModel.launchGroupApp(item.groupId, item.app.packageName)
+        runCurrent()
+        refreshGate.complete(Unit)
         runCurrent()
 
-        assertTrue(operations.launchedApps.isEmpty())
+        assertEquals(item.launchKey, viewModel.uiState.launchingAppKey)
+        assertEquals("正在同步", viewModel.uiState.groups.single().apps.single().launchStatus)
+        assertEquals(APP_PACKAGE, viewModel.uiState.groups.single().apps.single().appLabel)
 
-        refreshGate.complete(Unit)
+        launchGate.complete(Unit)
         advanceUntilIdle()
 
-        assertEquals(1, operations.launchedApps.size)
-        assertEquals(GROUP_ID, operations.launchedApps.single().groupId)
-        assertEquals(APP_PACKAGE, operations.launchedApps.single().app.packageName)
+        assertEquals(null, viewModel.uiState.launchingAppKey)
+        assertEquals("測試 App", viewModel.uiState.groups.single().apps.single().appLabel)
+        assertEquals(1, operations.gmsReconcileCalls)
+    }
+
+    @Test
+    fun `deep link launch waits for active normal launch and preserves chooser`() = runTest {
+        val dispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(dispatcher)
+        val launchGate = CompletableDeferred<Unit>()
+        val started = RuntimeLaunchResult.Started(
+            packageName = APP_PACKAGE,
+            processPrefix = "org.apptwin:p7",
+            dataDirectory = "/data/user/7/$APP_PACKAGE",
+        )
+        val operations = FakeOperations(
+            groups = listOf(
+                group().copy(apps = listOf(GroupApp(APP_PACKAGE, 2L, GroupAppState.ENABLED))),
+            ),
+            installedEntries = listOf(appItem().entry),
+            deepLinkCandidates = listOf(GROUP_ID to APP_PACKAGE),
+            launchGate = launchGate,
+            launchResult = started,
+            deepLinkLaunchResult = started,
+        )
+        val viewModel = viewModel(SavedStateHandle(), operations, dispatcher)
+        advanceUntilIdle()
+        viewModel.openDeepLink("https://example.com/inbox")
+        advanceUntilIdle()
+        val item = viewModel.uiState.deepLinkCandidates.single()
+
+        viewModel.launchGroupApp(item)
+        runCurrent()
+        viewModel.launchDeepLink(item)
+        runCurrent()
+
+        assertTrue(operations.launchedDeepLinks.isEmpty())
+        assertEquals("https://example.com/inbox", viewModel.uiState.pendingDeepLink)
+
+        launchGate.complete(Unit)
+        advanceUntilIdle()
+        viewModel.launchDeepLink(viewModel.uiState.deepLinkCandidates.single())
+        advanceUntilIdle()
+
+        assertEquals(
+            listOf(GROUP_ID to "https://example.com/inbox"),
+            operations.launchedDeepLinks,
+        )
+        assertEquals(null, viewModel.uiState.pendingDeepLink)
     }
 
     @Test
@@ -796,7 +1054,14 @@ class MainViewModelLifecycleTest {
         savedState: SavedStateHandle,
         operations: MainOperations,
         ioDispatcher: CoroutineDispatcher,
-    ) = MainViewModel(Application(), savedState, operations, ioDispatcher)
+        launchDispatcher: CoroutineDispatcher = ioDispatcher,
+    ) = MainViewModel(
+        application = Application(),
+        savedStateHandle = savedState,
+        operations = operations,
+        ioDispatcher = ioDispatcher,
+        launchDispatcher = launchDispatcher,
+    )
 
     private class FakeOperations(
         private val groups: List<Group> = emptyList(),
@@ -815,6 +1080,9 @@ class MainViewModelLifecycleTest {
         private val clonePermissions: List<ClonePermissionSummary> = emptyList(),
         private val refreshGate: CompletableDeferred<Unit>? = null,
         private val refreshError: Throwable? = null,
+        private val loadGroupError: Throwable? = null,
+        private val firstGroupLoadGate: CompletableDeferred<Unit>? = null,
+        private val secondGroupLoadGate: CompletableDeferred<Unit>? = null,
         private val clearGroupStorageGate: CompletableDeferred<Unit>? = null,
         private val clearGroupStorageResult: ClearSpaceStorageResult =
             ClearSpaceStorageResult.Cleared(0),
@@ -822,9 +1090,12 @@ class MainViewModelLifecycleTest {
         private val addAppError: Throwable? = null,
         private val launchGate: CompletableDeferred<Unit>? = null,
         private val launchResult: RuntimeLaunchResult = RuntimeLaunchResult.Failed("unused"),
+        private val deepLinkLaunchResult: RuntimeLaunchResult = RuntimeLaunchResult.Failed("unused"),
+        private val expectedLaunchDispatcher: CoroutineDispatcher? = null,
     ) : MainOperations {
         private var currentGroups = groups
         var reconcileStarted = false
+        var loadGroupCalls = 0
         var refreshCalls = 0
         var refreshRanOnIoDispatcher = false
         var refreshRanOnMainDispatcher = false
@@ -834,12 +1105,23 @@ class MainViewModelLifecycleTest {
         val deletedGroupIds = mutableListOf<String>()
         val addedApps = mutableListOf<Pair<String, String>>()
         val launchedApps = mutableListOf<GroupAppItem>()
+        val launchedDeepLinks = mutableListOf<Pair<String, String>>()
+        var gmsReconcileCalls = 0
+        var launchRanOnExpectedDispatcher = false
+        var maxConcurrentLaunches = 0
+        private var activeLaunches = 0
 
-        override suspend fun loadGroupSnapshot(): MainGroupSnapshot = MainGroupSnapshot(
-            groups = currentGroups,
-            operations = emptyList(),
-            dataWarnings = loadIssues.map { "corrupt metadata" } + refreshWarnings,
-        )
+        override suspend fun loadGroupSnapshot(): MainGroupSnapshot {
+            loadGroupCalls += 1
+            if (loadGroupCalls == 1) firstGroupLoadGate?.await()
+            if (loadGroupCalls == 2) secondGroupLoadGate?.await()
+            loadGroupError?.let { throw it }
+            return MainGroupSnapshot(
+                groups = currentGroups,
+                operations = emptyList(),
+                dataWarnings = loadIssues.map { "corrupt metadata" } + refreshWarnings,
+            )
+        }
 
         override suspend fun refreshSnapshot(groups: MainGroupSnapshot): MainRefreshSnapshot {
             refreshCalls++
@@ -891,8 +1173,16 @@ class MainViewModelLifecycleTest {
         }
         override suspend fun launchGroupApp(item: GroupAppItem): RuntimeLaunchResult {
             launchedApps += item
-            launchGate?.await()
-            return launchResult
+            launchRanOnExpectedDispatcher =
+                currentCoroutineContext()[ContinuationInterceptor] == expectedLaunchDispatcher
+            activeLaunches += 1
+            maxConcurrentLaunches = maxOf(maxConcurrentLaunches, activeLaunches)
+            return try {
+                launchGate?.await()
+                launchResult
+            } finally {
+                activeLaunches -= 1
+            }
         }
         override suspend fun uninstallGroupApp(item: GroupAppItem): GroupAppRemovalResult =
             error("unused")
@@ -917,7 +1207,10 @@ class MainViewModelLifecycleTest {
         override suspend fun launchDeepLink(
             item: GroupAppItem,
             uri: String,
-        ): RuntimeLaunchResult = error("unused")
+        ): RuntimeLaunchResult {
+            launchedDeepLinks += item.groupId to uri
+            return deepLinkLaunchResult
+        }
 
         override suspend fun reconcileGroups(): GroupReconciliationResult {
             reconcileStarted = true
@@ -928,6 +1221,7 @@ class MainViewModelLifecycleTest {
         override suspend fun reconcileAppRemovals() = Unit
         override suspend fun reconcileApplicationOperations() = Unit
         override suspend fun reconcileGms(): GmsStartupResult {
+            gmsReconcileCalls += 1
             gmsReconcileError?.let { throw it }
             return GmsStartupResult(
                 reconciliation = GmsReconciliationResult(

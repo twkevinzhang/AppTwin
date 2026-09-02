@@ -1111,7 +1111,7 @@ private fun AppGridTile(
 ) {
     var menuExpanded by remember(app.launchKey) { mutableStateOf(false) }
     val busy = isLaunching || isUninstalling || isCreatingShortcut || isRepairing || isClearingStorage
-    val launchEnabled = enabled && app.sourceInstalled && !busy
+    val launchEnabled = enabled && app.canAttemptLaunch && !busy
     val menuEnabled = enabled && !busy
     Box(modifier = Modifier.fillMaxWidth()) {
         Column(
@@ -1126,7 +1126,7 @@ private fun AppGridTile(
                         isCreatingShortcut -> "建立捷徑中"
                         isRepairing -> "重新同步中"
                         isClearingStorage -> "清除儲存空間中"
-                        !app.sourceInstalled -> "原始 App 已移除"
+                        !app.canAttemptLaunch -> "原始 App 已移除"
                         !enabled -> "暫時無法操作"
                         else -> "可操作"
                     }
@@ -1177,13 +1177,13 @@ private fun AppGridTile(
                     isCreatingShortcut -> "建立捷徑中…"
                     isRepairing -> "重新同步中…"
                     isClearingStorage -> "清除儲存空間中…"
-                    !app.sourceInstalled -> "原始 App 已移除"
+                    !app.canAttemptLaunch -> "原始 App 已移除"
                     isLaunching -> "開啟中…"
                     app.lifecycle == CloneLifecycleState.READY -> app.launchStatus
                     else -> cloneLifecycleLabel(app.lifecycle)
                 },
                 style = MaterialTheme.typography.labelSmall,
-                color = if (!app.sourceInstalled) {
+                color = if (!app.canAttemptLaunch) {
                     MaterialTheme.colorScheme.error
                 } else {
                     MaterialTheme.colorScheme.onSurfaceVariant
