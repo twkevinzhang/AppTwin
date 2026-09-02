@@ -52,6 +52,66 @@ class RuntimePackageSynchronizerTest {
 
         assertTrue(gateway.updateCalls.isEmpty())
         assertTrue(gateway.userInstalled)
+        assertEquals(1, gateway.recordCalls)
+    }
+
+    @Test
+    fun `verified revision and existing user binding is a read only pure launch check`() {
+        val gateway = FakeGateway(
+            installed = true,
+            installedIdentity = IDENTITY,
+            revisionVerified = true,
+            userInstalledInitially = true,
+        )
+        val synchronizer = RuntimePackageSynchronizer(gateway)
+
+        assertTrue(synchronizer.isReadyForPureLaunch(REVISION, USER_ID))
+        assertEquals(1, gateway.readyChecks)
+        assertEquals(0, gateway.installedChecks)
+        synchronizer.synchronize(REVISION, USER_ID)
+
+        assertEquals(0, gateway.identityReads)
+        assertEquals(0, gateway.recordCalls)
+        assertEquals(0, gateway.bindCalls)
+    }
+
+    @Test
+    fun `final atomic readiness miss rejects concurrent invalidation`() {
+        val gateway = FakeGateway(
+            installed = true,
+            installedIdentity = IDENTITY,
+            rejectReady = true,
+        )
+
+        try {
+            RuntimePackageSynchronizer(gateway).synchronize(REVISION, USER_ID)
+            fail("concurrent invalidation must fail")
+        } catch (error: IllegalStateException) {
+            assertTrue(error.message.orEmpty().contains("changed before launch"))
+        }
+
+        assertEquals(1, gateway.readyChecks)
+    }
+
+    @Test
+    fun `generation race refuses to publish stale verification or bind user`() {
+        val gateway = FakeGateway(
+            installed = true,
+            installedIdentity = IDENTITY,
+            recordAccepted = false,
+        )
+
+        try {
+            RuntimePackageSynchronizer(gateway).synchronize(REVISION, USER_ID)
+            fail("stale verification CAS should fail")
+        } catch (error: IllegalStateException) {
+            assertTrue(error.message.orEmpty().contains(REVISION.revisionId))
+        }
+
+        assertEquals(1, gateway.identityReads)
+        assertEquals(1, gateway.recordCalls)
+        assertFalse(gateway.userInstalled)
+        assertEquals(0, gateway.bindCalls)
     }
 
     @Test
@@ -111,15 +171,51 @@ class RuntimePackageSynchronizerTest {
         var installedIdentity: PackageArtifactIdentity? = null,
         private val installResult: RuntimePackageInstallResult = RuntimePackageInstallResult(true),
         private val identityAfterInstall: PackageArtifactIdentity = IDENTITY,
+        private var revisionVerified: Boolean = false,
+        userInstalledInitially: Boolean = false,
+        private val recordAccepted: Boolean = true,
+        private val rejectReady: Boolean = false,
     ) : RuntimePackageGateway {
         val updateCalls = mutableListOf<Boolean>()
-        var userInstalled = false
+        var userInstalled = userInstalledInitially
         var bindCalls = 0
+        var identityReads = 0
+        var recordCalls = 0
+        var generation = 4L
+        var readyChecks = 0
+        var installedChecks = 0
 
-        override fun isInstalled(packageName: String): Boolean = installed
+        override fun isInstalled(packageName: String): Boolean {
+            installedChecks += 1
+            return installed
+        }
 
-        override fun installedArtifactIdentity(packageName: String): PackageArtifactIdentity? =
-            installedIdentity
+        override fun isRevisionVerified(revision: ActiveRuntimeRevision): Boolean = revisionVerified
+
+        override fun isRevisionReadyForUser(
+            revision: ActiveRuntimeRevision,
+            userId: Int,
+        ): Boolean {
+            readyChecks += 1
+            return !rejectReady && installed && revisionVerified && userInstalled
+        }
+
+        override fun packageRevisionGeneration(packageName: String): Long = generation
+
+        override fun recordVerifiedRevision(
+            revision: ActiveRuntimeRevision,
+            expectedGeneration: Long,
+        ): Boolean {
+            recordCalls += 1
+            if (!recordAccepted || expectedGeneration != generation) return false
+            revisionVerified = true
+            return true
+        }
+
+        override fun installedArtifactIdentity(packageName: String): PackageArtifactIdentity? {
+            identityReads += 1
+            return installedIdentity
+        }
 
         override fun installOrUpdate(
             revision: ActiveRuntimeRevision,
@@ -129,6 +225,7 @@ class RuntimePackageSynchronizerTest {
             if (installResult.isSuccess) {
                 installed = true
                 installedIdentity = identityAfterInstall
+                generation += 1
             }
             return installResult
         }

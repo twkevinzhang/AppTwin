@@ -36,6 +36,22 @@ public class PackageSetting implements Parcelable {
     public long lastUpdateTime;
     public TrustedPackageProvenance trustedPackageProvenance;
 
+    /**
+     * Monotonic identity epoch for the private base/split code owned by this setting. A verified
+     * revision is useful only while its recorded cheap file facts still match this generation.
+     */
+    public long packageRevisionGeneration;
+    public String verifiedRevisionId;
+    public String verifiedBaseSha256;
+    public String verifiedBasePath;
+    public long verifiedBaseSize;
+    public long verifiedBaseLastModified;
+    public String[] verifiedSplitNames;
+    public String[] verifiedSplitSha256;
+    public String[] verifiedSplitPaths;
+    public long[] verifiedSplitSizes;
+    public long[] verifiedSplitLastModified;
+
     public String[] splitCodePaths;
     private SparseArray<PackageUserState> userState = new SparseArray<>();
 
@@ -43,10 +59,14 @@ public class PackageSetting implements Parcelable {
     }
 
     protected PackageSetting(Parcel in) {
-        this(in, true);
+        this(in, true, true);
     }
 
     PackageSetting(Parcel in, boolean hasTrustedProvenance) {
+        this(in, hasTrustedProvenance, false);
+    }
+
+    PackageSetting(Parcel in, boolean hasTrustedProvenance, boolean hasVerifiedRevision) {
         this.packageName = in.readString();
         this.apkPath = in.readString();
         this.libPath = in.readString();
@@ -59,6 +79,19 @@ public class PackageSetting implements Parcelable {
         if (hasTrustedProvenance) {
             this.trustedPackageProvenance = in.readParcelable(
                     TrustedPackageProvenance.class.getClassLoader());
+        }
+        if (hasVerifiedRevision) {
+            this.packageRevisionGeneration = in.readLong();
+            this.verifiedRevisionId = in.readString();
+            this.verifiedBaseSha256 = in.readString();
+            this.verifiedBasePath = in.readString();
+            this.verifiedBaseSize = in.readLong();
+            this.verifiedBaseLastModified = in.readLong();
+            this.verifiedSplitNames = in.createStringArray();
+            this.verifiedSplitSha256 = in.createStringArray();
+            this.verifiedSplitPaths = in.createStringArray();
+            this.verifiedSplitSizes = in.createLongArray();
+            this.verifiedSplitLastModified = in.createLongArray();
         }
     }
 
@@ -111,6 +144,38 @@ public class PackageSetting implements Parcelable {
         dest.writeByte(this.skipDexOpt ? (byte) 1 : (byte) 0);
         dest.writeStringArray(this.splitCodePaths);
         dest.writeParcelable(this.trustedPackageProvenance, flags);
+        dest.writeLong(this.packageRevisionGeneration);
+        dest.writeString(this.verifiedRevisionId);
+        dest.writeString(this.verifiedBaseSha256);
+        dest.writeString(this.verifiedBasePath);
+        dest.writeLong(this.verifiedBaseSize);
+        dest.writeLong(this.verifiedBaseLastModified);
+        dest.writeStringArray(this.verifiedSplitNames);
+        dest.writeStringArray(this.verifiedSplitSha256);
+        dest.writeStringArray(this.verifiedSplitPaths);
+        dest.writeLongArray(this.verifiedSplitSizes);
+        dest.writeLongArray(this.verifiedSplitLastModified);
+    }
+
+    void invalidateVerifiedRevision() {
+        if (packageRevisionGeneration == Long.MAX_VALUE) {
+            throw new IllegalStateException("Package revision generation exhausted");
+        }
+        packageRevisionGeneration++;
+        clearVerifiedRevision();
+    }
+
+    void clearVerifiedRevision() {
+        verifiedRevisionId = null;
+        verifiedBaseSha256 = null;
+        verifiedBasePath = null;
+        verifiedBaseSize = 0;
+        verifiedBaseLastModified = 0;
+        verifiedSplitNames = null;
+        verifiedSplitSha256 = null;
+        verifiedSplitPaths = null;
+        verifiedSplitSizes = null;
+        verifiedSplitLastModified = null;
     }
 
     public boolean isLaunched(int userId) {

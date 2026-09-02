@@ -34,6 +34,16 @@ interface IAppManager {
     int getInstalledAppCount();
     boolean isAppInstalled(String packageName);
     boolean isAppInstalledAsUser(int userId, String packageName);
+    long getPackageRevisionGeneration(String packageName);
+    boolean isPackageRevisionVerified(String packageName, String revisionId,
+                                      String baseSha256, in String[] splitNames,
+                                      in String[] splitSha256);
+    boolean isPackageRevisionReadyForUser(String packageName, int userId, String revisionId,
+                                          String baseSha256, in String[] splitNames,
+                                          in String[] splitSha256);
+    boolean recordVerifiedPackageRevision(String packageName, String revisionId,
+                                          long expectedGeneration, String baseSha256,
+                                          in String[] splitNames, in String[] splitSha256);
 
     void registerObserver(IPackageObserver observer);
     void unregisterObserver(IPackageObserver observer);
