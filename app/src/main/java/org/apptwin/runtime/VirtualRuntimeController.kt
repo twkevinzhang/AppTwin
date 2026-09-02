@@ -50,6 +50,7 @@ sealed interface RuntimeLaunchResult {
     ) : RuntimeLaunchResult
 
     data class Failed(val reason: String, val error: Throwable? = null) : RuntimeLaunchResult
+    data object PackageRepairRequired : RuntimeLaunchResult
 }
 
 /** The only adapter allowed to translate a Group environment into the engine's numeric user API. */
@@ -83,6 +84,9 @@ class VirtualRuntimeController internal constructor(
             activityManager.moveTaskToFront(taskId, 0)
         },
         observeDaemonReopenEpoch = DaemonWorkloadAuthorization::observeReopenEpoch,
+        reuseVisibleDaemonSession = {
+            DaemonWorkloadAuthorization.isVisibleSessionReady(appContext)
+        },
         refreshDaemonFromVisibleHost = DaemonWorkloadAuthorization::startFromVisibleHost,
         awaitDaemonReady = { observedReopenEpoch, timeoutMs ->
             VActivityManager.get().awaitDaemonWorkloadGateOpenAfter(
@@ -278,10 +282,11 @@ class VirtualRuntimeController internal constructor(
         group: Group,
         app: GroupApp,
         activityName: String? = null,
+        allowPackageRepair: Boolean = true,
     ): RuntimeLaunchResult = runCatching {
         require(group.contains(app.packageName)) { "GroupApp does not belong to this Group" }
         val binding = requireHealthyEnvironment(group)
-        custodianKeyspaces.prepare(group, app)
+        if (allowPackageRepair) custodianKeyspaces.prepare(group, app)
         val environmentId = binding.internalId
         val packageName = app.packageName
         val core = VirtualCore.get()
@@ -290,8 +295,17 @@ class VirtualRuntimeController internal constructor(
             "沒有可啟動的 active revision"
         }
         prepareVirtualExternalStorage(environmentId)
-        RuntimePackageSynchronizer(VirtualCorePackageGateway(core))
-            .synchronize(revision, environmentId)
+        val synchronizer = RuntimePackageSynchronizer(VirtualCorePackageGateway(core))
+        if (!allowPackageRepair) {
+            if (!synchronizer.isReadyForPureLaunch(revision, environmentId)) {
+                throw PackageRepairRequiredException()
+            }
+            if (!custodianKeyspaces.isPreparedForPureLaunch(group, app)) {
+                throw PackageRepairRequiredException()
+            }
+            Log.i(TAG, "package-revision-fast-path package=$packageName user=$environmentId")
+        }
+        if (allowPackageRepair) synchronizer.synchronize(revision, environmentId)
         markGuestCodeReadOnly(core, packageName)
         val virtualPackage = requireNotNull(
             VPackageManager.get().getPackageInfo(packageName, 0, environmentId),
@@ -338,6 +352,9 @@ class VirtualRuntimeController internal constructor(
             ),
         )
     }.getOrElse { error ->
+        if (error is PackageRepairRequiredException) {
+            return@getOrElse RuntimeLaunchResult.PackageRepairRequired
+        }
         Log.e(TAG, "GroupApp launch failed for ${app.packageName}/${group.id}", error)
         RuntimeLaunchResult.Failed(error.message ?: error.javaClass.simpleName, error)
     }
@@ -346,6 +363,7 @@ class VirtualRuntimeController internal constructor(
         group: Group,
         app: GroupApp,
         intent: Intent,
+        allowPackageRepair: Boolean = true,
     ): RuntimeLaunchResult = runCatching {
         require(group.contains(app.packageName)) { "GroupApp does not belong to this Group" }
         require(intent.action == Intent.ACTION_VIEW) { "Only view intents may be routed" }
@@ -358,8 +376,17 @@ class VirtualRuntimeController internal constructor(
             "沒有可啟動的 active revision"
         }
         prepareVirtualExternalStorage(environmentId)
-        RuntimePackageSynchronizer(VirtualCorePackageGateway(core))
-            .synchronize(revision, environmentId)
+        val synchronizer = RuntimePackageSynchronizer(VirtualCorePackageGateway(core))
+        if (!allowPackageRepair) {
+            if (!synchronizer.isReadyForPureLaunch(revision, environmentId)) {
+                throw PackageRepairRequiredException()
+            }
+            if (!custodianKeyspaces.isPreparedForPureLaunch(group, app)) {
+                throw PackageRepairRequiredException()
+            }
+            Log.i(TAG, "package-revision-fast-path package=$packageName user=$environmentId")
+        }
+        if (allowPackageRepair) synchronizer.synchronize(revision, environmentId)
         markGuestCodeReadOnly(core, packageName)
         val routedIntent = Intent(intent)
             .setPackage(packageName)
@@ -369,7 +396,11 @@ class VirtualRuntimeController internal constructor(
         val dataDirectory = VEnvironment.getDataUserPackageDirectory(environmentId, packageName)
         RuntimeLaunchResult.Started(packageName, "p$environmentId", dataDirectory.absolutePath)
     }.getOrElse { error ->
-        RuntimeLaunchResult.Failed(error.message ?: error.javaClass.simpleName, error)
+        if (error is PackageRepairRequiredException) {
+            RuntimeLaunchResult.PackageRepairRequired
+        } else {
+            RuntimeLaunchResult.Failed(error.message ?: error.javaClass.simpleName, error)
+        }
     }
 
     private fun requireHealthyEnvironment(group: Group): EnvironmentBinding {
@@ -436,10 +467,56 @@ class VirtualRuntimeController internal constructor(
             "${environmentPrefix(groupId)}|$groupName"
     }
 
+    private class PackageRepairRequiredException : IllegalStateException()
+
     private class VirtualCorePackageGateway(
         private val core: VirtualCore,
     ) : RuntimePackageGateway {
         override fun isInstalled(packageName: String): Boolean = core.isAppInstalled(packageName)
+
+        override fun isRevisionVerified(revision: ActiveRuntimeRevision): Boolean {
+            val splits = revision.artifactIdentity.splitSha256ByName.toSortedMap()
+            return core.isPackageRevisionVerified(
+                revision.packageName,
+                revision.revisionId,
+                revision.artifactIdentity.baseSha256,
+                splits.keys.toTypedArray(),
+                splits.values.toTypedArray(),
+            )
+        }
+
+        override fun isRevisionReadyForUser(
+            revision: ActiveRuntimeRevision,
+            userId: Int,
+        ): Boolean {
+            val splits = revision.artifactIdentity.splitSha256ByName.toSortedMap()
+            return core.isPackageRevisionReadyForUser(
+                revision.packageName,
+                userId,
+                revision.revisionId,
+                revision.artifactIdentity.baseSha256,
+                splits.keys.toTypedArray(),
+                splits.values.toTypedArray(),
+            )
+        }
+
+        override fun packageRevisionGeneration(packageName: String): Long =
+            core.getPackageRevisionGeneration(packageName)
+
+        override fun recordVerifiedRevision(
+            revision: ActiveRuntimeRevision,
+            expectedGeneration: Long,
+        ): Boolean {
+            val splits = revision.artifactIdentity.splitSha256ByName.toSortedMap()
+            return core.recordVerifiedPackageRevision(
+                revision.packageName,
+                revision.revisionId,
+                expectedGeneration,
+                revision.artifactIdentity.baseSha256,
+                splits.keys.toTypedArray(),
+                splits.values.toTypedArray(),
+            )
+        }
 
         override fun installedArtifactIdentity(packageName: String): PackageArtifactIdentity? {
             val installed = core.getInstalledAppInfo(packageName, 0) ?: return null
@@ -519,6 +596,7 @@ internal class HostActivityLaunchAdapter<Host : Any>(
     private val startActivity: (Host, Intent) -> Unit,
     private val moveTaskToFront: (Host, Int) -> Unit,
     private val observeDaemonReopenEpoch: () -> Long = { 0L },
+    private val reuseVisibleDaemonSession: () -> Boolean = { false },
     private val refreshDaemonFromVisibleHost: (Host) -> Unit = {},
     private val awaitDaemonReady: (Long, Long) -> Boolean = { _, _ -> true },
     private val dispatchToMain: (Runnable) -> Boolean,
@@ -548,33 +626,38 @@ internal class HostActivityLaunchAdapter<Host : Any>(
             "AppTwin must be resumed to launch a guest activity",
         )
 
-        // The epoch query is a runtime Binder call. Keep it off the Android main thread so a busy
-        // engine cannot turn a bounded guest launch into a host ANR.
-        val observedReopenEpoch = runCatching(observeDaemonReopenEpoch).getOrElse { error ->
-            return PreparedActivityLaunch.failure(
-                error.message ?: "Unable to observe the AppTwin background service gate",
-            )
-        }
-        val daemonStart = callOnMain {
-            check(resumedHost() === host) {
-                "AppTwin activity is no longer resumed"
+        val daemonSessionReused = runCatching(reuseVisibleDaemonSession).getOrDefault(false)
+        if (daemonSessionReused) {
+            Log.i("AppTwinRuntime", "daemon-launch-fast-path")
+        } else {
+            // The epoch query is a runtime Binder call. Keep it off the Android main thread so a
+            // busy engine cannot turn a bounded guest launch into a host ANR.
+            val observedReopenEpoch = runCatching(observeDaemonReopenEpoch).getOrElse { error ->
+                return PreparedActivityLaunch.failure(
+                    error.message ?: "Unable to observe the AppTwin background service gate",
+                )
             }
-            // The runtime starts with its workload gate closed. Request the FGS while this host
-            // is visibly resumed, then wait off-main for DaemonService.onStartCommand to reopen
-            // the gate before any prepared task or virtual service can be created.
-            refreshDaemonFromVisibleHost(host)
-        }
-        val daemonStartError = daemonStart.exceptionOrNull()
-        if (daemonStartError != null) {
-            return PreparedActivityLaunch.failure(
-                daemonStartError.message ?: "Unable to start the AppTwin background service",
-            )
-        }
-        daemonStart.getOrThrow()
-        if (!awaitDaemonReady(observedReopenEpoch, daemonReadyTimeoutMs)) {
-            return PreparedActivityLaunch.failure(
-                "AppTwin background service did not become ready",
-            )
+            val daemonStart = callOnMain {
+                check(resumedHost() === host) {
+                    "AppTwin activity is no longer resumed"
+                }
+                // The runtime starts with its workload gate closed. Request the FGS while this host
+                // is visibly resumed, then wait off-main for DaemonService.onStartCommand to reopen
+                // the gate before any prepared task or virtual service can be created.
+                refreshDaemonFromVisibleHost(host)
+            }
+            val daemonStartError = daemonStart.exceptionOrNull()
+            if (daemonStartError != null) {
+                return PreparedActivityLaunch.failure(
+                    daemonStartError.message ?: "Unable to start the AppTwin background service",
+                )
+            }
+            daemonStart.getOrThrow()
+            if (!awaitDaemonReady(observedReopenEpoch, daemonReadyTimeoutMs)) {
+                return PreparedActivityLaunch.failure(
+                    "AppTwin background service did not become ready",
+                )
+            }
         }
 
         val prepared = prepareActivity(Intent(intent), expectedPackage, userId)

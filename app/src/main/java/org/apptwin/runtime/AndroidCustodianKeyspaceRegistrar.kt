@@ -19,6 +19,8 @@ import org.apptwin.groups.GroupApp
 internal interface CustodianKeyspaceRegistrar {
     fun prepare(group: Group, app: GroupApp)
 
+    fun isPreparedForPureLaunch(group: Group, app: GroupApp): Boolean
+
     fun retainForArchive(group: Group, packageName: String): String
 
     fun cancelArchiveRetention(group: Group)
@@ -90,6 +92,17 @@ internal class AndroidCustodianKeyspaceRegistrar(context: Context) : CustodianKe
         check(!keyspace.isNullOrBlank()) { "Custodian keyspace is unavailable" }
         existing?.let { check(it.keyspaceId == keyspace) { "Custodian keyspace changed unexpectedly" } }
         CustodianKeyspaceState.writeForUser(binding.internalId, group.id, keyspace)
+    }
+
+    override fun isPreparedForPureLaunch(group: Group, app: GroupApp): Boolean {
+        val binding = group.environmentBinding ?: return false
+        val existing = CustodianKeyspaceState.readForUser(binding.internalId)
+        if (!CustodianActivationPolicy.shouldPrepare(app.packageName, existing != null, app.state)) {
+            return true
+        }
+        return existing != null &&
+            existing.ownerSpaceId == group.id &&
+            existing.keyspaceId.isNotBlank()
     }
 
     override fun retainForArchive(group: Group, packageName: String): String {

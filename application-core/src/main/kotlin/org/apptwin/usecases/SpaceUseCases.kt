@@ -36,6 +36,7 @@ class CreateSpaceUseCase(
 
 sealed interface CloneSourcePreparationResult {
     data object Ready : CloneSourcePreparationResult
+    data object AlreadyCurrent : CloneSourcePreparationResult
     data object SourceMissing : CloneSourcePreparationResult
     data class Rejected(val reason: ClonePreparationRejection) : CloneSourcePreparationResult
 }
@@ -80,7 +81,9 @@ class AddCloneAppUseCase(
         val applying = operations.applying(operation)
         return runCatching {
             when (val preparation = source.prepare(packageName)) {
-                CloneSourcePreparationResult.Ready -> {
+                CloneSourcePreparationResult.Ready,
+                CloneSourcePreparationResult.AlreadyCurrent,
+                -> {
                     val updated = requireNotNull(store.addApp(spaceId, packageName, clock())) {
                         "Space disappeared while adding clone"
                     }
@@ -105,6 +108,8 @@ class AddCloneAppUseCase(
 
 sealed interface CloneRuntimeLaunchResult {
     data object Started : CloneRuntimeLaunchResult
+    /** Pure launch observed a missing marker/binding and performed no mutation. */
+    data object RepairRequired : CloneRuntimeLaunchResult
     data class Failed(val reason: CloneLaunchFailure) : CloneRuntimeLaunchResult
 }
 
@@ -117,6 +122,10 @@ enum class CloneLaunchFailure {
 
 fun interface CloneLaunchRuntime {
     fun launch(space: Group, app: GroupApp): CloneRuntimeLaunchResult
+}
+
+fun interface CloneSourceCurrentVerifier {
+    fun isCurrent(packageName: String): Boolean
 }
 
 sealed interface LaunchCloneAppResult {
@@ -135,6 +144,8 @@ class LaunchCloneAppUseCase(
     private val source: CloneSourcePreparer,
     private val runtime: CloneLaunchRuntime,
     private val operations: OperationTracker,
+    private val pureSource: CloneSourceCurrentVerifier? = null,
+    private val pureRuntime: CloneLaunchRuntime? = null,
 ) {
     fun execute(spaceId: String, packageName: String): LaunchCloneAppResult {
         val space = runCatching { store.find(spaceId) }
@@ -143,33 +154,58 @@ class LaunchCloneAppUseCase(
         if (space.health != GroupHealth.HEALTHY) return LaunchCloneAppResult.SpaceUnavailable
         val app = space.apps.firstOrNull { it.packageName == packageName }
             ?: return LaunchCloneAppResult.CloneNotFound
+        val currentVerifier = pureSource
+        val pureLauncher = pureRuntime
+        if (
+            app.state == GroupAppState.ENABLED &&
+            currentVerifier != null &&
+            pureLauncher != null &&
+            runCatching { currentVerifier.isCurrent(packageName) }.getOrDefault(false)
+        ) {
+            when (val pureLaunch = pureLauncher.launch(space, app)) {
+                CloneRuntimeLaunchResult.Started -> return LaunchCloneAppResult.Started
+                CloneRuntimeLaunchResult.RepairRequired -> Unit
+                is CloneRuntimeLaunchResult.Failed -> {
+                    return recordLaunchFailure(spaceId, packageName, pureLaunch)
+                }
+            }
+        }
+        return launchDurably(space, app)
+    }
+
+    private fun launchDurably(space: Group, app: GroupApp): LaunchCloneAppResult {
         val operation = operations.start(
             OperationKind.LAUNCH_CLONE,
-            OperationTarget(spaceId, packageName),
+            OperationTarget(space.id, app.packageName),
         )
         val applying = operations.applying(operation)
         return runCatching {
-            when (val preparation = source.prepare(packageName)) {
+            when (val preparation = source.prepare(app.packageName)) {
                 CloneSourcePreparationResult.SourceMissing -> {
-                    store.updateAppState(spaceId, packageName, GroupAppState.SOURCE_MISSING)
+                    store.updateAppState(space.id, app.packageName, GroupAppState.SOURCE_MISSING)
                     operations.complete(applying)
                     LaunchCloneAppResult.SourceMissing
                 }
                 is CloneSourcePreparationResult.Rejected -> {
-                    store.updateAppState(spaceId, packageName, GroupAppState.FAILED)
+                    store.updateAppState(space.id, app.packageName, GroupAppState.FAILED)
                     operations.complete(applying)
                     LaunchCloneAppResult.Rejected(preparation.reason)
                 }
-                CloneSourcePreparationResult.Ready -> {
-                    store.updateAppState(spaceId, packageName, GroupAppState.INSTALLING)
+                CloneSourcePreparationResult.Ready,
+                CloneSourcePreparationResult.AlreadyCurrent,
+                -> {
+                    store.updateAppState(space.id, app.packageName, GroupAppState.INSTALLING)
                     when (val launch = runtime.launch(space, app)) {
                         CloneRuntimeLaunchResult.Started -> {
-                            store.updateAppState(spaceId, packageName, GroupAppState.ENABLED)
+                            store.updateAppState(space.id, app.packageName, GroupAppState.ENABLED)
                             operations.complete(applying)
                             LaunchCloneAppResult.Started
                         }
+                        CloneRuntimeLaunchResult.RepairRequired -> error(
+                            "Durable package repair unexpectedly declined",
+                        )
                         is CloneRuntimeLaunchResult.Failed -> {
-                            store.updateAppState(spaceId, packageName, GroupAppState.FAILED)
+                            store.updateAppState(space.id, app.packageName, GroupAppState.FAILED)
                             operations.fail(applying, "LAUNCH_FAILED")
                             LaunchCloneAppResult.Failed(launch.reason)
                         }
@@ -177,10 +213,26 @@ class LaunchCloneAppUseCase(
                 }
             }
         }.getOrElse { error ->
-            runCatching { store.updateAppState(spaceId, packageName, GroupAppState.FAILED) }
+            runCatching { store.updateAppState(space.id, app.packageName, GroupAppState.FAILED) }
             operations.fail(applying, "LAUNCH_FAILED")
             LaunchCloneAppResult.Failed(CloneLaunchFailure.UNKNOWN, error)
         }
+    }
+
+    private fun recordLaunchFailure(
+        spaceId: String,
+        packageName: String,
+        failure: CloneRuntimeLaunchResult.Failed,
+    ): LaunchCloneAppResult.Failed {
+        val applying = operations.applying(
+            operations.start(
+                OperationKind.LAUNCH_CLONE,
+                OperationTarget(spaceId, packageName),
+            ),
+        )
+        store.updateAppState(spaceId, packageName, GroupAppState.FAILED)
+        operations.fail(applying, "LAUNCH_FAILED")
+        return LaunchCloneAppResult.Failed(failure.reason)
     }
 }
 

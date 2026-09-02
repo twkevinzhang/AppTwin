@@ -92,6 +92,96 @@ class SpaceUseCasesTest {
     }
 
     @Test
+    fun `already current enabled clone starts without launch journal or state transition`() {
+        val fixture = Fixture()
+        val space = fixture.createSpace()
+        fixture.store.addApp(space.id, PACKAGE, 10L)
+        fixture.store.updateAppState(space.id, PACKAGE, org.apptwin.groups.GroupAppState.ENABLED)
+        val records = TestOperationStore()
+        var durableLaunches = 0
+        var pureLaunches = 0
+        val useCase = LaunchCloneAppUseCase(
+            fixture.store,
+            CloneSourcePreparer { CloneSourcePreparationResult.AlreadyCurrent },
+            runtime = CloneLaunchRuntime { _, _ ->
+                durableLaunches += 1
+                CloneRuntimeLaunchResult.Started
+            },
+            operations = tracker(records),
+            pureSource = CloneSourceCurrentVerifier { true },
+            pureRuntime = CloneLaunchRuntime { _, _ ->
+                pureLaunches += 1
+                CloneRuntimeLaunchResult.Started
+            },
+        )
+
+        assertEquals(LaunchCloneAppResult.Started, useCase.execute(space.id, PACKAGE))
+        assertEquals(1, pureLaunches)
+        assertEquals(0, durableLaunches)
+        assertTrue(records.listPending().isEmpty())
+        assertEquals(0, records.saveCalls)
+        assertEquals(
+            org.apptwin.groups.GroupAppState.ENABLED,
+            requireNotNull(fixture.store.find(space.id)).apps.single().state,
+        )
+    }
+
+    @Test
+    fun `pure launch marker miss falls back to durable repair transaction`() {
+        val fixture = Fixture()
+        val space = fixture.createSpace()
+        fixture.store.addApp(space.id, PACKAGE, 10L)
+        fixture.store.updateAppState(space.id, PACKAGE, org.apptwin.groups.GroupAppState.ENABLED)
+        val records = TestOperationStore()
+        var durableLaunches = 0
+        val useCase = LaunchCloneAppUseCase(
+            fixture.store,
+            CloneSourcePreparer { CloneSourcePreparationResult.AlreadyCurrent },
+            runtime = CloneLaunchRuntime { _, _ ->
+                durableLaunches += 1
+                CloneRuntimeLaunchResult.Started
+            },
+            operations = tracker(records),
+            pureSource = CloneSourceCurrentVerifier { true },
+            pureRuntime = CloneLaunchRuntime { _, _ -> CloneRuntimeLaunchResult.RepairRequired },
+        )
+
+        assertEquals(LaunchCloneAppResult.Started, useCase.execute(space.id, PACKAGE))
+        assertEquals(1, durableLaunches)
+        assertTrue(records.listPending().isEmpty())
+        assertEquals(
+            org.apptwin.groups.GroupAppState.ENABLED,
+            requireNotNull(fixture.store.find(space.id)).apps.single().state,
+        )
+    }
+
+    @Test
+    fun `source failure records durable failed operation and app state`() {
+        val fixture = Fixture()
+        val space = fixture.createSpace()
+        fixture.store.addApp(space.id, PACKAGE, 10L)
+        val records = TestOperationStore()
+        val useCase = LaunchCloneAppUseCase(
+            fixture.store,
+            CloneSourcePreparer { error("source metadata unavailable") },
+            runtime = CloneLaunchRuntime { _, _ -> CloneRuntimeLaunchResult.Started },
+            operations = tracker(records),
+            pureRuntime = CloneLaunchRuntime { _, _ -> CloneRuntimeLaunchResult.Started },
+        )
+
+        val result = useCase.execute(space.id, PACKAGE)
+
+        assertTrue(result is LaunchCloneAppResult.Failed)
+        assertEquals(
+            org.apptwin.groups.GroupAppState.FAILED,
+            requireNotNull(fixture.store.find(space.id)).apps.single().state,
+        )
+        val failed = records.listPending().single()
+        assertEquals(OperationPhase.FAILED, failed.phase)
+        assertEquals("LAUNCH_FAILED", failed.failureCode)
+    }
+
+    @Test
     fun `named remove and delete use cases preserve coordinator contracts`() {
         val fixture = Fixture()
         val space = fixture.createSpace()
@@ -218,9 +308,12 @@ class SpaceUseCasesTest {
 
 private class TestOperationStore : OperationRecordStore {
     private val records = linkedMapOf<String, OperationRecord>()
+    var saveCalls = 0
+        private set
     override fun listPending(): List<OperationRecord> = records.values.toList()
     override fun find(id: String): OperationRecord? = records[id]
     override fun save(record: OperationRecord) {
+        saveCalls += 1
         records[record.id] = record
     }
     override fun remove(id: String) {

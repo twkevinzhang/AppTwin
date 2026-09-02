@@ -26,6 +26,41 @@ class HostActivityLaunchAdapterTest {
     }
 
     @Test
+    fun `matching visible daemon session skips redundant start and wait`() {
+        val events = mutableListOf<String>()
+        val adapter = HostActivityLaunchAdapter(
+            prepareActivity = { _, _, _ ->
+                events += "prepare"
+                PreparedActivityLaunch.reused(73, "ready-session")
+            },
+            resumedHost = { "visible-host" },
+            startActivity = { _, _ -> error("reused task must not start an activity") },
+            moveTaskToFront = { _, taskId ->
+                assertEquals(73, taskId)
+                events += "move"
+            },
+            observeDaemonReopenEpoch = { error("ready session must not observe an epoch") },
+            reuseVisibleDaemonSession = {
+                events += "reuse-daemon"
+                true
+            },
+            refreshDaemonFromVisibleHost = {
+                error("ready session must not restart the daemon")
+            },
+            awaitDaemonReady = { _, _ -> error("ready session must not wait for the daemon") },
+            dispatchToMain = ::runImmediately,
+            isMainThread = { false },
+            awaitAcknowledgement = { launchId, _ -> launchId == "ready-session" },
+            cancelAcknowledgement = { error("successful launch must not cancel") },
+        )
+
+        val result = adapter.launch(Intent("test.request"), "com.example.guest", 2)
+
+        assertTrue(result.isSuccess)
+        assertEquals(listOf("reuse-daemon", "prepare", "move"), events)
+    }
+
+    @Test
     fun `new Group launch starts prepared stub from resumed host and waits for exact ACK`() {
         TestMainThread().use { main ->
             val request = Intent("test.request")

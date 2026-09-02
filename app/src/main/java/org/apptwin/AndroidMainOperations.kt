@@ -83,6 +83,7 @@ import org.apptwin.usecases.CloneLaunchFailure
 import org.apptwin.usecases.ClonePreparationRejection
 import org.apptwin.usecases.CloneRuntimeLaunchResult
 import org.apptwin.usecases.CloneSourcePreparationResult
+import org.apptwin.usecases.CloneSourceCurrentVerifier
 import org.apptwin.usecases.CloneSourcePreparer
 import org.apptwin.usecases.ClearCloneStorageResult
 import org.apptwin.usecases.ClearCloneStorageUseCase
@@ -298,10 +299,17 @@ internal class AndroidMainOperations(private val application: Application) : Mai
     }
 
     override suspend fun launchGroupApp(item: GroupAppItem): RuntimeLaunchResult =
-        launchClone(item) { group, app -> runtimeController.installAndLaunch(group, app) }
+        launchClone(
+            item,
+            pureRuntimeLaunch = { group, app ->
+                runtimeController.installAndLaunch(group, app, allowPackageRepair = false)
+            },
+            runtimeLaunch = { group, app -> runtimeController.installAndLaunch(group, app) },
+        )
 
     private fun launchClone(
         item: GroupAppItem,
+        pureRuntimeLaunch: (Group, GroupApp) -> RuntimeLaunchResult,
         runtimeLaunch: (Group, GroupApp) -> RuntimeLaunchResult,
     ): RuntimeLaunchResult {
         var runtimeResult: RuntimeLaunchResult? = null
@@ -312,12 +320,29 @@ internal class AndroidMainOperations(private val application: Application) : Mai
                 runtimeLaunch(group, app).also { runtimeResult = it }.let {
                     when (it) {
                         is RuntimeLaunchResult.Started -> CloneRuntimeLaunchResult.Started
+                        RuntimeLaunchResult.PackageRepairRequired ->
+                            CloneRuntimeLaunchResult.Failed(CloneLaunchFailure.UNKNOWN)
                         is RuntimeLaunchResult.Failed ->
                             CloneRuntimeLaunchResult.Failed(classifyLaunchFailure(it.reason))
                     }
                 }
             },
             operations = operationTracker,
+            pureSource = CloneSourceCurrentVerifier(importer::isSourceCurrent),
+            pureRuntime = CloneLaunchRuntime { group, app ->
+                when (val result = pureRuntimeLaunch(group, app)) {
+                    is RuntimeLaunchResult.Started -> {
+                        runtimeResult = result
+                        CloneRuntimeLaunchResult.Started
+                    }
+                    RuntimeLaunchResult.PackageRepairRequired ->
+                        CloneRuntimeLaunchResult.RepairRequired
+                    is RuntimeLaunchResult.Failed -> {
+                        runtimeResult = result
+                        CloneRuntimeLaunchResult.Failed(classifyLaunchFailure(result.reason))
+                    }
+                }
+            },
         ).execute(item.groupId, item.app.packageName)
         return when (launch) {
             LaunchCloneAppResult.Started ->
@@ -450,9 +475,8 @@ internal class AndroidMainOperations(private val application: Application) : Mai
     }
 
     override suspend fun repairClone(item: GroupAppItem): RepairExecutionResult {
-        val sourceAvailable = runCatching { importer.listCloneableApps() }
-            .getOrDefault(emptyList())
-            .any { it.packageName == item.app.packageName }
+        val sourceAvailable = runCatching { importer.findCloneableApp(item.app.packageName) }
+            .getOrNull() != null
         val preview = RepairPreviewPolicy.preview(
             target = RepairTarget(
                 kind = RepairTargetKind.CLONE,
@@ -549,11 +573,19 @@ internal class AndroidMainOperations(private val application: Application) : Mai
     override suspend fun launchDeepLink(
         item: GroupAppItem,
         uri: String,
-    ): RuntimeLaunchResult = launchClone(item) { group, app ->
-        runtimeController.installAndLaunchIntent(
-            group,
-            app,
-            Intent(Intent.ACTION_VIEW, Uri.parse(uri)).addCategory(Intent.CATEGORY_BROWSABLE),
+    ): RuntimeLaunchResult {
+        val intent = Intent(Intent.ACTION_VIEW, Uri.parse(uri))
+            .addCategory(Intent.CATEGORY_BROWSABLE)
+        return launchClone(
+            item,
+            pureRuntimeLaunch = { group, app ->
+                runtimeController.installAndLaunchIntent(
+                    group, app, intent, allowPackageRepair = false,
+                )
+            },
+            runtimeLaunch = { group, app ->
+                runtimeController.installAndLaunchIntent(group, app, intent)
+            },
         )
     }
 
@@ -590,14 +622,12 @@ internal class AndroidMainOperations(private val application: Application) : Mai
     ): GmsLifecycleResult = gms.reset(groupId, reenable)
 
     private fun prepareCloneSource(packageName: String): CloneSourcePreparationResult {
-        val sourceInstalled = runCatching { importer.listCloneableApps() }
-            .getOrDefault(emptyList())
-            .any { it.packageName == packageName }
+        val sourceInstalled = runCatching { importer.findCloneableApp(packageName) }
+            .getOrNull() != null
         if (!sourceInstalled) return CloneSourcePreparationResult.SourceMissing
         return when (val sync = importer.sync(packageName)) {
-            is RevisionImportResult.Activated,
-            is RevisionImportResult.AlreadyCurrent,
-            -> CloneSourcePreparationResult.Ready
+            is RevisionImportResult.Activated -> CloneSourcePreparationResult.Ready
+            is RevisionImportResult.AlreadyCurrent -> CloneSourcePreparationResult.AlreadyCurrent
             is RevisionImportResult.Rejected ->
                 CloneSourcePreparationResult.Rejected(classifyPreparationRejection(sync.reason))
             is RevisionImportResult.Failed ->

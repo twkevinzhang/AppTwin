@@ -4,6 +4,7 @@ import android.app.Application
 import android.content.Context
 import android.content.pm.PackageInfo
 import android.os.Build
+import androidx.test.core.app.ActivityScenario
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import com.lody.virtual.client.ipc.VPackageManager
@@ -15,6 +16,7 @@ import java.util.Properties
 import kotlinx.coroutines.runBlocking
 import org.apptwin.AndroidMainOperations
 import org.apptwin.GroupAppItem
+import org.apptwin.MainActivity
 import org.apptwin.groups.FileGroupOperationJournal
 import org.apptwin.groups.FileGroupAppRemovalJournal
 import org.apptwin.groups.FileGroupStore
@@ -48,34 +50,55 @@ class RuntimeRevisionUpdateE2eTest {
         assertEquals(1L, hostVersionCode())
         val store = FileGroupStore(context)
         val initial = store.loadSnapshot()
-        assertTrue("phaseOne requires clean AppTwin group metadata", initial.groups.isEmpty())
         assertTrue("phaseOne requires readable AppTwin group metadata", initial.issues.isEmpty())
         assertTrue("phaseOne state marker must not already exist", !stateFile().exists())
 
-        val importer = AndroidPackageRevisionImporter(context)
-        val imported = importer.sync(FIXTURE_PACKAGE)
-        assertActivated(imported, expectedVersionCode = 1L)
+        var createdGroupId: String? = null
+        var phaseCompleted = false
+        try {
+            val importer = AndroidPackageRevisionImporter(context)
+            val imported = importer.sync(FIXTURE_PACKAGE)
+            assertActivated(imported, expectedVersionCode = 1L)
 
-        val controller = VirtualRuntimeController(context)
-        val group = GroupLifecycleCoordinator(
-            store = store,
-            runtime = controller,
-            journal = FileGroupOperationJournal(context),
-        ).createGroup(GROUP_NAME)
-        val groupWithApp = requireNotNull(
-            store.addApp(group.id, FIXTURE_PACKAGE, System.currentTimeMillis()),
-        )
-        val groupApp = requireNotNull(
-            groupWithApp.apps.singleOrNull { it.packageName == FIXTURE_PACKAGE },
-        )
+            val controller = VirtualRuntimeController(context)
+            val group = GroupLifecycleCoordinator(
+                store = store,
+                runtime = controller,
+                journal = FileGroupOperationJournal(context),
+            ).createGroup(GROUP_NAME)
+            createdGroupId = group.id
+            val groupWithApp = requireNotNull(
+                store.addApp(group.id, FIXTURE_PACKAGE, System.currentTimeMillis()),
+            )
+            val groupApp = requireNotNull(
+                groupWithApp.apps.singleOrNull { it.packageName == FIXTURE_PACKAGE },
+            )
 
-        assertStarted(controller.installAndLaunch(groupWithApp, groupApp))
-        val environmentId = requireNotNull(groupWithApp.environmentBinding).internalId
-        assertEquals(1L, virtualVersionCode(environmentId))
-        awaitGuestFile(environmentId, LAUNCH_COUNT_FILE, expected = "1")
-        awaitGuestFile(environmentId, SENTINEL_FILE, expected = "created-by-revision=1")
+            ActivityScenario.launch(MainActivity::class.java).use { scenario ->
+                scenario.onActivity(mainActivityLaunchHosts::onResumed)
+                assertStarted(controller.installAndLaunch(groupWithApp, groupApp))
+            }
+            val environmentId = requireNotNull(groupWithApp.environmentBinding).internalId
+            assertEquals(1L, virtualVersionCode(environmentId))
+            awaitGuestFile(environmentId, LAUNCH_COUNT_FILE, expected = "1")
+            awaitGuestFile(environmentId, SENTINEL_FILE, expected = "created-by-revision=1")
 
-        writeState(groupWithApp.id, environmentId)
+            writeState(groupWithApp.id, environmentId)
+            phaseCompleted = true
+        } finally {
+            if (!phaseCompleted) {
+                createdGroupId?.let { groupId ->
+                    runCatching {
+                        runBlocking {
+                            AndroidMainOperations(
+                                context.applicationContext as Application,
+                            ).deleteGroup(groupId)
+                        }
+                    }
+                }
+                stateFile().delete()
+            }
+        }
     }
 
     @Test
@@ -84,53 +107,99 @@ class RuntimeRevisionUpdateE2eTest {
         assertEquals(2L, hostVersionCode())
         val previous = readState()
         val store = FileGroupStore(context)
-        val beforeUpdate = requireNotNull(store.find(previous.groupId))
-        assertEquals(previous.environmentId, requireNotNull(beforeUpdate.environmentBinding).internalId)
-        assertTrue(beforeUpdate.contains(FIXTURE_PACKAGE))
-        awaitGuestFile(previous.environmentId, LAUNCH_COUNT_FILE, expected = "1")
-        awaitGuestFile(previous.environmentId, SENTINEL_FILE, expected = "created-by-revision=1")
-
-        val group = requireNotNull(store.find(previous.groupId))
-        assertEquals(previous.environmentId, requireNotNull(group.environmentBinding).internalId)
-        val groupApp = requireNotNull(group.apps.singleOrNull { it.packageName == FIXTURE_PACKAGE })
-        val launch = runBlocking {
-            AndroidMainOperations(context.applicationContext as Application).launchGroupApp(
-                GroupAppItem(
-                    groupId = group.id,
-                    groupName = group.name,
-                    groupHealth = group.health,
-                    app = groupApp,
-                    appLabel = "AppTwin Runtime Fixture",
-                    versionName = "fixture-2",
-                    sourceInstalled = true,
-                    launchStatus = "",
-                ),
+        val operations = AndroidMainOperations(context.applicationContext as Application)
+        var cleanupResult: Any? = null
+        try {
+            val beforeUpdate = requireNotNull(store.find(previous.groupId))
+            assertEquals(
+                previous.environmentId,
+                requireNotNull(beforeUpdate.environmentBinding).internalId,
             )
+            assertTrue(beforeUpdate.contains(FIXTURE_PACKAGE))
+            awaitGuestFile(previous.environmentId, LAUNCH_COUNT_FILE, expected = "1")
+            awaitGuestFile(
+                previous.environmentId,
+                SENTINEL_FILE,
+                expected = "created-by-revision=1",
+            )
+
+            val group = requireNotNull(store.find(previous.groupId))
+            assertEquals(
+                previous.environmentId,
+                requireNotNull(group.environmentBinding).internalId,
+            )
+            val groupApp = requireNotNull(
+                group.apps.singleOrNull { it.packageName == FIXTURE_PACKAGE },
+            )
+            val launch = ActivityScenario.launch(MainActivity::class.java).use { scenario ->
+                scenario.onActivity(mainActivityLaunchHosts::onResumed)
+                runBlocking {
+                    operations.launchGroupApp(
+                        GroupAppItem(
+                            groupId = group.id,
+                            groupName = group.name,
+                            groupHealth = group.health,
+                            app = groupApp,
+                            appLabel = "AppTwin Runtime Fixture",
+                            versionName = "fixture-2",
+                            sourceInstalled = true,
+                            launchStatus = "",
+                        ),
+                    )
+                }
+            }
+            assertStarted(launch)
+            assertEquals(
+                2L,
+                AndroidPackageRevisionImporter(context).active(FIXTURE_PACKAGE)?.versionCode,
+            )
+
+            val afterUpdate = requireNotNull(store.find(previous.groupId))
+            assertEquals(
+                previous.environmentId,
+                requireNotNull(afterUpdate.environmentBinding).internalId,
+            )
+            assertEquals(2L, virtualVersionCode(previous.environmentId))
+            awaitGuestFile(previous.environmentId, LAUNCH_COUNT_FILE, expected = "2")
+            awaitGuestFile(
+                previous.environmentId,
+                SENTINEL_FILE,
+                expected = "created-by-revision=1",
+            )
+
+            val privateDirectories = listOf(
+                VEnvironment.getDataUserPackageDirectory(previous.environmentId, FIXTURE_PACKAGE),
+                VEnvironment.getDeDataUserPackageDirectory(previous.environmentId, FIXTURE_PACKAGE),
+                VEnvironment.getVirtualPrivateStorageDir(previous.environmentId, FIXTURE_PACKAGE),
+            )
+            val removal = GroupAppRemovalCoordinator(
+                store = store,
+                runtime = VirtualRuntimeController(context),
+                journal = FileGroupAppRemovalJournal(context),
+            ).remove(previous.groupId, FIXTURE_PACKAGE)
+            assertTrue(removal is GroupAppRemovalResult.Succeeded)
+            assertTrue(requireNotNull(store.find(previous.groupId)).apps.isEmpty())
+            privateDirectories.forEach { directory ->
+                assertTrue(
+                    "guest private directory must be deleted: $directory",
+                    !directory.exists(),
+                )
+            }
+        } finally {
+            cleanupResult = runCatching {
+                runBlocking { operations.deleteGroup(previous.groupId) }
+            }.getOrNull()
+            stateFile().delete()
         }
-        assertStarted(launch)
-        assertEquals(2L, AndroidPackageRevisionImporter(context).active(FIXTURE_PACKAGE)?.versionCode)
-
-        val afterUpdate = requireNotNull(store.find(previous.groupId))
-        assertEquals(previous.environmentId, requireNotNull(afterUpdate.environmentBinding).internalId)
-        assertEquals(2L, virtualVersionCode(previous.environmentId))
-        awaitGuestFile(previous.environmentId, LAUNCH_COUNT_FILE, expected = "2")
-        awaitGuestFile(previous.environmentId, SENTINEL_FILE, expected = "created-by-revision=1")
-
-        val privateDirectories = listOf(
-            VEnvironment.getDataUserPackageDirectory(previous.environmentId, FIXTURE_PACKAGE),
-            VEnvironment.getDeDataUserPackageDirectory(previous.environmentId, FIXTURE_PACKAGE),
-            VEnvironment.getVirtualPrivateStorageDir(previous.environmentId, FIXTURE_PACKAGE),
+        assertNotNull(
+            "revision E2E Group cleanup must succeed",
+            cleanupResult,
         )
-        val removal = GroupAppRemovalCoordinator(
-            store = store,
-            runtime = VirtualRuntimeController(context),
-            journal = FileGroupAppRemovalJournal(context),
-        ).remove(previous.groupId, FIXTURE_PACKAGE)
-        assertTrue(removal is GroupAppRemovalResult.Succeeded)
-        assertTrue(requireNotNull(store.find(previous.groupId)).apps.isEmpty())
-        privateDirectories.forEach { directory ->
-            assertTrue("guest private directory must be deleted: $directory", !directory.exists())
-        }
+        assertTrue(
+            "revision E2E Group must be absent after cleanup",
+            store.find(previous.groupId) == null,
+        )
+        assertTrue("revision E2E state marker must be absent after cleanup", !stateFile().exists())
     }
 
     private fun assertActivated(result: RevisionImportResult, expectedVersionCode: Long) {
