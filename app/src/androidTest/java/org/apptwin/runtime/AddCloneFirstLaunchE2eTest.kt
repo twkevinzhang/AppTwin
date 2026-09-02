@@ -9,6 +9,7 @@ import androidx.test.platform.app.InstrumentationRegistry
 import com.lody.virtual.client.ipc.VActivityManager
 import com.lody.virtual.os.VEnvironment
 import java.io.File
+import java.io.FileInputStream
 import kotlinx.coroutines.runBlocking
 import org.apptwin.AndroidMainOperations
 import org.apptwin.GroupAppItem
@@ -88,6 +89,39 @@ class AddCloneFirstLaunchE2eTest {
 
                 awaitGuestLaunchCount(added.environmentId(), expected = "1")
                 awaitExactCloneInForeground(added.environmentId())
+                executeShellCommand("logcat -c")
+
+                scenario.onActivity(mainActivityLaunchHosts::onResumed)
+                val relaunched = operations.launchGroupApp(added.fixtureItem())
+                assertTrue(
+                    "expected verified fixture clone to relaunch but was $relaunched",
+                    relaunched is RuntimeLaunchResult.Started,
+                )
+                // A foreground fixture task is reused rather than recreated, so its onCreate
+                // counter remains one.
+                awaitGuestLaunchCount(added.environmentId(), expected = "1")
+                awaitExactCloneInForeground(added.environmentId())
+
+                scenario.onActivity(mainActivityLaunchHosts::onResumed)
+                val sessionRelaunched = operations.launchGroupApp(added.fixtureItem())
+                assertTrue(
+                    "expected stable daemon session to relaunch fixture but was $sessionRelaunched",
+                    sessionRelaunched is RuntimeLaunchResult.Started,
+                )
+                awaitGuestLaunchCount(added.environmentId(), expected = "1")
+                awaitExactCloneInForeground(added.environmentId())
+
+                val runtimeLog = executeShellCommand(
+                    "logcat -d -v brief -s AppTwinRuntime:I '*:S'",
+                )
+                assertTrue(
+                    "verified revision marker fast path was not observed:\n$runtimeLog",
+                    runtimeLog.contains("package-revision-fast-path package=$FIXTURE_PACKAGE"),
+                )
+                assertTrue(
+                    "stable daemon session fast path was not observed:\n$runtimeLog",
+                    runtimeLog.contains("daemon-launch-fast-path"),
+                )
             }
 
             val persisted = requireNotNull(groupStore.find(group.id))
@@ -177,6 +211,15 @@ class AddCloneFirstLaunchE2eTest {
     private fun isFixtureInstalled(): Boolean = runCatching {
         context.packageManager.getPackageInfo(FIXTURE_PACKAGE, 0)
     }.isSuccess
+
+    private fun executeShellCommand(command: String): String {
+        val descriptor = instrumentation.uiAutomation.executeShellCommand(command)
+        return try {
+            FileInputStream(descriptor.fileDescriptor).bufferedReader().use { it.readText() }
+        } finally {
+            descriptor.close()
+        }
+    }
 
     private companion object {
         const val OPT_IN_ARGUMENT = "addCloneFirstLaunchE2e"
