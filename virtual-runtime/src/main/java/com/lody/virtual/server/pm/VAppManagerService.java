@@ -35,6 +35,7 @@ import java.io.File;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
@@ -657,6 +658,15 @@ public class VAppManagerService extends IAppManager.Stub {
             res.isUpdate = true;
             installedStateBeforeUpdate = PackageInstalledStateSnapshot.capture(
                     VUserManagerService.get().getUserIds(), installedStateAccessor(existSetting));
+            try {
+                // Make the old marker durably unusable before any shared code is replaced.
+                existSetting.invalidateVerifiedRevision();
+                mPersistenceLayer.saveOrThrow();
+            } catch (IOException invalidationFailure) {
+                return InstallResult.makeFailure(
+                        "Unable to invalidate package revision: "
+                                + invalidationFailure.getMessage());
+            }
         }
         File appDir = VEnvironment.getDataAppPackageDirectory(pkg.packageName);
         File libDir = new File(appDir, "lib");
@@ -759,6 +769,7 @@ public class VAppManagerService extends IAppManager.Stub {
             ps = existSetting;
         } else {
             ps = new PackageSetting();
+            ps.packageRevisionGeneration = 1;
         }
         ps.dependSystem = dependSystem;
         ps.apkPath = packageFile.getPath();
@@ -948,6 +959,13 @@ public class VAppManagerService extends IAppManager.Stub {
         com.lody.virtual.server.VirtualUserAccessPolicy.enforceHost();
         PackageSetting ps = PackageCacheManager.getSetting(packageName);
         if (ps != null) {
+            try {
+                ps.invalidateVerifiedRevision();
+                mPersistenceLayer.saveOrThrow();
+            } catch (IOException invalidationFailure) {
+                VLog.e(TAG, "Unable to invalidate package revision before uninstall");
+                return false;
+            }
             return uninstallPackageFully(ps);
         }
         return false;
@@ -1075,6 +1093,15 @@ public class VAppManagerService extends IAppManager.Stub {
             VActivityManagerService.LinePushPackageStateMutation lineMutation =
                     activityManager.beginLinePushPackageStateMutation(packageName, userId);
             try {
+            if (ps.isInstalled(userId)) {
+                try {
+                    ps.invalidateVerifiedRevision();
+                    mPersistenceLayer.saveOrThrow();
+                } catch (IOException invalidationFailure) {
+                    VLog.e(TAG, "Unable to invalidate package revision before user uninstall");
+                    return false;
+                }
+            }
             if (com.lody.virtual.server.pm.parser.TrustedSignatureOverridePolicy
                     .isTrustedPackage(packageName)) {
                 try {
@@ -1406,6 +1433,161 @@ public class VAppManagerService extends IAppManager.Stub {
             return false;
         }
         return setting.isInstalled(userId);
+    }
+
+    @Override
+    public synchronized long getPackageRevisionGeneration(String packageName) {
+        com.lody.virtual.server.VirtualUserAccessPolicy.enforceHost();
+        PackageSetting setting = PackageCacheManager.getSetting(packageName);
+        return setting == null ? -1 : setting.packageRevisionGeneration;
+    }
+
+    @Override
+    public synchronized boolean isPackageRevisionVerified(
+            String packageName, String revisionId, String baseSha256,
+            String[] splitNames, String[] splitSha256) {
+        com.lody.virtual.server.VirtualUserAccessPolicy.enforceHost();
+        PackageSetting setting = PackageCacheManager.getSetting(packageName);
+        VPackage pkg = PackageCacheManager.get(packageName);
+        return setting != null
+                && pkg != null
+                && TextUtils.equals(revisionId, setting.verifiedRevisionId)
+                && TextUtils.equals(baseSha256, setting.verifiedBaseSha256)
+                && PackageRevisionFileFacts.sameSplitIdentity(
+                        splitNames, splitSha256,
+                        setting.verifiedSplitNames, setting.verifiedSplitSha256)
+                && verifiedPackageStatsMatch(pkg, setting);
+    }
+
+    @Override
+    public synchronized boolean isPackageRevisionReadyForUser(
+            String packageName, int userId, String revisionId, String baseSha256,
+            String[] splitNames, String[] splitSha256) {
+        com.lody.virtual.server.VirtualUserAccessPolicy.enforceHost();
+        if (!VUserManagerService.get().exists(userId)) return false;
+        PackageSetting setting = PackageCacheManager.getSetting(packageName);
+        VPackage pkg = PackageCacheManager.get(packageName);
+        return setting != null
+                && pkg != null
+                && setting.isInstalled(userId)
+                && TextUtils.equals(revisionId, setting.verifiedRevisionId)
+                && TextUtils.equals(baseSha256, setting.verifiedBaseSha256)
+                && PackageRevisionFileFacts.sameSplitIdentity(
+                        splitNames, splitSha256,
+                        setting.verifiedSplitNames, setting.verifiedSplitSha256)
+                && verifiedPackageStatsMatch(pkg, setting);
+    }
+
+    @Override
+    public synchronized boolean recordVerifiedPackageRevision(
+            String packageName, String revisionId, long expectedGeneration, String baseSha256,
+            String[] splitNames, String[] splitSha256) {
+        com.lody.virtual.server.VirtualUserAccessPolicy.enforceHost();
+        PackageSetting setting = PackageCacheManager.getSetting(packageName);
+        VPackage pkg = PackageCacheManager.get(packageName);
+        if (setting == null || pkg == null
+                || setting.packageRevisionGeneration != expectedGeneration
+                || TextUtils.isEmpty(revisionId) || TextUtils.isEmpty(baseSha256)
+                || splitNames == null || splitSha256 == null
+                || splitNames.length != splitSha256.length
+                || !validSplitInputs(pkg, setting, splitNames, splitSha256)) {
+            return false;
+        }
+        File base = new File(setting.apkPath);
+        if (!base.isFile()) return false;
+        String[] paths = splitPathsForNames(pkg, setting, splitNames);
+        if (paths == null) return false;
+        long[] sizes = new long[paths.length];
+        long[] modified = new long[paths.length];
+        for (int i = 0; i < paths.length; i++) {
+            File split = new File(paths[i]);
+            if (!split.isFile()) return false;
+            sizes[i] = split.length();
+            modified[i] = split.lastModified();
+        }
+        setting.verifiedRevisionId = revisionId;
+        setting.verifiedBaseSha256 = baseSha256;
+        setting.verifiedBasePath = base.getAbsolutePath();
+        setting.verifiedBaseSize = base.length();
+        setting.verifiedBaseLastModified = base.lastModified();
+        setting.verifiedSplitNames = splitNames.clone();
+        setting.verifiedSplitSha256 = splitSha256.clone();
+        setting.verifiedSplitPaths = paths;
+        setting.verifiedSplitSizes = sizes;
+        setting.verifiedSplitLastModified = modified;
+        try {
+            mPersistenceLayer.saveOrThrow();
+            return true;
+        } catch (IOException commitFailure) {
+            setting.clearVerifiedRevision();
+            return false;
+        }
+    }
+
+    private static boolean validSplitInputs(
+            VPackage pkg, PackageSetting setting, String[] names, String[] digests) {
+        String[] packageNames = pkg.splitNames == null ? new String[0] : pkg.splitNames.clone();
+        Arrays.sort(packageNames);
+        if (!Arrays.equals(packageNames, names)) return false;
+        for (int i = 0; i < names.length; i++) {
+            if (TextUtils.isEmpty(names[i]) || TextUtils.isEmpty(digests[i])) return false;
+            if (i > 0 && names[i - 1].compareTo(names[i]) >= 0) return false;
+        }
+        return setting.splitCodePaths != null || names.length == 0;
+    }
+
+    private static String[] splitPathsForNames(
+            VPackage pkg, PackageSetting setting, String[] sortedNames) {
+        String[] packageNames = pkg.splitNames == null ? new String[0] : pkg.splitNames;
+        String[] packagePaths = setting.splitCodePaths == null
+                ? new String[0] : setting.splitCodePaths;
+        if (packageNames.length != packagePaths.length || packageNames.length != sortedNames.length) {
+            return null;
+        }
+        String[] sortedPaths = new String[sortedNames.length];
+        for (int i = 0; i < sortedNames.length; i++) {
+            for (int j = 0; j < packageNames.length; j++) {
+                if (TextUtils.equals(sortedNames[i], packageNames[j])) {
+                    sortedPaths[i] = packagePaths[j];
+                    break;
+                }
+            }
+            if (sortedPaths[i] == null) return null;
+        }
+        return sortedPaths;
+    }
+
+    private static boolean verifiedPackageStatsMatch(VPackage pkg, PackageSetting setting) {
+        if (TextUtils.isEmpty(setting.verifiedRevisionId)
+                || TextUtils.isEmpty(setting.verifiedBasePath)
+                || !TextUtils.equals(new File(setting.apkPath).getAbsolutePath(),
+                        setting.verifiedBasePath)) {
+            return false;
+        }
+        File base = new File(setting.verifiedBasePath);
+        if (!PackageRevisionFileFacts.matches(
+                setting.verifiedBasePath, setting.verifiedBaseSize,
+                setting.verifiedBaseLastModified, base)) {
+            return false;
+        }
+        String[] names = setting.verifiedSplitNames;
+        String[] paths = setting.verifiedSplitPaths;
+        long[] sizes = setting.verifiedSplitSizes;
+        long[] modified = setting.verifiedSplitLastModified;
+        if (names == null || paths == null || sizes == null || modified == null
+                || names.length != paths.length || names.length != sizes.length
+                || names.length != modified.length) {
+            return false;
+        }
+        String[] currentPaths = splitPathsForNames(pkg, setting, names);
+        if (!Arrays.equals(paths, currentPaths)) return false;
+        for (int i = 0; i < paths.length; i++) {
+            File split = new File(paths[i]);
+            if (!PackageRevisionFileFacts.matches(paths[i], sizes[i], modified[i], split)) {
+                return false;
+            }
+        }
+        return true;
     }
 
     private void notifyAppInstalled(PackageSetting setting, int userId) {

@@ -720,6 +720,48 @@ public final class VirtualCore {
         }
     }
 
+    public long getPackageRevisionGeneration(String packageName) {
+        try {
+            return getService().getPackageRevisionGeneration(packageName);
+        } catch (RemoteException e) {
+            return VirtualRuntime.crash(e);
+        }
+    }
+
+    public boolean isPackageRevisionVerified(String packageName, String revisionId,
+                                             String baseSha256, String[] splitNames,
+                                             String[] splitSha256) {
+        try {
+            return getService().isPackageRevisionVerified(
+                    packageName, revisionId, baseSha256, splitNames, splitSha256);
+        } catch (RemoteException e) {
+            return VirtualRuntime.crash(e);
+        }
+    }
+
+    public boolean isPackageRevisionReadyForUser(String packageName, int userId,
+                                                 String revisionId, String baseSha256,
+                                                 String[] splitNames, String[] splitSha256) {
+        try {
+            return getService().isPackageRevisionReadyForUser(
+                    packageName, userId, revisionId, baseSha256, splitNames, splitSha256);
+        } catch (RemoteException e) {
+            return VirtualRuntime.crash(e);
+        }
+    }
+
+    public boolean recordVerifiedPackageRevision(String packageName, String revisionId,
+                                                 long expectedGeneration, String baseSha256,
+                                                 String[] splitNames, String[] splitSha256) {
+        try {
+            return getService().recordVerifiedPackageRevision(
+                    packageName, revisionId, expectedGeneration, baseSha256,
+                    splitNames, splitSha256);
+        } catch (RemoteException e) {
+            return VirtualRuntime.crash(e);
+        }
+    }
+
     public int getInstalledAppCount() {
         try {
             return getService().getInstalledAppCount();

@@ -20,7 +20,7 @@ import java.util.Arrays;
 class PackagePersistenceLayer extends PersistenceLayer {
 
     private static final char[] MAGIC = {'v', 'p', 'k', 'g'};
-    private static final int CURRENT_VERSION = 4;
+    private static final int CURRENT_VERSION = 5;
     private int mReadingVersion = CURRENT_VERSION;
 
     private VAppManagerService mService;
@@ -104,20 +104,25 @@ class PackagePersistenceLayer extends PersistenceLayer {
     public void readPersistenceData(Parcel p) {
         int count = p.readInt();
         while (count-- > 0) {
-            PackageSetting setting = new PackageSetting(p, mReadingVersion >= 4);
+            PackageSetting setting = new PackageSetting(
+                    p, mReadingVersion >= 4, mReadingVersion >= 5);
             mService.loadPackage(setting);
         }
     }
 
     @Override
     public boolean onVersionConflict(int fileVersion, int currentVersion) {
-        // Version 3 has no trusted provenance. It is safe for ordinary packages, while the load
-        // path rejects legacy com.google.android.gms state that could contain an arbitrary spoof.
-        if (fileVersion == 3 && currentVersion == CURRENT_VERSION) {
+        // Versions before 5 have no verified revision marker. Loading them with an absent marker
+        // deliberately forces one full digest verification before the launch fast path is used.
+        if (isVersionMigrationSupported(fileVersion, currentVersion)) {
             mReadingVersion = fileVersion;
             return true;
         }
         return false;
+    }
+
+    static boolean isVersionMigrationSupported(int fileVersion, int currentVersion) {
+        return (fileVersion == 3 || fileVersion == 4) && currentVersion == CURRENT_VERSION;
     }
 
     @Override
