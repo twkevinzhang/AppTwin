@@ -46,6 +46,8 @@ enum class MainDestination { HOME, SETTINGS }
 
 enum class GmsBusyAction { ENABLE, DISABLE, RESET }
 
+private const val SOURCE_SYNC_PENDING = "正在同步"
+
 data class AppItem(
     val entry: InstalledAppEntry,
     val isSynced: Boolean,
@@ -68,6 +70,8 @@ data class GroupAppItem(
     val microphoneGranted: Boolean = false,
 ) {
     val launchKey: String = GroupAppLaunchContract.launchKey(groupId, app.packageName)
+    val canAttemptLaunch: Boolean
+        get() = sourceInstalled || launchStatus == SOURCE_SYNC_PENDING
 }
 
 data class GroupItem(
@@ -240,6 +244,7 @@ class MainViewModel internal constructor(
     private val onboardingStore: OnboardingStore = CompletedOnboardingStore,
     private val archiveExportSettingsStore: ArchiveExportSettingsStore =
         DefaultArchiveExportSettingsStore,
+    private val launchDispatcher: CoroutineDispatcher = ioDispatcher,
 ) : AndroidViewModel(application) {
     @OptIn(ExperimentalCoroutinesApi::class)
     constructor(application: Application, savedStateHandle: SavedStateHandle) : this(
@@ -247,6 +252,7 @@ class MainViewModel internal constructor(
         savedStateHandle = savedStateHandle,
         operations = AndroidMainOperations(application),
         ioDispatcher = Dispatchers.IO.limitedParallelism(1),
+        launchDispatcher = Dispatchers.IO.limitedParallelism(1),
         onboardingStore = AndroidOnboardingStore(application),
         archiveExportSettingsStore = SharedPreferencesArchiveExportSettingsStore(application),
     )
@@ -256,6 +262,8 @@ class MainViewModel internal constructor(
     private var resolvedDeepLinkIdentities: Set<Pair<String, String>>? = null
     private var refreshGeneration = 0L
     private var pickerRequestGeneration = 0L
+    private var launchBlockedByRecovery = true
+    private var recoveryInProgress = false
     private val appLaunchMutex = Mutex()
 
     var uiState by mutableStateOf(
@@ -328,6 +336,10 @@ class MainViewModel internal constructor(
     }
 
     fun refresh() {
+        if (launchBlockedByRecovery) {
+            reconcileAndRefresh()
+            return
+        }
         val generation = ++refreshGeneration
         uiState = uiState.copy(isRefreshing = true)
         viewModelScope.launch {
@@ -352,6 +364,7 @@ class MainViewModel internal constructor(
     }
 
     private suspend fun applyFullRefresh(generation: Long, groups: MainGroupSnapshot) {
+        if (generation != refreshGeneration) return
         val snapshot = runCatching {
             withContext(ioDispatcher) { operations.refreshSnapshot(groups) }
         }.getOrElse { error ->
@@ -487,7 +500,7 @@ class MainViewModel internal constructor(
                     launchStatus = if (enrichmentComplete) {
                         launchStatus(source?.versionCode)
                     } else {
-                        "正在同步"
+                        SOURCE_SYNC_PENDING
                     },
                     lifecycle = cloneStates.getValue(app.packageName).lifecycle,
                     cameraGranted = permissions["${group.id}:${app.packageName}"]?.cameraGranted == true,
@@ -691,12 +704,14 @@ class MainViewModel internal constructor(
                 )
                 uiState = uiState.copy(launchingAppKey = item.launchKey)
                 val launchResult = runCatching {
-                    withContext(ioDispatcher) { operations.launchGroupApp(item) }
+                    withContext(launchDispatcher) { operations.launchGroupApp(item) }
                 }.getOrElse { error -> RuntimeLaunchResult.Failed(error.userMessage(), error) }
                 clearMatchingPendingLaunch(groupId, app.entry.packageName)
                 when (launchResult) {
                     is RuntimeLaunchResult.Started ->
                         showMessage("已將 ${app.entry.label} 加入「${group.name}」並啟動")
+                    RuntimeLaunchResult.PackageRepairRequired ->
+                        showMessage("分身套件需要重新同步，請稍後重試")
                     is RuntimeLaunchResult.Failed -> showMessage(
                         "已將 ${app.entry.label} 加入「${group.name}」，但自動啟動失敗：" +
                             "${launchResult.reason}；分身已保留，可稍後重試",
@@ -718,14 +733,7 @@ class MainViewModel internal constructor(
     }
 
     private fun tryLaunchGroupApp(item: GroupAppItem): LaunchAttempt {
-        if (
-            uiState.launchingAppKey != null ||
-            uiState.uninstallingAppKey != null ||
-            uiState.clearingStorageAppKey != null ||
-            uiState.clearingStorageGroupId != null ||
-            uiState.busyPackageName != null ||
-            uiState.gmsBusyGroupId == item.groupId
-        ) return LaunchAttempt.BUSY
+        if (isLaunchBlocked(item.groupId)) return LaunchAttempt.BUSY
         if (item.groupHealth != GroupHealth.HEALTHY) {
             showMessage(
                 if (item.groupHealth == GroupHealth.DAMAGED) {
@@ -736,20 +744,25 @@ class MainViewModel internal constructor(
             )
             return LaunchAttempt.REJECTED
         }
-        if (!item.sourceInstalled) {
+        if (!item.canAttemptLaunch) {
             showMessage("來源 App 已移除，暫時無法啟動")
             return LaunchAttempt.REJECTED
         }
         if (!appLaunchMutex.tryLock()) return LaunchAttempt.BUSY
+        // A launch owns the foreground path. Older enrichment may keep running on its
+        // background lane, but its snapshot must not overwrite state after launch begins.
+        refreshGeneration += 1
         uiState = uiState.copy(launchingAppKey = item.launchKey)
         viewModelScope.launch {
             try {
                 val result = runCatching {
-                    withContext(ioDispatcher) { operations.launchGroupApp(item) }
+                    withContext(launchDispatcher) { operations.launchGroupApp(item) }
                 }.getOrElse { error -> RuntimeLaunchResult.Failed(error.userMessage(), error) }
                 when (result) {
                     is RuntimeLaunchResult.Started ->
                         showMessage("${item.appLabel} 已從「${item.groupName}」啟動")
+                    RuntimeLaunchResult.PackageRepairRequired ->
+                        showMessage("分身套件需要重新同步，請稍後重試")
                     is RuntimeLaunchResult.Failed -> showMessage("啟動失敗：${result.reason}")
                 }
             } finally {
@@ -987,15 +1000,27 @@ class MainViewModel internal constructor(
 
     fun launchDeepLink(item: GroupAppItem) {
         val uri = uiState.pendingDeepLink ?: return
+        if (isLaunchBlocked(item.groupId) || !item.sourceInstalled) return
+        if (!appLaunchMutex.tryLock()) return
         closeDeepLink()
+        refreshGeneration += 1
         uiState = uiState.copy(launchingAppKey = item.launchKey)
         viewModelScope.launch {
-            val result = runCatching {
-                withContext(ioDispatcher) { operations.launchDeepLink(item, uri) }
-            }.getOrElse { error -> RuntimeLaunchResult.Failed(error.userMessage(), error) }
-            uiState = uiState.copy(launchingAppKey = null)
-            if (result is RuntimeLaunchResult.Failed) {
-                showMessage("連結開啟失敗：${result.reason}")
+            try {
+                val result = runCatching {
+                    withContext(launchDispatcher) { operations.launchDeepLink(item, uri) }
+                }.getOrElse { error -> RuntimeLaunchResult.Failed(error.userMessage(), error) }
+                when (result) {
+                    is RuntimeLaunchResult.Started -> Unit
+                    RuntimeLaunchResult.PackageRepairRequired ->
+                        showMessage("分身套件需要重新同步，請稍後重試")
+                    is RuntimeLaunchResult.Failed ->
+                        showMessage("連結開啟失敗：${result.reason}")
+                }
+            } finally {
+                uiState = uiState.copy(launchingAppKey = null)
+                appLaunchMutex.unlock()
+                refresh()
             }
         }
     }
@@ -1015,10 +1040,9 @@ class MainViewModel internal constructor(
             pendingLaunch = PendingLaunch(groupId, packageName)
             return
         }
-        // The durable group index is published before installed-app enrichment finishes.
-        // Defer exact shortcut routing so that cold start cannot briefly mistake the source
-        // application for an uninstalled one and reject an otherwise healthy clone.
-        if (uiState.isRefreshing) {
+        // Recovery may mutate install state, so shortcuts wait for that bounded phase. Once
+        // it finishes, exact-package launch may proceed without waiting for enrichment.
+        if (launchBlockedByRecovery) {
             pendingLaunch = PendingLaunch(groupId, packageName)
             return
         }
@@ -1027,7 +1051,7 @@ class MainViewModel internal constructor(
             .firstOrNull { it.groupId == groupId && it.app.packageName == packageName }
         if (item != null) {
             if (item.lifecycle in setOf(CloneLifecycleState.READY, CloneLifecycleState.PREPARING)) {
-                launchGroupApp(item)
+                tryLaunchGroupApp(item)
             } else {
                 showUnavailableShortcutMessage(item)
             }
@@ -1041,7 +1065,11 @@ class MainViewModel internal constructor(
         val item = uiState.groups.asSequence()
             .flatMap { it.apps.asSequence() }
             .firstOrNull { it.app.packageName == packageName }
-        if (item != null) launchGroupApp(item) else pendingLaunch = PendingLaunch(null, packageName)
+        if (item != null && !launchBlockedByRecovery) {
+            tryLaunchGroupApp(item)
+        } else {
+            pendingLaunch = PendingLaunch(null, packageName)
+        }
     }
 
     fun consumeMessage(messageId: Long) {
@@ -1056,57 +1084,107 @@ class MainViewModel internal constructor(
     }
 
     private fun reconcileAndRefresh() {
+        if (recoveryInProgress) return
+        recoveryInProgress = true
         val generation = ++refreshGeneration
         uiState = uiState.copy(isRefreshing = true)
         viewModelScope.launch {
-            // Do not make the home screen wait for recovery work or GMS network reconciliation.
-            // The index is durable local metadata and is safe to present while enrichment continues.
-            loadAndPublishGroups(generation) ?: return@launch
-            val groupResult = withContext(ioDispatcher) {
-                runCatching { operations.reconcileGroups() }
-            }
-            val (appRemovalResult, applicationOperationResult) = withContext(ioDispatcher) {
-                runCatching { operations.reconcileAppRemovals() } to
-                    runCatching { operations.reconcileApplicationOperations() }
-            }
-            val notices = buildList {
-                groupResult.onSuccess { result ->
-                    if (result.loadIssues.isNotEmpty()) {
-                        add("偵測到 ${result.loadIssues.size} 筆群組資料無法讀取；原始資料已保留")
+            try {
+                // Do not make the home screen wait for recovery work or GMS network reconciliation.
+                // The index is durable local metadata and is safe to present while enrichment continues.
+                loadAndPublishGroups(generation) ?: return@launch
+                val groupResult = withContext(ioDispatcher) {
+                    runCatching { operations.reconcileGroups() }
+                }
+                val (appRemovalResult, applicationOperationResult) = withContext(ioDispatcher) {
+                    runCatching { operations.reconcileAppRemovals() } to
+                        runCatching { operations.reconcileApplicationOperations() }
+                }
+                val notices = buildList {
+                    groupResult.onSuccess { result ->
+                        if (result.loadIssues.isNotEmpty()) {
+                            add("偵測到 ${result.loadIssues.size} 筆群組資料無法讀取；原始資料已保留")
+                        }
+                    }.onFailure { error ->
+                        add("部分群組環境需要處理：${error.userMessage()}")
                     }
-                }.onFailure { error ->
-                    add("部分群組環境需要處理：${error.userMessage()}")
-                }
-                appRemovalResult.onFailure { error ->
-                    add("部分 App 解除安裝作業需要處理：${error.userMessage()}")
-                }
-                applicationOperationResult.onFailure { error ->
-                    add("部分分身空間作業需要處理：${error.userMessage()}")
-                }
-            }
-            if (notices.isNotEmpty()) appendMessage(notices.joinToString("\n"))
-            val refreshedGroups = loadAndPublishGroups(generation) ?: return@launch
-            applyFullRefresh(generation, refreshedGroups)
-            if (generation != refreshGeneration) return@launch
-            val gmsResult = withContext(ioDispatcher) { runCatching { operations.reconcileGms() } }
-            gmsResult.onFailure { error ->
-                appendMessage("Google 服務相容資料需要處理：${error.userMessage()}")
-            }.onSuccess { result ->
-                if (result.productStates.isNotEmpty()) {
-                    val updatedGroups = uiState.groups.map { group ->
-                        result.productStates[group.groupId]?.let { productState ->
-                            group.copy(gmsCompatibility = productState)
-                        } ?: group
+                    appRemovalResult.onFailure { error ->
+                        add("部分 App 解除安裝作業需要處理：${error.userMessage()}")
                     }
-                    updateAppPickerGroup(updatedGroups)
-                    uiState = uiState.copy(groups = updatedGroups)
+                    applicationOperationResult.onFailure { error ->
+                        add("部分分身空間作業需要處理：${error.userMessage()}")
+                    }
                 }
-                if (result.cloudMessagingRepairFailures.isNotEmpty()) {
-                    appendMessage("Google 背景通知服務需要重試")
+                if (notices.isNotEmpty()) appendMessage(notices.joinToString("\n"))
+                val refreshedGroups = loadAndPublishGroups(generation)
+                if (refreshedGroups != null) {
+                    // Reconciliation may change clone membership. Only expose the launch lane
+                    // after its post-recovery index has been loaded and published successfully.
+                    launchBlockedByRecovery = false
+                    resolvePendingLaunch(uiState.groups)
+                    applyFullRefresh(generation, refreshedGroups)
                 }
+                val gmsResult = withContext(ioDispatcher) { runCatching { operations.reconcileGms() } }
+                gmsResult.onFailure { error ->
+                    appendMessage("Google 服務相容資料需要處理：${error.userMessage()}")
+                }.onSuccess { result ->
+                    if (result.productStates.isNotEmpty()) {
+                        val updatedGroups = uiState.groups.map { group ->
+                            result.productStates[group.groupId]?.let { productState ->
+                                group.copy(gmsCompatibility = productState)
+                            } ?: group
+                        }
+                        updateAppPickerGroup(updatedGroups)
+                        uiState = uiState.copy(groups = updatedGroups)
+                    }
+                    if (result.cloudMessagingRepairFailures.isNotEmpty()) {
+                        appendMessage("Google 背景通知服務需要重試")
+                    }
+                }
+            } finally {
+                recoveryInProgress = false
             }
         }
     }
+
+    private fun resolvePendingLaunch(groupItems: List<GroupItem>) {
+        val target = pendingLaunch ?: return
+        val pending = groupItems.asSequence()
+            .flatMap { it.apps.asSequence() }
+            .firstOrNull { item ->
+                item.app.packageName == target.packageName &&
+                    (target.groupId == null || item.groupId == target.groupId)
+            }
+        when {
+            pending == null && target.groupId != null -> {
+                pendingLaunch = null
+                showMessage("此捷徑對應的分身已不存在；請從 AppTwin 重新建立捷徑")
+            }
+            pending != null &&
+                target.groupId != null &&
+                pending.lifecycle !in setOf(
+                    CloneLifecycleState.READY,
+                    CloneLifecycleState.PREPARING,
+                ) -> {
+                pendingLaunch = null
+                showUnavailableShortcutMessage(pending)
+            }
+            pending != null && tryLaunchGroupApp(pending) != LaunchAttempt.BUSY -> {
+                pendingLaunch = null
+            }
+        }
+    }
+
+    private fun isLaunchBlocked(groupId: String): Boolean =
+        launchBlockedByRecovery ||
+            uiState.launchingAppKey != null ||
+            uiState.uninstallingAppKey != null ||
+            uiState.repairingAppKey != null ||
+            uiState.clearingStorageAppKey != null ||
+            uiState.clearingStorageGroupId != null ||
+            uiState.busyGroupId != null ||
+            uiState.busyPackageName != null ||
+            uiState.gmsBusyGroupId == groupId
 
     private fun runGmsAction(
         groupId: String,
