@@ -35,6 +35,19 @@ data class ActiveRevisionSummary(
     val revisionId: String,
 )
 
+internal fun isCloneableAppEligible(
+    hostPackageName: String,
+    candidatePackageName: String,
+    packageExists: Boolean,
+    enabled: Boolean,
+    sourceReadable: () -> Boolean,
+    hasLauncherActivity: () -> Boolean,
+): Boolean = packageExists &&
+    candidatePackageName != hostPackageName &&
+    enabled &&
+    sourceReadable() &&
+    hasLauncherActivity()
+
 sealed interface RevisionImportResult {
     data class Activated(
         val summary: ActiveRevisionSummary,
@@ -62,22 +75,34 @@ class AndroidPackageRevisionImporter(context: Context) : ActiveRuntimeRevisionPr
 
     fun listCloneableApps(): List<InstalledAppEntry> = installedApplications()
         .asSequence()
-        .filterNot { it.packageName == appContext.packageName }
-        .filter { it.enabled && it.sourceDir != null }
-        .filter { packageManager.getLaunchIntentForPackage(it.packageName) != null }
-        .mapNotNull { applicationInfo ->
-            runCatching {
-                val info = packageInfo(applicationInfo.packageName)
-                InstalledAppEntry(
-                    label = packageManager.getApplicationLabel(applicationInfo).toString(),
-                    packageName = applicationInfo.packageName,
-                    versionName = info.versionName.orEmpty(),
-                    versionCode = info.longVersionCodeCompat(),
-                )
-            }.getOrNull()
-        }
+        .mapNotNull(::cloneableAppEntry)
         .sortedWith(compareBy(String.CASE_INSENSITIVE_ORDER, InstalledAppEntry::label))
         .toList()
+
+    /**
+     * Resolves one installed package without enumerating every application on the device.
+     *
+     * This uses the same eligibility checks as [listCloneableApps], so callers on the launch path
+     * do not trade correctness for avoiding the device-wide package scan.
+     */
+    fun findCloneableApp(packageName: String): InstalledAppEntry? {
+        if (packageName == appContext.packageName) return null
+        val applicationInfo = try {
+            applicationInfo(packageName)
+        } catch (_: PackageManager.NameNotFoundException) {
+            return null
+        }
+        return cloneableAppEntry(applicationInfo)
+    }
+
+    /** Cheap, read-only source gate for launch. A miss falls back to durable [sync]. */
+    fun isSourceCurrent(packageName: String): Boolean {
+        if (findCloneableApp(packageName) == null) return false
+        val source = runCatching { captureSource(packageName) }.getOrNull() ?: return false
+        val active = activeLookup.read(packageName) as? ActiveRevisionLookupResult.Found
+            ?: return false
+        return active.metadata.matches(source)
+    }
 
     fun active(packageName: String): ActiveRevisionSummary? = when (
         val result = activeLookup.read(packageName)
@@ -187,13 +212,17 @@ class AndroidPackageRevisionImporter(context: Context) : ActiveRuntimeRevisionPr
                 supportedAbis = discoverAbis(copied.allFiles),
             )
             val revisionId = revisionId(snapshot, before.lastUpdateTime)
+            writeMetadata(staging, revisionId, before, snapshot)
 
             if (current?.revisionId == revisionId) {
+                replaceVerifiedMetadata(
+                    activeDirectory = File(packageRoot, revisionId),
+                    verifiedMetadata = File(staging, METADATA),
+                )
                 staging.deleteRecursively()
                 return RevisionImportResult.AlreadyCurrent(current)
             }
 
-            writeMetadata(staging, revisionId, before, snapshot)
             markReadOnlyRecursively(staging)
 
             val destination = File(packageRoot, revisionId)
@@ -225,6 +254,43 @@ class AndroidPackageRevisionImporter(context: Context) : ActiveRuntimeRevisionPr
             @Suppress("DEPRECATION")
             packageManager.getInstalledApplications(0)
         }
+
+    private fun applicationInfo(packageName: String): ApplicationInfo =
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            packageManager.getApplicationInfo(
+                packageName,
+                PackageManager.ApplicationInfoFlags.of(0),
+            )
+        } else {
+            @Suppress("DEPRECATION")
+            packageManager.getApplicationInfo(packageName, 0)
+        }
+
+    private fun cloneableAppEntry(applicationInfo: ApplicationInfo): InstalledAppEntry? {
+        val source = applicationInfo.sourceDir?.let(::File)
+        if (!isCloneableAppEligible(
+                hostPackageName = appContext.packageName,
+                candidatePackageName = applicationInfo.packageName,
+                packageExists = true,
+                enabled = applicationInfo.enabled,
+                sourceReadable = { source?.isFile == true && source.canRead() },
+                hasLauncherActivity = {
+                    packageManager.getLaunchIntentForPackage(applicationInfo.packageName) != null
+                },
+            )
+        ) {
+            return null
+        }
+        return runCatching {
+            val info = packageInfo(applicationInfo.packageName)
+            InstalledAppEntry(
+                label = packageManager.getApplicationLabel(applicationInfo).toString(),
+                packageName = applicationInfo.packageName,
+                versionName = info.versionName.orEmpty(),
+                versionCode = info.longVersionCodeCompat(),
+            )
+        }.getOrNull()
+    }
 
     private fun captureSource(packageName: String): SourcePackage {
         val info = packageInfo(packageName)
@@ -339,6 +405,8 @@ class AndroidPackageRevisionImporter(context: Context) : ActiveRuntimeRevisionPr
             setProperty("versionCode", source.versionCode.toString())
             setProperty("lastUpdateTime", source.lastUpdateTime.toString())
             setProperty("baseSourcePath", source.base.absolutePath)
+            setProperty("baseSourceSize", source.base.length().toString())
+            setProperty("baseSourceMtime", source.base.lastModified().toString())
             setProperty(
                 "splitSourcePaths",
                 source.splits.joinToString(",") { "${it.name}=${it.file.absolutePath}" },
@@ -352,6 +420,11 @@ class AndroidPackageRevisionImporter(context: Context) : ActiveRuntimeRevisionPr
                 setProperty("split.$index.name", split.splitName)
                 setProperty("split.$index.sha256", split.artifact.sha256)
                 setProperty("split.$index.size", split.artifact.sizeBytes.toString())
+            }
+            source.splits.sortedBy(SourceSplit::name).forEachIndexed { index, split ->
+                setProperty("split.$index.sourcePath", split.file.absolutePath)
+                setProperty("split.$index.sourceSize", split.file.length().toString())
+                setProperty("split.$index.sourceMtime", split.file.lastModified().toString())
             }
             setProperty("supportedAbis", snapshot.supportedAbis.sorted().joinToString(","))
         }
@@ -375,6 +448,26 @@ class AndroidPackageRevisionImporter(context: Context) : ActiveRuntimeRevisionPr
         )
     }
 
+    /**
+     * A legacy revision can be content-identical while lacking the cheap source stat marker.
+     * Only a just-completed full copy+digest is allowed to upgrade that metadata in place.
+     */
+    private fun replaceVerifiedMetadata(activeDirectory: File, verifiedMetadata: File) {
+        val currentMetadata = File(activeDirectory, METADATA)
+        require(activeDirectory.isDirectory && currentMetadata.isFile) {
+            "active revision metadata is missing during verified upgrade"
+        }
+        check(verifiedMetadata.setReadOnly()) {
+            "無法將 verified revision metadata 設為唯讀"
+        }
+        Files.move(
+            verifiedMetadata.toPath(),
+            currentMetadata.toPath(),
+            StandardCopyOption.ATOMIC_MOVE,
+            StandardCopyOption.REPLACE_EXISTING,
+        )
+    }
+
     private fun markReadOnlyRecursively(directory: File) {
         directory.walkTopDown()
             .filter(File::isFile)
@@ -385,7 +478,21 @@ class AndroidPackageRevisionImporter(context: Context) : ActiveRuntimeRevisionPr
         getProperty("versionCode")?.toLongOrNull() == source.versionCode &&
             getProperty("lastUpdateTime")?.toLongOrNull() == source.lastUpdateTime &&
             getProperty("currentSigner") == source.signerLineage.last() &&
-            getProperty("splitNames") == source.splits.map(SourceSplit::name).sorted().joinToString(",")
+            getProperty("baseSourcePath") == source.base.absolutePath &&
+            getProperty("baseSourceSize")?.toLongOrNull() == source.base.length() &&
+            getProperty("baseSourceMtime")?.toLongOrNull() == source.base.lastModified() &&
+            sourceStatsMatch(source.splits)
+
+    private fun Properties.sourceStatsMatch(splits: List<SourceSplit>): Boolean {
+        val sorted = splits.sortedBy(SourceSplit::name)
+        if (getProperty("splitNames") != sorted.joinToString(",") { it.name }) return false
+        return sorted.withIndex().all { (index, split) ->
+            getProperty("split.$index.name") == split.name &&
+                getProperty("split.$index.sourcePath") == split.file.absolutePath &&
+                getProperty("split.$index.sourceSize")?.toLongOrNull() == split.file.length() &&
+                getProperty("split.$index.sourceMtime")?.toLongOrNull() == split.file.lastModified()
+        }
+    }
 
     private fun revisionId(snapshot: PackageSourceSnapshot, lastUpdateTime: Long): String {
         val digest = MessageDigest.getInstance("SHA-256").apply {
