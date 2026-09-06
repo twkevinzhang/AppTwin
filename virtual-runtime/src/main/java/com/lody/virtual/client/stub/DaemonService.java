@@ -1,5 +1,6 @@
 package com.lody.virtual.client.stub;
 
+import android.annotation.SuppressLint;
 import android.app.ActivityManager;
 import android.app.ApplicationExitInfo;
 import android.app.Notification;
@@ -13,10 +14,12 @@ import android.content.Intent;
 import android.content.pm.PackageInfo;
 import android.content.pm.ServiceInfo;
 import android.os.Build;
+import android.os.Bundle;
 import android.os.Handler;
 import android.os.IBinder;
 import android.os.Looper;
 import android.os.SystemClock;
+import android.service.notification.StatusBarNotification;
 import android.util.AtomicFile;
 
 import com.lody.virtual.client.ipc.VActivityManager;
@@ -46,6 +49,8 @@ public class DaemonService extends Service {
 
     private static final int NOTIFY_ID = 1001;
     private static final String NOTIFICATION_CHANNEL_ID = "virtual_runtime_daemon";
+    private static final String EXTRA_DAEMON_FOREGROUND_NOTIFICATION =
+            "_VA_|_daemon_foreground_notification_";
     private static final String EXTRA_DESIRED_GMS_USER_IDS =
             "_VA_|_daemon_desired_gms_user_ids_";
     private static final String EXTRA_LAUNCH_AUTHORIZATION_TOKEN =
@@ -460,12 +465,55 @@ public class DaemonService extends Service {
     }
 
     private void ensureForeground(int gmsUserCount) {
-        if (foreground) {
+        boolean activeNotificationInspectionSupported =
+                Build.VERSION.SDK_INT >= Build.VERSION_CODES.M;
+        boolean daemonNotificationActive = !activeNotificationInspectionSupported
+                || isDaemonForegroundNotificationActive();
+        if (!DaemonForegroundNotificationPolicy.shouldPublish(
+                foreground,
+                activeNotificationInspectionSupported,
+                daemonNotificationActive)) {
             return;
         }
 
         startForegroundNotification(gmsUserCount);
         foreground = true;
+    }
+
+    @SuppressLint("NewApi") // The only caller is guarded by SDK_INT >= M.
+    private boolean isDaemonForegroundNotificationActive() {
+        NotificationManager notificationManager = getSystemService(NotificationManager.class);
+        if (notificationManager == null) {
+            return false;
+        }
+        try {
+            StatusBarNotification[] activeNotifications =
+                    notificationManager.getActiveNotifications();
+            if (activeNotifications == null) {
+                return false;
+            }
+            for (StatusBarNotification activeNotification : activeNotifications) {
+                if (activeNotification == null
+                        || !getPackageName().equals(activeNotification.getPackageName())
+                        || activeNotification.getId() != NOTIFY_ID
+                        || activeNotification.getTag() != null) {
+                    continue;
+                }
+                Notification notification = activeNotification.getNotification();
+                if (notification != null
+                        && (notification.flags & Notification.FLAG_FOREGROUND_SERVICE) != 0
+                        && notification.extras != null
+                        && notification.extras.getBoolean(
+                                EXTRA_DAEMON_FOREGROUND_NOTIFICATION, false)) {
+                    return true;
+                }
+            }
+        } catch (RuntimeException ignored) {
+            // A repeated startForeground() is idempotent and safer than leaving a running daemon
+            // without its user-visible notification when the active-list query is unavailable.
+            return false;
+        }
+        return false;
     }
 
     private void updateForegroundNotification(int gmsUserCount) {
@@ -528,6 +576,9 @@ public class DaemonService extends Service {
             description = "正在維持背景通知；點一下管理各空間設定";
         }
 
+        Bundle extras = new Bundle();
+        extras.putBoolean(EXTRA_DAEMON_FOREGROUND_NOTIFICATION, true);
+
         return builder
                 .setSmallIcon(android.R.drawable.stat_notify_sync)
                 .setContentTitle(title)
@@ -536,6 +587,7 @@ public class DaemonService extends Service {
                 .setOngoing(true)
                 .setOnlyAlertOnce(true)
                 .setShowWhen(false)
+                .addExtras(extras)
                 .build();
     }
 

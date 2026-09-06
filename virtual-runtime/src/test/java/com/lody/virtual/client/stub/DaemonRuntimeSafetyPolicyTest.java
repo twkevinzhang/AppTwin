@@ -73,6 +73,27 @@ public class DaemonRuntimeSafetyPolicyTest {
     }
 
     @Test
+    public void acceptedStartRepublishesOnlyWhenMarkedDaemonNotificationIsMissing()
+            throws Exception {
+        String source = readSource("com/lody/virtual/client/stub/DaemonService.java");
+        int ensureForeground = source.indexOf("private void ensureForeground(");
+        int updateForeground = source.indexOf("private void updateForegroundNotification(");
+        String ensureBody = source.substring(ensureForeground, updateForeground);
+
+        assertTrue(ensureBody.contains("Build.VERSION_CODES.M"));
+        assertTrue(ensureBody.contains("isDaemonForegroundNotificationActive()"));
+        assertTrue(ensureBody.contains("DaemonForegroundNotificationPolicy.shouldPublish("));
+        assertTrue(source.contains("notificationManager.getActiveNotifications()"));
+        assertTrue(source.contains(
+                "getPackageName().equals(activeNotification.getPackageName())"));
+        assertTrue(source.contains("activeNotification.getId() != NOTIFY_ID"));
+        assertTrue(source.contains("activeNotification.getTag() != null"));
+        assertTrue(source.contains("Notification.FLAG_FOREGROUND_SERVICE"));
+        assertTrue(source.contains("EXTRA_DAEMON_FOREGROUND_NOTIFICATION"));
+        assertTrue(source.contains(".addExtras(extras)"));
+    }
+
+    @Test
     public void periodicJobNeverStartsForegroundDaemon() throws Exception {
         String source = readSource("com/lody/virtual/client/stub/DaemonJobService.java");
 
