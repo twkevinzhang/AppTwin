@@ -249,6 +249,18 @@ hook_function(void *handle, const char *symbol, void *new_func, void **old_func)
     hook_function(addr, new_func, old_func);
 }
 
+static bool should_hook_android_dlopen_ext(int api_level, const char *guest_process_name) {
+    static constexpr int ANDROID_17_API_LEVEL = 37;
+    static constexpr char FACEBOOK_PACKAGE[] = "com.facebook.katana";
+    if (api_level < ANDROID_17_API_LEVEL || guest_process_name == nullptr) {
+        return true;
+    }
+    size_t package_length = strlen(FACEBOOK_PACKAGE);
+    return strncmp(guest_process_name, FACEBOOK_PACKAGE, package_length) != 0
+           || (guest_process_name[package_length] != '\0'
+               && guest_process_name[package_length] != ':');
+}
+
 
 void onSoLoaded(const char *name, void *handle);
 
@@ -1036,7 +1048,14 @@ void IOUniformer::startUniformer(const char *so_path, const char *host_package,
     }
     void *libdl_handle = dlopen("libdl.so", RTLD_NOW);
     if (libdl_handle != nullptr) {
-        HOOK_SYMBOL(libdl_handle, android_dlopen_ext);
+        if (should_hook_android_dlopen_ext(api_level, guest_process_name)) {
+            HOOK_SYMBOL(libdl_handle, android_dlopen_ext);
+        } else {
+            // Facebook installs its own loader hook from memfd:distract. On Android 17 it cannot
+            // safely chain over our existing inline hook and corrupts the PAC-aware entry point.
+            // Runtime.nativeLoad remains redirected by JVM_NativeLoad above.
+            ALOGI("Skipped android_dlopen_ext hook for Facebook Android 17+ loader compatibility.");
+        }
         dlclose(libdl_handle);
     }
 }

@@ -2,6 +2,7 @@ package com.lody.virtual.server.pm.parser;
 
 import android.content.pm.ActivityInfo;
 import android.content.pm.ApplicationInfo;
+import android.content.pm.ComponentInfo;
 import android.content.pm.ConfigurationInfo;
 import android.content.pm.FeatureInfo;
 import android.content.pm.InstrumentationInfo;
@@ -498,7 +499,8 @@ public class PackageParserEx {
                 final ActivityInfo[] res = new ActivityInfo[N];
                 for (int i = 0; i < N; i++) {
                     final VPackage.ActivityComponent a = p.activities.get(i);
-                    res[num++] = generateActivityInfo(a, flags, state, userId);
+                    res[num++] = shareApplicationInfo(
+                            generateActivityInfo(a, flags, state, userId), pi.applicationInfo);
                 }
                 pi.activities = res;
             }
@@ -510,7 +512,8 @@ public class PackageParserEx {
                 final ActivityInfo[] res = new ActivityInfo[N];
                 for (int i = 0; i < N; i++) {
                     final VPackage.ActivityComponent a = p.receivers.get(i);
-                    res[num++] = generateActivityInfo(a, flags, state, userId);
+                    res[num++] = shareApplicationInfo(
+                            generateActivityInfo(a, flags, state, userId), pi.applicationInfo);
                 }
                 pi.receivers = res;
             }
@@ -522,7 +525,8 @@ public class PackageParserEx {
                 final ServiceInfo[] res = new ServiceInfo[N];
                 for (int i = 0; i < N; i++) {
                     final VPackage.ServiceComponent s = p.services.get(i);
-                    res[num++] = generateServiceInfo(s, flags, state, userId);
+                    res[num++] = shareApplicationInfo(
+                            generateServiceInfo(s, flags, state, userId), pi.applicationInfo);
                 }
                 pi.services = res;
             }
@@ -534,7 +538,8 @@ public class PackageParserEx {
                 final ProviderInfo[] res = new ProviderInfo[N];
                 for (int i = 0; i < N; i++) {
                     final VPackage.ProviderComponent pr = p.providers.get(i);
-                    res[num++] = generateProviderInfo(pr, flags, state, userId);
+                    res[num++] = shareApplicationInfo(
+                            generateProviderInfo(pr, flags, state, userId), pi.applicationInfo);
                 }
                 pi.providers = res;
             }
@@ -564,6 +569,19 @@ public class PackageParserEx {
         }
         TrustedGmsCompatibilityVersionPolicy.apply(pi, p, state);
         return pi;
+    }
+
+    /**
+     * Components in one PackageInfo describe the same package, user and flag snapshot. Reusing the
+     * top-level ApplicationInfo preserves that identity and lets PackageInfo parcel squashing avoid
+     * serializing large application metadata once per component.
+     */
+    private static <T extends ComponentInfo> T shareApplicationInfo(
+            T componentInfo, ApplicationInfo applicationInfo) {
+        if (componentInfo != null) {
+            componentInfo.applicationInfo = applicationInfo;
+        }
+        return componentInfo;
     }
 
     private static boolean copyNeeded(int flags, VPackage p,
