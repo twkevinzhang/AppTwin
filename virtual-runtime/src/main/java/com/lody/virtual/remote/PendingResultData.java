@@ -87,6 +87,28 @@ public class PendingResultData implements Parcelable {
         this.mFinished = in.readByte() != 0;
     }
 
+    private PendingResultData(PendingResultData source, IBinder token) {
+        mType = source.mType;
+        mOrderedHint = source.mOrderedHint;
+        mInitialStickyHint = source.mInitialStickyHint;
+        mToken = token;
+        mSendingUser = source.mSendingUser;
+        mFlags = source.mFlags;
+        mResultCode = source.mResultCode;
+        mResultData = source.mResultData;
+        mResultExtras = source.mResultExtras == null ? null : new Bundle(source.mResultExtras);
+        mAbortBroadcast = source.mAbortBroadcast;
+        mFinished = false;
+    }
+
+    /** Gives one dispatched receiver a unique completion token without exposing the host token. */
+    public PendingResultData forGuestDispatch(IBinder dispatchCompletionToken) {
+        if (dispatchCompletionToken == null) {
+            throw new NullPointerException("dispatchCompletionToken");
+        }
+        return new PendingResultData(this, dispatchCompletionToken);
+    }
+
     public BroadcastReceiver.PendingResult build() {
         if (mirror.android.content.BroadcastReceiver.PendingResultMNC.ctor != null) {
             return mirror.android.content.BroadcastReceiver.PendingResultMNC.ctor.newInstance(mResultCode, mResultData, mResultExtras, mType, mOrderedHint, mInitialStickyHint, mToken, mSendingUser, mFlags);
@@ -123,5 +145,17 @@ public class PendingResultData implements Parcelable {
         } catch (Throwable e) {
             e.printStackTrace();
         }
+    }
+
+    /** Copies only mutable ordered-broadcast result state; ownership stays with this token. */
+    public void copyResultFrom(PendingResultData other) {
+        if (other == null) {
+            return;
+        }
+        mResultCode = other.mResultCode;
+        mResultData = other.mResultData;
+        mResultExtras = other.mResultExtras == null ? null : new Bundle(other.mResultExtras);
+        mAbortBroadcast = other.mAbortBroadcast;
+        mFinished = other.mFinished;
     }
 }

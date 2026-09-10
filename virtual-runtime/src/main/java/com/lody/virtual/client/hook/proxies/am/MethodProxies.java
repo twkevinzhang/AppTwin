@@ -28,6 +28,8 @@ import android.os.Build;
 import android.os.Bundle;
 import android.os.IBinder;
 import android.os.IInterface;
+import android.os.Handler;
+import android.os.Looper;
 import android.os.RemoteException;
 import android.provider.MediaStore;
 import android.text.TextUtils;
@@ -1501,11 +1503,17 @@ class MethodProxies {
                             }
                         }, 0);
                         IIntentReceiver proxyIIntentReceiver = mProxyIIntentReceivers.get(token);
+                        WeakReference mDispatcher =
+                                LoadedApk.ReceiverDispatcher.InnerReceiver.mDispatcher.get(old);
                         if (proxyIIntentReceiver == null) {
-                            proxyIIntentReceiver = new IIntentReceiverProxy(old);
+                            Object dispatcher = mDispatcher == null ? null : mDispatcher.get();
+                            Handler receiverHandler = dispatcher == null
+                                    || LoadedApk.ReceiverDispatcher.mActivityThread == null
+                                    ? null
+                                    : LoadedApk.ReceiverDispatcher.mActivityThread.get(dispatcher);
+                            proxyIIntentReceiver = new IIntentReceiverProxy(old, receiverHandler);
                             mProxyIIntentReceivers.put(token, proxyIIntentReceiver);
                         }
-                        WeakReference mDispatcher = LoadedApk.ReceiverDispatcher.InnerReceiver.mDispatcher.get(old);
                         if (mDispatcher != null) {
                             LoadedApk.ReceiverDispatcher.mIIntentReceiver.set(mDispatcher.get(), proxyIIntentReceiver);
                             args[mIIntentReceiverIndex] = proxyIIntentReceiver;
@@ -1558,9 +1566,12 @@ class MethodProxies {
         private static class IIntentReceiverProxy extends IIntentReceiver.Stub {
 
             IInterface mOld;
+            private final DynamicReceiverForwarder forwarder;
 
-            IIntentReceiverProxy(IInterface old) {
+            IIntentReceiverProxy(IInterface old, Handler handler) {
                 this.mOld = old;
+                Handler target = handler == null ? new Handler(Looper.getMainLooper()) : handler;
+                this.forwarder = new DynamicReceiverForwarder(target::post);
             }
 
             public void performReceive(Intent intent, int resultCode, String data, Bundle extras, boolean ordered,
@@ -1568,15 +1579,28 @@ class MethodProxies {
                 if (!accept(intent)) {
                     return;
                 }
-                if (intent.hasExtra("_VA_|_intent_")) {
-                    intent = intent.getParcelableExtra("_VA_|_intent_");
+                Intent delivered = new Intent(intent);
+                if (delivered.hasExtra("_VA_|_intent_")) {
+                    delivered = delivered.getParcelableExtra("_VA_|_intent_");
                 }
-                SpecialComponentList.unprotectIntent(intent);
-                if (Build.VERSION.SDK_INT > Build.VERSION_CODES.JELLY_BEAN) {
-                    IIntentReceiverJB.performReceive.call(mOld, intent, resultCode, data, extras, ordered, sticky, sendingUser);
-                } else {
-                    mirror.android.content.IIntentReceiver.performReceive.call(mOld, intent, resultCode, data, extras, ordered, sticky);
-                }
+                if (delivered == null) return;
+                SpecialComponentList.unprotectIntent(delivered);
+                final Intent queuedIntent = delivered;
+                final Bundle queuedExtras = extras == null ? null : new Bundle(extras);
+                forwarder.submit(() -> {
+                    try {
+                        if (Build.VERSION.SDK_INT > Build.VERSION_CODES.JELLY_BEAN) {
+                            IIntentReceiverJB.performReceive.call(mOld, queuedIntent,
+                                    resultCode, data, queuedExtras, ordered, sticky, sendingUser);
+                        } else {
+                            mirror.android.content.IIntentReceiver.performReceive.call(mOld,
+                                    queuedIntent, resultCode, data, queuedExtras, ordered, sticky);
+                        }
+                    } catch (Throwable error) {
+                        VLog.w("DynamicReceiver", "Receiver forwarding failed: "
+                                + error.getClass().getSimpleName());
+                    }
+                });
             }
 
             private boolean accept(Intent intent) {
@@ -1594,6 +1618,34 @@ class MethodProxies {
                 this.performReceive(intent, resultCode, data, extras, ordered, sticky, 0);
             }
 
+        }
+    }
+
+    /** Relays true PendingResult completion for dispatcher-owned static broadcasts. */
+    static class FinishReceiver extends MethodProxy {
+        @Override
+        public String getMethodName() {
+            return "finishReceiver";
+        }
+
+        @Override
+        public Object call(Object who, Method method, Object... args) throws Throwable {
+            if (args != null && args.length >= 5 && args[0] instanceof IBinder
+                    && args[1] instanceof Integer
+                    && (args[2] == null || args[2] instanceof String)
+                    && (args[3] == null || args[3] instanceof Bundle)
+                    && args[4] instanceof Boolean
+                    && VClientImpl.get().finishReceiverIfOwned(
+                            (IBinder) args[0], (Integer) args[1], (String) args[2],
+                            (Bundle) args[3], (Boolean) args[4])) {
+                return null;
+            }
+            return method.invoke(who, args);
+        }
+
+        @Override
+        public boolean isEnable() {
+            return isAppProcess();
         }
     }
 

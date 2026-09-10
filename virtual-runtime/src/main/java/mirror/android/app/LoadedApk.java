@@ -40,6 +40,7 @@ public class LoadedApk {
         public static RefMethod<IInterface> getIIntentReceiver;
         public static RefObject<BroadcastReceiver> mReceiver;
         public static RefObject<IIntentReceiver> mIIntentReceiver;
+        public static RefObject<Handler> mActivityThread;
 
         public static class InnerReceiver {
             public static Class Class = RefClass.load(InnerReceiver.class, "android.app.LoadedApk$ReceiverDispatcher$InnerReceiver");
