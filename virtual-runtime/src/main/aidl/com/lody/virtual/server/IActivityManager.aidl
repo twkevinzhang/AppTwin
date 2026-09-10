@@ -17,6 +17,9 @@ import com.lody.virtual.server.interfaces.IProcessObserver;
 
 
 interface IActivityManager {
+    const int PROCESS_RESTART_REJECTED = 0;
+    const int PROCESS_RESTART_OWNER_READY = 1;
+    const int PROCESS_RESTART_EXACT_BOOTSTRAP_PENDING = 2;
 
     int initProcess(in String packageName, in String processName, int userId);
 
@@ -112,7 +115,7 @@ interface IActivityManager {
 
     String getPackageForIntentSender(IBinder binder);
 
-    void processRestarted(in String packageName, in String processName, int userId);
+    int processRestarted(in String packageName, in String processName, int userId);
 
     oneway void broadcastFinish(long dispatchToken, long processGeneration,
             in PendingResultData res);

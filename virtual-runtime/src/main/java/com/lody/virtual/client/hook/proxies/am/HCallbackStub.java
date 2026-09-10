@@ -60,7 +60,8 @@ final class HCallbackLaunchPolicy {
         private static final Set<IBinder> STALE_ACTIVITY_TOKENS =
                 Collections.newSetFromMap(new ConcurrentHashMap<IBinder, Boolean>());
 
-        private static final String TAG = HCallbackStub.class.getSimpleName();
+    private static final String TAG = HCallbackStub.class.getSimpleName();
+    private static final long ACTIVITY_BOOTSTRAP_WAIT_MILLIS = 750L;
         private static final HCallbackStub sCallback = new HCallbackStub();
 
         private boolean mCalling = false;
@@ -246,14 +247,23 @@ final class HCallbackLaunchPolicy {
                 if(installedAppInfo == null){
                     return HCallbackLaunchHandling.DELEGATE;
                 }
-                VActivityManager.get().processRestarted(info.packageName, info.processName, saveInstance.userId);
-                getH().sendMessageAtFrontOfQueue(Message.obtain(msg));
-                return HCallbackLaunchHandling.RETRY_QUEUED;
+                VLog.i(TAG, "activity bootstrap missing owner; requesting exact reservation check"
+                        + " user=" + saveInstance.userId);
+                if (!VClientImpl.get().awaitActivityProcessOwner(
+                        info.packageName, info.processName, saveInstance.userId,
+                        ACTIVITY_BOOTSTRAP_WAIT_MILLIS)) {
+                    VLog.e(TAG, "activity bootstrap consumed reason=owner-timeout-or-rejected"
+                            + " user=" + saveInstance.userId);
+                    return HCallbackLaunchHandling.ABORT_CONSUMED;
+                }
             }
             if (!VClientImpl.get().isBound()) {
                 VClientImpl.get().bindApplicationForActivity(info.packageName, info.processName, intent);
-                getH().sendMessageAtFrontOfQueue(Message.obtain(msg));
-                return HCallbackLaunchHandling.RETRY_QUEUED;
+                if (!VClientImpl.get().isBound()) {
+                    VLog.e(TAG, "activity bootstrap consumed reason=application-not-bound"
+                            + " user=" + saveInstance.userId);
+                    return HCallbackLaunchHandling.ABORT_CONSUMED;
+                }
             }
             int taskId = IActivityManager.getTaskForActivity.call(
                     ActivityManagerNative.getDefault.call(),

@@ -13,18 +13,21 @@ interface IVClient {
             in Intent intent, in PendingResultData resultData, long dispatchToken,
             long processGeneration);
     oneway void cancelReceiver(long dispatchToken, long processGeneration);
-    void scheduleNewIntent(in String creator, in IBinder token, in Intent intent);
-    void finishActivity(in IBinder token);
+    oneway void scheduleNewIntent(in String creator, in IBinder token, in Intent intent,
+            long processGeneration);
+    oneway void finishActivity(in IBinder token, long processGeneration);
     IBinder createProxyService(in ComponentName component, in IBinder binder);
     IBinder acquireProviderClient(in ProviderInfo info);
     IBinder getAppThread();
     IBinder getToken();
     String getDebugInfo();
-    void scheduleCreateService(in IBinder token, in ServiceInfo info, int processState);
-    void scheduleBindService(in IBinder token, in IBinder bindToken, in Intent intent,
-            boolean rebind, int processState, long bindSeq);
-    void scheduleUnbindService(in IBinder token, in IBinder bindToken, in Intent intent);
-    void scheduleServiceArgs(in IBinder token, boolean taskRemoved, int startId, int flags,
-            in Intent intent);
-    void scheduleStopService(in IBinder token);
+    oneway void scheduleCreateService(in IBinder token, in ServiceInfo info, int processState,
+            long processGeneration);
+    oneway void scheduleBindService(in IBinder token, in IBinder bindToken, in Intent intent,
+            boolean rebind, int processState, long bindSeq, long processGeneration);
+    oneway void scheduleUnbindService(in IBinder token, in IBinder bindToken, in Intent intent,
+            long processGeneration);
+    oneway void scheduleServiceArgs(in IBinder token, boolean taskRemoved, int startId, int flags,
+            in Intent intent, long processGeneration);
+    oneway void scheduleStopService(in IBinder token, long processGeneration);
 }

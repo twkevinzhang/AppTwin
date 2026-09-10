@@ -408,11 +408,12 @@ public class VActivityManager {
         }
     }
 
-    public void processRestarted(String packageName, String processName, int userId) {
+    public int processRestarted(String packageName, String processName, int userId) {
         try {
-            getService().processRestarted(packageName, processName, userId);
+            return getService().processRestarted(packageName, processName, userId);
         } catch (RemoteException e) {
             e.printStackTrace();
+            return IActivityManager.PROCESS_RESTART_REJECTED;
         }
     }
 

@@ -25,6 +25,7 @@ import android.os.Looper;
 import android.os.Message;
 import android.os.Process;
 import android.os.RemoteException;
+import android.os.SystemClock;
 import android.os.StrictMode;
 import android.system.ErrnoException;
 import android.system.Os;
@@ -96,6 +97,8 @@ public final class VClientImpl extends IVClient.Stub {
 
     private static final int NEW_INTENT = 11;
     private static final int RECEIVER = 12;
+    private static final int FINISH_ACTIVITY = 13;
+    private static final long MAX_ACTIVITY_BOOTSTRAP_WAIT_MILLIS = 750L;
     private static final long CANCELLED_RECEIVER_TOMBSTONE_MILLIS = 30_000L;
 
     private static final String TAG = VClientImpl.class.getSimpleName();
@@ -114,7 +117,6 @@ public final class VClientImpl extends IVClient.Stub {
     });
     private ConditionVariable mTempLock;
     private Instrumentation mInstrumentation = AppInstrumentation.getDefault();
-    private IBinder token;
     private int vuid;
     private int reportedUidOverride = -1;
     private VDeviceInfo deviceInfo;
@@ -200,7 +202,9 @@ public final class VClientImpl extends IVClient.Stub {
 
     @Override
     public IBinder getToken() {
-        return token;
+        StubProcessOwner.Identity owner = mProcessOwner.snapshot();
+        Object serverToken = owner == null ? null : owner.getServerToken();
+        return serverToken instanceof IBinder ? (IBinder) serverToken : null;
     }
 
     private IInterface localApplicationThread() {
@@ -208,57 +212,132 @@ public final class VClientImpl extends IVClient.Stub {
     }
 
     @Override
-    public void scheduleCreateService(IBinder serviceToken, ServiceInfo info, int processState)
+    public void scheduleCreateService(IBinder serviceToken, ServiceInfo info, int processState,
+            long processGeneration)
             throws RemoteException {
+        if (!isCurrentProcessGeneration(processGeneration)) return;
         IApplicationThreadCompat.scheduleCreateService(
                 localApplicationThread(), serviceToken, info, processState);
     }
 
     @Override
     public void scheduleBindService(IBinder serviceToken, IBinder bindToken, Intent intent,
-                                    boolean rebind, int processState, long bindSeq)
+                                    boolean rebind, int processState, long bindSeq,
+                                    long processGeneration)
             throws RemoteException {
+        if (!isCurrentProcessGeneration(processGeneration)) return;
         IApplicationThreadCompat.scheduleBindService(
                 localApplicationThread(), serviceToken, bindToken, intent, rebind,
                 processState, bindSeq);
     }
 
     @Override
-    public void scheduleUnbindService(IBinder serviceToken, IBinder bindToken, Intent intent)
+    public void scheduleUnbindService(IBinder serviceToken, IBinder bindToken, Intent intent,
+            long processGeneration)
             throws RemoteException {
+        if (!isCurrentProcessGeneration(processGeneration)) return;
         IApplicationThreadCompat.scheduleUnbindService(
                 localApplicationThread(), serviceToken, bindToken, intent);
     }
 
     @Override
     public void scheduleServiceArgs(IBinder serviceToken, boolean taskRemoved, int startId,
-                                    int flags, Intent intent) throws RemoteException {
+                                    int flags, Intent intent, long processGeneration)
+            throws RemoteException {
+        if (!isCurrentProcessGeneration(processGeneration)) return;
         IApplicationThreadCompat.scheduleServiceArgs(
                 localApplicationThread(), serviceToken, taskRemoved, startId, flags, intent);
     }
 
     @Override
-    public void scheduleStopService(IBinder serviceToken) throws RemoteException {
+    public void scheduleStopService(IBinder serviceToken, long processGeneration)
+            throws RemoteException {
+        if (!isCurrentProcessGeneration(processGeneration)) return;
         IApplicationThreadCompat.scheduleStopService(localApplicationThread(), serviceToken);
+    }
+
+    private boolean isCurrentProcessGeneration(long processGeneration) {
+        StubProcessOwner.Identity owner = mProcessOwner.snapshot();
+        return owner != null && owner.getGeneration() == processGeneration
+                && owner.getServerToken() instanceof IBinder;
     }
 
     public StubProcessOwner.ClaimResult claimProcess(IBinder token, int vuid, String packageName,
                                                      String processName, long generation,
                                                      int reportedUidOverride) {
-        StubProcessOwner.ClaimResult result = mProcessOwner.claim(vuid, packageName, processName,
-                generation, reportedUidOverride, token);
-        if (result.isAccepted()) {
-            StubProcessOwner.Identity identity = result.getCurrentIdentity();
-            this.token = (IBinder) identity.getServerToken();
-            this.vuid = identity.getVuid();
-            this.reportedUidOverride = identity.getReportedUidOverride();
-            NativeEngine.configureUidOverride(this.reportedUidOverride);
+        // Keep the owner monitor until every process-wide identity field is configured. Although
+        // claim() signals waiters, they cannot reacquire this monitor and launch guest code until
+        // vuid and the native UID override are published as one completed bootstrap operation.
+        synchronized (mProcessOwner) {
+            StubProcessOwner.ClaimResult result = mProcessOwner.claim(
+                    vuid, packageName, processName, generation, reportedUidOverride, token);
+            if (result.isAccepted()) {
+                StubProcessOwner.Identity identity = result.getCurrentIdentity();
+                this.vuid = identity.getVuid();
+                this.reportedUidOverride = identity.getReportedUidOverride();
+                NativeEngine.configureUidOverride(this.reportedUidOverride);
+            }
+            return result;
         }
-        return result;
     }
 
     public StubProcessOwner.Identity getProcessOwner() {
         return mProcessOwner.snapshot();
+    }
+
+    /** Resolves only the exact server-reserved owner; rejected/timeout launches fail closed. */
+    public boolean awaitActivityProcessOwner(
+            String packageName, String processName, int userId, long timeoutMillis) {
+        StubProcessOwner.Identity identity = mProcessOwner.snapshot();
+        if (identity != null) {
+            if (matchesActivityProcessOwner(identity, packageName, processName, userId)) {
+                return true;
+            }
+            return terminateRejectedActivityBootstrap("existing-owner-mismatch", userId);
+        }
+        long started = SystemClock.elapsedRealtime();
+        long boundedWaitMillis = Math.max(0L,
+                Math.min(timeoutMillis, MAX_ACTIVITY_BOOTSTRAP_WAIT_MILLIS));
+        long deadline = started + boundedWaitMillis;
+        int classification = VActivityManager.get().processRestarted(
+                packageName, processName, userId);
+        if (classification
+                == com.lody.virtual.server.IActivityManager
+                .PROCESS_RESTART_EXACT_BOOTSTRAP_PENDING) {
+            identity = mProcessOwner.awaitIdentity(
+                    Math.max(0L, deadline - SystemClock.elapsedRealtime()));
+        } else if (classification
+                == com.lody.virtual.server.IActivityManager.PROCESS_RESTART_OWNER_READY) {
+            identity = mProcessOwner.snapshot();
+        }
+        boolean accepted = matchesActivityProcessOwner(
+                identity, packageName, processName, userId);
+        VLog.i(TAG, "activity-bootstrap classification=" + classification
+                + " accepted=" + accepted
+                + " elapsedMs=" + (SystemClock.elapsedRealtime() - started)
+                + " user=" + userId);
+        if (!accepted && classification
+                != com.lody.virtual.server.IActivityManager.PROCESS_RESTART_REJECTED) {
+            return terminateRejectedActivityBootstrap(
+                    "owner-timeout-or-mismatch classification=" + classification, userId);
+        }
+        return accepted;
+    }
+
+    private boolean terminateRejectedActivityBootstrap(String reason, int userId) {
+        VLog.e(TAG, "activity-bootstrap terminating stub reason=" + reason
+                + " user=" + userId);
+        Process.killProcess(Process.myPid());
+        return false;
+    }
+
+    static boolean matchesActivityProcessOwner(StubProcessOwner.Identity identity,
+            String packageName, String processName, int userId) {
+        return identity != null && identity.getServerToken() instanceof IBinder
+                && identity.getVuid() >= 0
+                && VUserHandle.getUserId(identity.getVuid()) == userId
+                && packageName != null && packageName.equals(identity.getPackageName())
+                && processName != null && processName.equals(identity.getProcessName());
     }
 
     public boolean isGuestBindingStarted() {
@@ -508,7 +587,12 @@ public final class VClientImpl extends IVClient.Stub {
                     }
                 }
                 // 2. tell vams that launch finish.
-                VActivityManager.get().appDoneExecuting(token, false);
+                IBinder processToken = getToken();
+                if (processToken == null) {
+                    VLog.e(TAG, "appDoneExecuting rejected locally reason=no-authoritative-owner"
+                            + " success=false");
+                }
+                VActivityManager.get().appDoneExecuting(processToken, false);
 
                 // 3. rethrow
                 throw new RuntimeException(
@@ -517,7 +601,12 @@ public final class VClientImpl extends IVClient.Stub {
             }
         }
         VirtualCore.get().getComponentDelegate().afterApplicationCreate(mInitialApplication);
-        VActivityManager.get().appDoneExecuting(token, true);
+        IBinder processToken = getToken();
+        if (processToken == null) {
+            VLog.e(TAG, "appDoneExecuting rejected locally reason=no-authoritative-owner"
+                    + " success=true");
+        }
+        VActivityManager.get().appDoneExecuting(processToken, true);
     }
 
     private void fixWeChatRecovery(Application app) {
@@ -854,16 +943,21 @@ public final class VClientImpl extends IVClient.Stub {
     }
 
     @Override
-    public void finishActivity(IBinder token) {
-        VActivityManager.get().finishActivity(token);
+    public void finishActivity(IBinder token, long processGeneration) {
+        FinishActivityData data = new FinishActivityData();
+        data.token = token;
+        data.processGeneration = processGeneration;
+        sendMessage(FINISH_ACTIVITY, data);
     }
 
     @Override
-    public void scheduleNewIntent(String creator, IBinder token, Intent intent) {
+    public void scheduleNewIntent(String creator, IBinder token, Intent intent,
+            long processGeneration) {
         NewIntentData data = new NewIntentData();
         data.creator = creator;
         data.token = token;
         data.intent = intent;
+        data.processGeneration = processGeneration;
         sendMessage(NEW_INTENT, data);
     }
 
@@ -963,6 +1057,12 @@ public final class VClientImpl extends IVClient.Stub {
         }
     }
 
+    private void handleFinishActivity(FinishActivityData data) {
+        if (isCurrentProcessGeneration(data.processGeneration)) {
+            VActivityManager.get().finishActivity(data.token);
+        }
+    }
+
     @Override
     public IBinder createProxyService(ComponentName component, IBinder binder) {
         // This call executes in the guest service process, before the Binder crosses into the
@@ -1000,6 +1100,12 @@ public final class VClientImpl extends IVClient.Stub {
         String creator;
         IBinder token;
         Intent intent;
+        long processGeneration;
+    }
+
+    private static final class FinishActivityData {
+        IBinder token;
+        long processGeneration;
     }
 
     private final class AppBindData {
@@ -1042,7 +1148,15 @@ public final class VClientImpl extends IVClient.Stub {
         public void handleMessage(Message msg) {
             switch (msg.what) {
                 case NEW_INTENT: {
-                    handleNewIntent((NewIntentData) msg.obj);
+                    NewIntentData data = (NewIntentData) msg.obj;
+                    if (isCurrentProcessGeneration(data.processGeneration)
+                            && VActivityManager.get().getActivityRecord(data.token) != null) {
+                        handleNewIntent(data);
+                    }
+                }
+                break;
+                case FINISH_ACTIVITY: {
+                    handleFinishActivity((FinishActivityData) msg.obj);
                 }
                 break;
                 case RECEIVER: {

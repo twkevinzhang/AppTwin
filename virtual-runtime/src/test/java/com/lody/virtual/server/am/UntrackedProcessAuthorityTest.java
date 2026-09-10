@@ -37,6 +37,40 @@ public class UntrackedProcessAuthorityTest {
     }
 
     @Test
+    public void pendingBootstrapRequiresExactSlotAndServerDerivedLogicalKey() {
+        LogicalProcessOwnerRegistry<Object> owners =
+                new LogicalProcessOwnerRegistry<>(owner -> true);
+        LogicalProcessOwnerRegistry.Reservation reservation = owners.reserve(
+                new LogicalProcessKey(712_345, "com.fixture", "com.fixture:push"), 4)
+                .reservation();
+
+        assertEquals(true, VActivityManagerService.matchesBootstrapReservation(
+                reservation, 4, 712_345, "com.fixture", "com.fixture:push"));
+        assertEquals(false, VActivityManagerService.matchesBootstrapReservation(
+                reservation, 3, 712_345, "com.fixture", "com.fixture:push"));
+        assertEquals(false, VActivityManagerService.matchesBootstrapReservation(
+                reservation, 4, 812_345, "com.fixture", "com.fixture:push"));
+        assertEquals(false, VActivityManagerService.matchesBootstrapReservation(
+                reservation, 4, 712_345, "other", "com.fixture:push"));
+    }
+
+    @Test
+    public void processDeathAlwaysSchedulesFullExactOrphanReconciliation() throws Exception {
+        String source = new String(java.nio.file.Files.readAllBytes(java.nio.file.Paths.get(
+                "src/main/java/com/lody/virtual/server/am/VActivityManagerService.java")),
+                java.nio.charset.StandardCharsets.UTF_8);
+        int cleanup = source.indexOf("private void cleanupProcessGeneration");
+        int nextMethod = source.indexOf("private void onConnectionDied", cleanup);
+        String cleanupSource = source.substring(cleanup, nextMethod);
+
+        assertEquals(true, cleanupSource.contains(
+                "scheduleOrphanedStubTaskReconciliation(null,"));
+        assertEquals(false, cleanupSource.contains("if (!emptiedTaskIds.isEmpty())"));
+        assertEquals(true, source.contains("OrphanStubTaskPolicy.shouldRemove"));
+        assertEquals(true, source.contains("mMainStack.hasLiveTaskOwnership(taskInfo.id)"));
+    }
+
+    @Test
     public void processAndTaskMetadataAreVisibleOnlyWithinCallerGroup() {
         int hostUid = 10_321;
         int groupB = com.lody.virtual.os.VUserHandle.getUid(8, 12_345);
