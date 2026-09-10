@@ -381,6 +381,12 @@ final class LogicalProcessOwnerRegistry<T> {
         return entry == null || entry.isReservation() ? null : snapshot(entry);
     }
 
+    /** Returns only the immutable capability currently reserving this physical slot. */
+    synchronized Reservation findReservationBySlot(int slot) {
+        Entry<T> entry = bySlot.get(slot);
+        return entry == null || !entry.isReservation() ? null : entry.reservation;
+    }
+
     synchronized int ownerCount() {
         int count = 0;
         for (Entry<T> entry : byKey.values()) {

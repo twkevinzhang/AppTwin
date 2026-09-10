@@ -130,6 +130,32 @@ public class StubProcessOwnerTest {
         assertEquals(1, accepted.get());
     }
 
+    @Test
+    public void boundedWaitWakesWhenBootstrapClaimPublishesIdentity() throws Exception {
+        final Object token = new Object();
+        Thread claim = new Thread(() -> {
+            try {
+                Thread.sleep(25);
+            } catch (InterruptedException interrupted) {
+                Thread.currentThread().interrupt();
+                return;
+            }
+            owner.claim(100001, "jp.naver.line.android",
+                    "jp.naver.line.android", 7, token);
+        });
+
+        claim.start();
+        StubProcessOwner.Identity identity = owner.awaitIdentity(750);
+        claim.join();
+
+        assertSame(token, identity.getServerToken());
+    }
+
+    @Test
+    public void boundedWaitReturnsNullAtDeadlineWithoutClaim() {
+        assertEquals(null, owner.awaitIdentity(10));
+    }
+
     private static Thread claimInThread(final StubProcessOwner owner, final CountDownLatch ready,
                                         final CountDownLatch start, final AtomicInteger accepted,
                                         final int vuid, final String packageName) {

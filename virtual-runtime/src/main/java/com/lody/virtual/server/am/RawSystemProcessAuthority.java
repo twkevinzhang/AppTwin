@@ -51,6 +51,41 @@ public final class RawSystemProcessAuthority {
         }
     }
 
+    /** Resolves an exact host Stub process slot from the raw, pre-hook system process table. */
+    public static int findExactHostStubSlot(
+            int pid, int hostUid, String hostPackage, int stubCount) {
+        IInterface raw = RAW_ACTIVITY_MANAGER.get();
+        if (raw == null || pid <= 0 || hostUid < 0 || hostPackage == null || stubCount <= 0) {
+            return -1;
+        }
+        try {
+            List<ActivityManager.RunningAppProcessInfo> processes =
+                    mirror.android.app.IActivityManager.getRunningAppProcesses
+                            .callWithException(raw);
+            if (processes == null) return -1;
+            String prefix = hostPackage + ":p";
+            for (ActivityManager.RunningAppProcessInfo process : processes) {
+                if (process == null || process.pid != pid || process.uid != hostUid
+                        || process.processName == null
+                        || !process.processName.startsWith(prefix)) continue;
+                String suffix = process.processName.substring(prefix.length());
+                if (suffix.length() == 0) return -1;
+                for (int i = 0; i < suffix.length(); i++) {
+                    if (!Character.isDigit(suffix.charAt(i))) return -1;
+                }
+                try {
+                    int slot = Integer.parseInt(suffix);
+                    return slot >= 0 && slot < stubCount ? slot : -1;
+                } catch (NumberFormatException invalid) {
+                    return -1;
+                }
+            }
+        } catch (Throwable unavailable) {
+            // Fail closed when the authoritative process table is unavailable.
+        }
+        return -1;
+    }
+
     static boolean containsExactProcess(
             List<ActivityManager.RunningAppProcessInfo> processes,
             int pid,

@@ -40,6 +40,7 @@ import mirror.com.android.internal.content.ReferrerIntent;
  * @date 2018/8/7.
  */
 public class TransactionHandlerProxy extends ClientTransactionHandler {
+    private static final long ACTIVITY_BOOTSTRAP_WAIT_MILLIS = 750L;
 
     private static final String TAG = "TransactionHandlerProxy";
 
@@ -254,9 +255,6 @@ public class TransactionHandlerProxy extends ClientTransactionHandler {
         if (preparation == LaunchPreparation.ABORT) {
             return null;
         }
-        if (preparation == LaunchPreparation.RETRY) {
-            return handleLaunchActivity(r, pendingActions, customIntent);
-        }
         return originalHandler.handleLaunchActivity(r, pendingActions, customIntent);
     }
 
@@ -266,9 +264,6 @@ public class TransactionHandlerProxy extends ClientTransactionHandler {
         LaunchPreparation preparation = prepareLaunchActivity(r);
         if (preparation == LaunchPreparation.ABORT) {
             return null;
-        }
-        if (preparation == LaunchPreparation.RETRY) {
-            return handleLaunchActivity(r, pendingActions, deviceId, customIntent);
         }
         return originalHandler.handleLaunchActivity(r, pendingActions, deviceId, customIntent);
     }
@@ -296,16 +291,23 @@ public class TransactionHandlerProxy extends ClientTransactionHandler {
                 Log.i(TAG, "install app info is null, return");
                 return LaunchPreparation.ABORT;
             }
-            VActivityManager.get().processRestarted(info.packageName, info.processName, saveInstance.userId);
-            // getH().sendMessageAtFrontOfQueue(Message.obtain(msg));
-            Log.i(TAG, "restart process, return");
-            return LaunchPreparation.RETRY;
+            Log.i(TAG, "activity bootstrap missing owner; requesting exact reservation check"
+                    + " user=" + saveInstance.userId);
+            if (!VClientImpl.get().awaitActivityProcessOwner(
+                    info.packageName, info.processName, saveInstance.userId,
+                    ACTIVITY_BOOTSTRAP_WAIT_MILLIS)) {
+                Log.e(TAG, "activity bootstrap aborted reason=owner-timeout-or-rejected"
+                        + " user=" + saveInstance.userId);
+                return LaunchPreparation.ABORT;
+            }
         }
         if (!VClientImpl.get().isBound()) {
             VClientImpl.get().bindApplicationForActivity(info.packageName, info.processName, intent);
-            // getH().sendMessageAtFrontOfQueue(Message.obtain(msg));
-            Log.i(TAG, "rebound application, return");
-            return LaunchPreparation.RETRY;
+            if (!VClientImpl.get().isBound()) {
+                Log.e(TAG, "activity bootstrap aborted reason=application-not-bound"
+                        + " user=" + saveInstance.userId);
+                return LaunchPreparation.ABORT;
+            }
         }
         int taskId = IActivityManager.getTaskForActivity.call(
                 ActivityManagerNative.getDefault.call(),
@@ -334,7 +336,6 @@ public class TransactionHandlerProxy extends ClientTransactionHandler {
 
     private enum LaunchPreparation {
         CONTINUE,
-        RETRY,
         ABORT
     }
 

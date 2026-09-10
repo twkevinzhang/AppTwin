@@ -35,6 +35,7 @@ final class IsolatedGuestClient extends IVClient.Stub
     private final Context context;
     private final int slot;
     private final int userId;
+    private final long generation;
     private final Listener listener;
     private final Object lock = new Object();
     private IIsolatedGuestWorker worker;
@@ -44,10 +45,12 @@ final class IsolatedGuestClient extends IVClient.Stub
     private boolean closed;
     private boolean terminalCallbackSent;
 
-    IsolatedGuestClient(Context context, int slot, int userId, Listener listener) {
+    IsolatedGuestClient(Context context, int slot, int userId, long generation,
+            Listener listener) {
         this.context = context.getApplicationContext();
         this.slot = slot;
         this.userId = userId;
+        this.generation = generation;
         this.listener = listener;
     }
 
@@ -77,8 +80,8 @@ final class IsolatedGuestClient extends IVClient.Stub
 
     boolean isWorkerAlive() {
         synchronized (lock) {
-            return !closed && worker != null && worker.asBinder().isBinderAlive()
-                    && worker.asBinder().pingBinder();
+            return !closed && !terminalCallbackSent && worker != null
+                    && worker.asBinder().isBinderAlive();
         }
     }
 
@@ -151,10 +154,11 @@ final class IsolatedGuestClient extends IVClient.Stub
     }
 
     @Override
-    public void scheduleCreateService(IBinder token, ServiceInfo info, int processState) {
+    public void scheduleCreateService(IBinder token, ServiceInfo info, int processState,
+            long processGeneration) {
         IIsolatedGuestWorker active;
         synchronized (lock) {
-            if (closed) return;
+            if (closed || processGeneration != generation) return;
             serviceToken = token;
             serviceInfo = info;
             active = worker;
@@ -165,8 +169,7 @@ final class IsolatedGuestClient extends IVClient.Stub
     }
 
     private void createInWorker(IIsolatedGuestWorker active, ServiceInfo info) {
-        if (active == null || !active.asBinder().isBinderAlive()
-                || !active.asBinder().pingBinder()) {
+        if (active == null || !active.asBinder().isBinderAlive()) {
             signalCreateFailed("isolated worker is unavailable for slot " + slot);
             return;
         }
@@ -194,7 +197,9 @@ final class IsolatedGuestClient extends IVClient.Stub
 
     @Override
     public void scheduleBindService(IBinder token, IBinder bindToken, Intent intent,
-            boolean rebind, int processState, long bindSeq) throws RemoteException {
+            boolean rebind, int processState, long bindSeq, long processGeneration)
+            throws RemoteException {
+        if (!matches(processGeneration, token)) return;
         IIsolatedGuestWorker active = requireWorker();
         IBinder binder = active.bindGuestService(intent, rebind);
         if (rebind && binder == null) {
@@ -204,20 +209,25 @@ final class IsolatedGuestClient extends IVClient.Stub
     }
 
     @Override
-    public void scheduleUnbindService(IBinder token, IBinder bindToken, Intent intent)
+    public void scheduleUnbindService(IBinder token, IBinder bindToken, Intent intent,
+            long processGeneration)
             throws RemoteException {
+        if (!matches(processGeneration, token)) return;
         boolean doRebind = requireWorker().unbindGuestService(intent);
         listener.onServiceUnbound(token, bindToken, intent, doRebind, userId);
     }
 
     @Override
     public void scheduleServiceArgs(IBinder token, boolean taskRemoved, int startId,
-            int flags, Intent intent) throws RemoteException {
+            int flags, Intent intent, long processGeneration) throws RemoteException {
+        if (!matches(processGeneration, token)) return;
         requireWorker().startGuestService(intent, flags, startId);
     }
 
     @Override
-    public void scheduleStopService(IBinder token) throws RemoteException {
+    public void scheduleStopService(IBinder token, long processGeneration)
+            throws RemoteException {
+        if (!matches(processGeneration, token)) return;
         requireWorker().destroyGuestService();
         listener.onServiceStopped(token, userId);
         close();
@@ -225,11 +235,18 @@ final class IsolatedGuestClient extends IVClient.Stub
 
     private IIsolatedGuestWorker requireWorker() throws RemoteException {
         synchronized (lock) {
-            if (closed || worker == null || !worker.asBinder().isBinderAlive()
-                    || !worker.asBinder().pingBinder()) {
+            if (closed || terminalCallbackSent || worker == null
+                    || !worker.asBinder().isBinderAlive()) {
                 throw new RemoteException("isolated worker is unavailable for slot " + slot);
             }
             return worker;
+        }
+    }
+
+    private boolean matches(long processGeneration, IBinder token) {
+        synchronized (lock) {
+            return !closed && !terminalCallbackSent && processGeneration == generation
+                    && serviceToken == token;
         }
     }
 
@@ -257,8 +274,9 @@ final class IsolatedGuestClient extends IVClient.Stub
             Intent intent, PendingResultData resultData, long dispatchToken,
             long processGeneration) {}
     @Override public void cancelReceiver(long dispatchToken, long processGeneration) {}
-    @Override public void scheduleNewIntent(String creator, IBinder token, Intent intent) {}
-    @Override public void finishActivity(IBinder token) {}
+    @Override public void scheduleNewIntent(String creator, IBinder token, Intent intent,
+            long processGeneration) {}
+    @Override public void finishActivity(IBinder token, long processGeneration) {}
     @Override public IBinder createProxyService(ComponentName component, IBinder binder) {
         return binder;
     }

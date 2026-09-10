@@ -25,6 +25,7 @@ import com.lody.virtual.remote.StubActivityRecord;
 import com.lody.virtual.os.VUserHandle;
 
 import java.util.ArrayList;
+import java.util.List;
 import java.util.Iterator;
 import java.util.ListIterator;
 import java.util.UUID;
@@ -105,7 +106,8 @@ import static android.content.pm.ActivityInfo.LAUNCH_SINGLE_TOP;
             if (!isProcessEndpointAlive(targetRecord.process)) {
                 return false;
             }
-            targetRecord.process.client.scheduleNewIntent(creator, targetRecord.token, intent);
+            targetRecord.process.client.scheduleNewIntent(
+                    creator, targetRecord.token, intent, targetRecord.process.generation);
             return true;
         } catch (RemoteException e) {
             e.printStackTrace();
@@ -116,21 +118,15 @@ import static android.content.pm.ActivityInfo.LAUNCH_SINGLE_TOP;
         }
     }
 
-    private static boolean isProcessEndpointAlive(ProcessRecord processRecord) {
-        if (processRecord == null || processRecord.terminalCleanupStarted) {
-            return false;
-        }
-        if (processRecord.lifecycle.state() != ProcessLifecycle.State.READY) {
-            return false;
-        }
+    private boolean isProcessEndpointAlive(ProcessRecord processRecord) {
+        if (!mService.isCurrentActivityProcessOwner(processRecord)) return false;
         if (processRecord.osIsolatedWorker && processRecord.client instanceof IsolatedGuestClient) {
-            return ((IsolatedGuestClient) processRecord.client).isEndpointActive();
+            return ((IsolatedGuestClient) processRecord.client).isWorkerAlive();
         }
         if (processRecord.appThread == null) {
             return false;
         }
-        return processRecord.appThread.asBinder().isBinderAlive()
-                && processRecord.appThread.asBinder().pingBinder();
+        return processRecord.appThread.asBinder().isBinderAlive();
     }
 
     private TaskRecord findTaskByAffinityLocked(int userId, String affinity) {
@@ -639,7 +635,9 @@ import static android.content.pm.ActivityInfo.LAUNCH_SINGLE_TOP;
                 @Override
                 public void run() {
                     try {
-                        r.process.client.finishActivity(r.token);
+                        if (isProcessEndpointAlive(r.process)) {
+                            r.process.client.finishActivity(r.token, r.process.generation);
+                        }
                     } catch (RemoteException e) {
                         e.printStackTrace();
                     }
@@ -861,7 +859,8 @@ import static android.content.pm.ActivityInfo.LAUNCH_SINGLE_TOP;
         }
     }
 
-    void processDied(ProcessRecord record) {
+    List<Integer> processDied(ProcessRecord record) {
+        List<Integer> emptiedTaskIds = new ArrayList<>();
         synchronized (mHistory) {
             optimizeTasksLocked();
             int N = mHistory.size();
@@ -871,16 +870,33 @@ import static android.content.pm.ActivityInfo.LAUNCH_SINGLE_TOP;
                     Iterator<ActivityRecord> iterator = task.activities.iterator();
                     while (iterator.hasNext()) {
                         ActivityRecord r = iterator.next();
-                        if (r.process.pid == record.pid) {
+                        if (r.process == record) {
                             iterator.remove();
-                            if (task.activities.isEmpty()) {
-                                mHistory.remove(task.taskId);
-                            }
                         }
+                    }
+                    if (task.activities.isEmpty()) {
+                        emptiedTaskIds.add(task.taskId);
+                        mHistory.remove(task.taskId);
                     }
                 }
             }
+        }
+        return emptiedTaskIds;
+    }
 
+    boolean hasLiveTaskOwnership(int taskId) {
+        synchronized (mHistory) {
+            TaskRecord task = mHistory.get(taskId);
+            if (task == null) return false;
+            synchronized (task.activities) {
+                for (ActivityRecord activity : task.activities) {
+                    if (!activity.marked
+                            && mService.isCurrentActivityProcessOwner(activity.process)) {
+                        return true;
+                    }
+                }
+            }
+            return false;
         }
     }
 

@@ -130,6 +130,7 @@ public final class StubProcessOwner {
         if (currentIdentity == null) {
             currentIdentity = new Identity(vuid, packageName, processName, generation,
                     reportedUidOverride, serverToken);
+            notifyAll();
             return result(true, REASON_ACCEPTED);
         }
 
@@ -152,6 +153,7 @@ public final class StubProcessOwner {
 
         currentIdentity = new Identity(vuid, packageName, processName, generation,
                 reportedUidOverride, serverToken);
+        notifyAll();
         return result(true, REASON_REATTACHED);
     }
 
@@ -166,6 +168,27 @@ public final class StubProcessOwner {
     }
 
     public synchronized Identity snapshot() {
+        return currentIdentity;
+    }
+
+    /** Waits on the claim condition up to one fixed deadline; it never polls. */
+    public synchronized Identity awaitIdentity(long timeoutMillis) {
+        if (currentIdentity != null || timeoutMillis <= 0) return currentIdentity;
+        long timeoutNanos = Math.min(timeoutMillis, Long.MAX_VALUE / 1_000_000L)
+                * 1_000_000L;
+        long deadlineNanos = System.nanoTime() + timeoutNanos;
+        while (currentIdentity == null) {
+            long remainingNanos = deadlineNanos - System.nanoTime();
+            if (remainingNanos <= 0) break;
+            long waitMillis = remainingNanos / 1_000_000L;
+            int waitNanos = (int) (remainingNanos % 1_000_000L);
+            try {
+                wait(waitMillis, waitNanos);
+            } catch (InterruptedException interrupted) {
+                Thread.currentThread().interrupt();
+                break;
+            }
+        }
         return currentIdentity;
     }
 

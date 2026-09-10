@@ -131,6 +131,7 @@ public class VActivityManagerService extends IActivityManager.Stub
     private LinePushProcessGuard mLinePushProcessGuard;
     private LinePushClosedGateRecovery mLinePushClosedGateRecovery;
     private StaticBroadcastDispatcher mStaticBroadcastDispatcher;
+    private GuestProcessThawCoordinator mGuestProcessThawCoordinator;
     private int mDaemonWorkloadMutationsInFlight;
     private Handler mServiceHandler;
     private ActivityManager am = (ActivityManager) VirtualCore.get().getContext()
@@ -188,8 +189,9 @@ public class VActivityManagerService extends IActivityManager.Stub
         GmsBackgroundKeepAlive keepAlive = mGmsBackgroundKeepAlive;
         LinePushProcessGuard lineGuard = mLinePushProcessGuard;
         StaticBroadcastDispatcher broadcastDispatcher = mStaticBroadcastDispatcher;
+        GuestProcessThawCoordinator thawCoordinator = mGuestProcessThawCoordinator;
         boolean initialized = gmsSupervisor != null && keepAlive != null && lineGuard != null
-                && broadcastDispatcher != null;
+                && broadcastDispatcher != null && thawCoordinator != null;
         boolean nonActivityObservationReliable = initialized
                 && mGmsReconciliationReliability.isComplete()
                 && mDaemonWorkloadMutationsInFlight == 0;
@@ -199,7 +201,8 @@ public class VActivityManagerService extends IActivityManager.Stub
                 0,
                 0,
                 activeServices + (broadcastDispatcher == null
-                        ? 0 : broadcastDispatcher.pendingCount()),
+                        ? 0 : broadcastDispatcher.pendingCount())
+                        + (thawCoordinator == null ? 0 : thawCoordinator.activeLeaseCount()),
                 mPreparedActivityLaunches.pendingCount(),
                 keepAlive == null ? 0 : keepAlive.activeBindingCount(),
                 lineGuard == null ? 0 : lineGuard.activeLeaseCount(),
@@ -358,6 +361,8 @@ public class VActivityManagerService extends IActivityManager.Stub
                     BroadcastSystem.get().broadcastFinish(original, updated);
                     mDaemonWorkloadGate.workloadChanged();
                 });
+        mGuestProcessThawCoordinator = new GuestProcessThawCoordinator(
+                context, this::isCurrentReadyGuestOwner);
         mLinePushClosedGateRecovery = new LinePushClosedGateRecovery((runnable, delayMillis) -> {
             if (!mServiceHandler.postDelayed(runnable, delayMillis)) {
                 throw new IllegalStateException("LINE push recovery handler rejected callback");
@@ -377,6 +382,7 @@ public class VActivityManagerService extends IActivityManager.Stub
             throw new RuntimeException("Unable to found PackageInfo : " + context.getPackageName());
         }
         sService.set(this);
+        scheduleOrphanedStubTaskReconciliation(null, "engine-startup");
 
         // A provider/job process must not start guest MCS without an active, user-visible FGS.
         // Service.onStartCommand performs the normal foreground-session reconciliation.
@@ -410,6 +416,54 @@ public class VActivityManagerService extends IActivityManager.Stub
                 endDaemonWorkloadMutation();
             }
         }, INITIAL_GMS_RECONCILE_RETRY_DELAY_MS);
+    }
+
+    private void scheduleOrphanedStubTaskReconciliation(
+            Set<Integer> candidateTaskIds, String reason) {
+        final Set<Integer> candidates = candidateTaskIds == null
+                ? null : new HashSet<>(candidateTaskIds);
+        mServiceHandler.post(() -> reconcileOrphanedStubTasks(candidates, reason));
+    }
+
+    /** Runs without VAMS/history locks; each removal is preceded by a live-owner recheck. */
+    private void reconcileOrphanedStubTasks(Set<Integer> candidateTaskIds, String reason) {
+        List<ActivityManager.AppTask> appTasks;
+        try {
+            appTasks = am.getAppTasks();
+        } catch (RuntimeException error) {
+            VLog.w(TAG, "Unable to enumerate AppTwin tasks during " + reason);
+            return;
+        }
+        if (appTasks == null) return;
+        String hostPackage = VirtualCore.get().getHostPkg();
+        for (ActivityManager.AppTask appTask : appTasks) {
+            ActivityManager.RecentTaskInfo taskInfo;
+            try {
+                taskInfo = appTask.getTaskInfo();
+            } catch (RuntimeException unavailable) {
+                continue;
+            }
+            if (taskInfo == null
+                    || (candidateTaskIds != null && !candidateTaskIds.contains(taskInfo.id))) {
+                continue;
+            }
+            boolean liveOwnership = mMainStack.hasLiveTaskOwnership(taskInfo.id);
+            if (!OrphanStubTaskPolicy.shouldRemove(hostPackage,
+                    taskInfo.baseActivity, taskInfo.topActivity,
+                    liveOwnership, VASettings.STUB_COUNT)) {
+                continue;
+            }
+            // Close the race with an activity callback that repopulated this physical task after
+            // the first snapshot. Never remove a task once a live generation owns it again.
+            if (mMainStack.hasLiveTaskOwnership(taskInfo.id)) continue;
+            try {
+                appTask.finishAndRemoveTask();
+                VLog.i(TAG, "Removed orphan StubActivity task=" + taskInfo.id
+                        + " reason=" + reason);
+            } catch (RuntimeException error) {
+                VLog.w(TAG, "Unable to remove orphan StubActivity task=" + taskInfo.id);
+            }
+        }
     }
 
     static boolean shouldScheduleInitialGmsReconciliation(boolean foregroundSessionActive,
@@ -806,14 +860,10 @@ public class VActivityManagerService extends IActivityManager.Stub
             String processName = resolved.processName;
             ProcessRecord r = startProcessIfNeedLocked(
                     processName, userId, resolved.packageName);
-            if (r != null && r.client.asBinder().pingBinder()) {
-                try {
-                    return r.client.acquireProviderClient(resolved);
-                } catch (RemoteException e) {
-                    e.printStackTrace();
-                }
-            }
-            return null;
+            if (r == null) return null;
+            final ProcessRecord target = r;
+            return mGuestProcessThawCoordinator.execute(target,
+                    () -> target.client.acquireProviderClient(resolved), null);
         } finally {
             endDaemonWorkloadMutation();
         }
@@ -1033,7 +1083,7 @@ public class VActivityManagerService extends IActivityManager.Stub
                                     + " token=" + dispatchRecord);
                             targetApp.client.scheduleServiceArgs(
                                     dispatchRecord, taskRemoved,
-                                    startId, 0, dispatchIntent);
+                                    startId, 0, dispatchIntent, targetApp.generation);
                         },
                         null);
             }
@@ -1205,7 +1255,8 @@ public class VActivityManagerService extends IActivityManager.Stub
             enqueueServiceOperation(r.process, PendingServiceOperation.Type.UNBIND,
                     "unbind-stopped " + className,
                     () -> r.process.client.scheduleUnbindService(
-                            r, binding.getBindToken(), binding.intent), null);
+                            r, binding.getBindToken(), binding.intent,
+                            r.process.generation), null);
         }
         enqueueStopOperation(r, "stop-service");
         drainProcessLifecycle(r.process);
@@ -1273,7 +1324,8 @@ public class VActivityManagerService extends IActivityManager.Stub
                                 targetRecord.process.client.scheduleBindService(
                                         targetRecord, boundRecord.getBindToken(),
                                         boundRecord.intent, true, 0,
-                                        boundRecord.nextBindSequence());
+                                        boundRecord.nextBindSequence(),
+                                        targetRecord.process.generation);
                             }, reason -> boundRecord.setDoRebind(true));
                 }
                 final ComponentName componentName = ComponentUtils.toComponentName(serviceInfo);
@@ -1298,7 +1350,8 @@ public class VActivityManagerService extends IActivityManager.Stub
                             targetRecord.process.client.scheduleBindService(
                                     targetRecord, boundRecord.getBindToken(),
                                     boundRecord.intent, false, 0,
-                                    boundRecord.nextBindSequence());
+                                    boundRecord.nextBindSequence(),
+                                    targetRecord.process.generation);
                         }, reason -> boundRecord.bindRequestFailed());
             }
             targetRecord.lastActivityTime = SystemClock.uptimeMillis();
@@ -1338,7 +1391,8 @@ public class VActivityManagerService extends IActivityManager.Stub
                                 PendingServiceOperation.Type.UNBIND,
                                 "unbind " + ComponentUtils.toComponentName(r.serviceInfo),
                                 () -> r.process.client.scheduleUnbindService(
-                                        r, bindRecord.getBindToken(), bindRecord.intent), null);
+                                        r, bindRecord.getBindToken(), bindRecord.intent,
+                                        r.process.generation), null);
                     }
                 }
             }
@@ -1401,7 +1455,8 @@ public class VActivityManagerService extends IActivityManager.Stub
                                 && binding.hasPublishedBinder()) {
                             service.process.client.scheduleBindService(
                                     service, binding.getBindToken(), binding.intent,
-                                    true, 0, binding.nextBindSequence());
+                                    true, 0, binding.nextBindSequence(),
+                                    service.process.generation);
                         }
                     }, reason -> binding.setDoRebind(true));
             final ComponentName component = ComponentUtils.toComponentName(service.serviceInfo);
@@ -1425,7 +1480,8 @@ public class VActivityManagerService extends IActivityManager.Stub
                                 && binding.shouldDispatchBind()) {
                             service.process.client.scheduleBindService(
                                     service, binding.getBindToken(), binding.intent,
-                                    false, 0, binding.nextBindSequence());
+                                    false, 0, binding.nextBindSequence(),
+                                    service.process.generation);
                         }
                     }, reason -> binding.bindRequestFailed());
         }
@@ -1554,7 +1610,8 @@ public class VActivityManagerService extends IActivityManager.Stub
                 "stop " + ComponentUtils.toComponentName(record.serviceInfo) + " reason=" + reason,
                 () -> {
                     if (isProcessEndpointAlive(record.process)) {
-                        record.process.client.scheduleStopService(record);
+                        record.process.client.scheduleStopService(
+                                record, record.process.generation);
                     }
                 }, null);
     }
@@ -1577,7 +1634,8 @@ public class VActivityManagerService extends IActivityManager.Stub
             }
         }
         try {
-            process.client.scheduleCreateService(record, record.serviceInfo, 0);
+            process.client.scheduleCreateService(
+                    record, record.serviceInfo, 0, process.generation);
             return true;
         } catch (RemoteException e) {
             VLog.e(TAG, "scheduleCreateService failed for "
@@ -1695,6 +1753,7 @@ public class VActivityManagerService extends IActivityManager.Stub
             mGmsBackgroundKeepAlive.release(process);
             mLinePushProcessGuard.release(process);
             mStaticBroadcastDispatcher.cancelProcess(process, reason);
+            mGuestProcessThawCoordinator.cancel(process, reason);
             if (bindingsBefore != mGmsBackgroundKeepAlive.activeBindingCount()
                     || leasesBefore != mLinePushProcessGuard.activeLeaseCount()) {
                 mDaemonWorkloadGate.workloadChanged();
@@ -1706,11 +1765,18 @@ public class VActivityManagerService extends IActivityManager.Stub
                 notifyServiceDisconnected(connection, component);
             }
         }
+        List<Integer> emptiedTaskIds = Collections.emptyList();
         if (!process.osIsolatedWorker) {
             synchronized (this) {
-                mMainStack.processDied(process);
+                emptiedTaskIds = mMainStack.processDied(process);
                 mDaemonWorkloadGate.workloadChanged();
             }
+        }
+        if (!process.osIsolatedWorker) {
+            // The OS may kill a Stub process before its launch callback creates a virtual history
+            // record. A full exact-allowlist scan is therefore required on every guest cleanup.
+            scheduleOrphanedStubTaskReconciliation(null,
+                    "process-death-full virtualTasks=" + emptiedTaskIds.size());
         }
         VLog.w(TAG, "process-lifecycle-cleanup pid=" + process.pid
                 + " generation=" + process.generation + " reason=" + reason
@@ -1742,7 +1808,8 @@ public class VActivityManagerService extends IActivityManager.Stub
                         PendingServiceOperation.Type.UNBIND,
                         "unbind-dead-client " + ComponentUtils.toComponentName(service.serviceInfo),
                         () -> service.process.client.scheduleUnbindService(
-                                service, binding.getBindToken(), binding.intent), null);
+                                service, binding.getBindToken(), binding.intent,
+                                service.process.generation), null);
             }
             if (service.startId <= 0 && service.getConnectionCount() <= 0) {
                 service.retire();
@@ -1845,18 +1912,56 @@ public class VActivityManagerService extends IActivityManager.Stub
     }
 
     @Override
-    public void processRestarted(String packageName, String processName, int userId) {
-        int callingPid = getCallingPid();
+    public int processRestarted(String packageName, String processName, int userId) {
+        int callingPid = Binder.getCallingPid();
         ProcessRecord existing;
         synchronized (mPidsSelfLocked) {
             existing = findProcessLocked(callingPid);
         }
-        if (!matchesRestartClaim(existing, packageName, processName, userId)) {
-            // An untracked OS-recreated stub has no server-issued reservation generation. It must
-            // not self-assign a package/user identity from caller-controlled AIDL arguments.
-            VLog.e(TAG, "Rejecting unreserved process restart pid=" + callingPid);
-            killProcess(callingPid);
+        if (matchesRestartClaim(existing, packageName, processName, userId)) {
+            return IActivityManager.PROCESS_RESTART_OWNER_READY;
         }
+
+        String hostPackage = VirtualCore.get().getHostPkg();
+        int slot = RawSystemProcessAuthority.findExactHostStubSlot(
+                callingPid, Process.myUid(), hostPackage, VASettings.STUB_COUNT);
+        PackageSetting setting = PackageCacheManager.getSetting(packageName);
+        int expectedVuid = setting != null && setting.isInstalled(userId)
+                ? VUserHandle.getUid(userId, setting.appId) : -1;
+        LogicalProcessOwnerRegistry.Reservation reservation = slot < 0 ? null
+                : mLogicalProcessOwners.findReservationBySlot(slot);
+        if (matchesBootstrapReservation(
+                reservation, slot, expectedVuid, packageName, processName)) {
+            VLog.i(TAG, "Exact Stub bootstrap pending pid=" + callingPid
+                    + " slot=" + slot + " user=" + userId);
+            return IActivityManager.PROCESS_RESTART_EXACT_BOOTSTRAP_PENDING;
+        }
+
+        // Close a narrow claim race before terminating: only a fully registered exact owner wins.
+        synchronized (mPidsSelfLocked) {
+            existing = findProcessLocked(callingPid);
+        }
+        if (matchesRestartClaim(existing, packageName, processName, userId)) {
+            return IActivityManager.PROCESS_RESTART_OWNER_READY;
+        }
+        VLog.e(TAG, "Rejecting Stub bootstrap pid=" + callingPid
+                + " slot=" + slot + " user=" + userId
+                + " reason=no-exact-active-reservation");
+        killProcess(callingPid);
+        return IActivityManager.PROCESS_RESTART_REJECTED;
+    }
+
+    static boolean matchesBootstrapReservation(
+            LogicalProcessOwnerRegistry.Reservation reservation, int rawSlot,
+            int expectedVuid, String packageName, String processName) {
+        if (reservation == null || rawSlot < 0 || reservation.slot() != rawSlot
+                || expectedVuid < 0 || packageName == null || processName == null) {
+            return false;
+        }
+        LogicalProcessKey key = reservation.key();
+        return key.vuid() == expectedVuid
+                && packageName.equals(key.packageName())
+                && processName.equals(key.processName());
     }
 
     static boolean matchesRestartClaim(
@@ -2236,7 +2341,8 @@ public class VActivityManagerService extends IActivityManager.Stub
             process.isolatedOwnerKey = key;
             process.pkgList.add(info.packageName);
             IsolatedGuestClient client = new IsolatedGuestClient(
-                    VirtualCore.get().getContext(), reservation.slot(), userId, this);
+                    VirtualCore.get().getContext(), reservation.slot(), userId,
+                    reservation.generation(), this);
             process.client = client;
             process.appThread = client;
             LogicalProcessOwnerRegistry.ClaimResult<ProcessRecord> claim =
@@ -2634,19 +2740,51 @@ public class VActivityManagerService extends IActivityManager.Stub
         }
     }
 
-    private static boolean isProcessEndpointAlive(ProcessRecord process) {
-        if (process == null || process.appThread == null) {
+    private boolean isCurrentReadyGuestOwner(ProcessRecord process, long generation) {
+        if (process == null || process.generation != generation
+                || process.terminalCleanupStarted || process.client == null
+                || process.lifecycle.state() != ProcessLifecycle.State.READY) {
+            return false;
+        }
+        synchronized (mProcessNames) {
+            return isCurrentProcessOwner(process)
+                    && process.client.asBinder().isBinderAlive();
+        }
+    }
+
+    boolean isCurrentActivityProcessOwner(ProcessRecord process) {
+        if (process == null || process.terminalCleanupStarted || process.client == null) {
+            return false;
+        }
+        ProcessLifecycle.State state = process.lifecycle.state();
+        if (state != ProcessLifecycle.State.STARTING && state != ProcessLifecycle.State.READY) {
+            return false;
+        }
+        synchronized (mProcessNames) {
+            return isCurrentProcessOwner(process)
+                    && process.client.asBinder().isBinderAlive();
+        }
+    }
+
+    private boolean isProcessEndpointAlive(ProcessRecord process) {
+        if (process == null || process.appThread == null || process.terminalCleanupStarted) {
+            return false;
+        }
+        ProcessLifecycle.State state = process.lifecycle.state();
+        if (state != ProcessLifecycle.State.STARTING && state != ProcessLifecycle.State.READY) {
             return false;
         }
         if (process.osIsolatedWorker) {
             return process.client instanceof IsolatedGuestClient
                     && ((IsolatedGuestClient) process.client).isWorkerAlive();
         }
-        return process.appThread.asBinder().isBinderAlive()
-                && process.appThread.asBinder().pingBinder();
+        synchronized (mProcessNames) {
+            return isCurrentProcessOwner(process)
+                    && process.appThread.asBinder().isBinderAlive();
+        }
     }
 
-    private static boolean isProcessEndpointActive(ProcessRecord process) {
+    private boolean isProcessEndpointActive(ProcessRecord process) {
         if (process != null && process.osIsolatedWorker
                 && process.client instanceof IsolatedGuestClient) {
             return ((IsolatedGuestClient) process.client).isEndpointActive();
@@ -2661,7 +2799,7 @@ public class VActivityManagerService extends IActivityManager.Stub
         ProcessLifecycle.State state = record.lifecycle.state();
         IBinder binder = record.client.asBinder();
         return (state == ProcessLifecycle.State.STARTING || state == ProcessLifecycle.State.READY)
-                && binder != null && binder.isBinderAlive() && binder.pingBinder();
+                && binder != null && binder.isBinderAlive();
     }
 
     private static boolean isIsolatedOwnerAlive(ProcessRecord record) {
@@ -2691,6 +2829,7 @@ public class VActivityManagerService extends IActivityManager.Stub
                     + " generation=" + process.generation);
             drainProcessLifecycle(process);
             mStaticBroadcastDispatcher.onProcessReady(process);
+            mGuestProcessThawCoordinator.onProcessReady(process);
         }
     }
 
@@ -2791,11 +2930,15 @@ public class VActivityManagerService extends IActivityManager.Stub
                 mBroadcastDispatchStopFence.beginAll();
         mStaticBroadcastDispatcher.cancelAll("all-apps-stopped");
         try {
+            List<ProcessRecord> processes = new ArrayList<>();
             synchronized (mPidsSelfLocked) {
                 for (int i = 0; i < mPidsSelfLocked.size(); i++) {
-                    ProcessRecord r = mPidsSelfLocked.valueAt(i);
-                    killProcess(r.pid);
+                    processes.add(mPidsSelfLocked.valueAt(i));
                 }
+            }
+            for (ProcessRecord process : processes) {
+                mGuestProcessThawCoordinator.cancel(process, "all-apps-stopped");
+                killProcess(process.pid);
             }
         } finally {
             mBroadcastDispatchStopFence.end(broadcastStop);
@@ -2814,6 +2957,7 @@ public class VActivityManagerService extends IActivityManager.Stub
         mStaticBroadcastDispatcher.cancelPackageUser(pkg, userId, "package-stopped");
         LinePushStopFence.StopScope lineStop = beginLinePushStop(pkg, userId);
         try {
+            List<ProcessRecord> processes = new ArrayList<>();
             synchronized (mProcessNames) {
                 ArrayMap<String, SparseArray<ProcessRecord>> map = mProcessNames.getMap();
                 int N = map.size();
@@ -2827,10 +2971,14 @@ public class VActivityManagerService extends IActivityManager.Stub
                             }
                         }
                         if (r.pkgList.contains(pkg)) {
-                            killProcess(r.pid);
+                            processes.add(r);
                         }
                     }
                 }
+            }
+            for (ProcessRecord process : processes) {
+                mGuestProcessThawCoordinator.cancel(process, "package-stopped");
+                killProcess(process.pid);
             }
         } finally {
             endLinePushStop(lineStop);
@@ -2858,11 +3006,13 @@ public class VActivityManagerService extends IActivityManager.Stub
     @Override
     public void killApplicationProcess(final String processName, int uid) {
         enforceCallerUserOrHost(VUserHandle.getUserId(uid));
+        ProcessRecord process;
         synchronized (mProcessNames) {
-            ProcessRecord r = mProcessNames.get(processName, uid);
-            if (r != null) {
-                killProcess(r.pid);
-            }
+            process = mProcessNames.get(processName, uid);
+        }
+        if (process != null) {
+            mGuestProcessThawCoordinator.cancel(process, "process-stopped");
+            killProcess(process.pid);
         }
     }
 
@@ -2954,6 +3104,7 @@ public class VActivityManagerService extends IActivityManager.Stub
                     + " STARTING->READY pending=" + r.lifecycle.pendingCount());
             drainProcessLifecycle(r);
             mStaticBroadcastDispatcher.onProcessReady(r);
+            mGuestProcessThawCoordinator.onProcessReady(r);
         }
     }
 

@@ -339,7 +339,7 @@ public class ServiceRecord extends Binder {
 		/** Returns true once while an unpublished binding needs onBind scheduled. */
 		public synchronized boolean requestBindIfNeeded() {
 			if (retired || unbindInFlight || bindRequested
-					|| (binder != null && binder.pingBinder())) {
+					|| (binder != null && binder.isBinderAlive())) {
 				return false;
 			}
 			bindRequested = true;
@@ -357,12 +357,12 @@ public class ServiceRecord extends Binder {
 		}
 
 		public synchronized boolean hasPublishedBinder() {
-			return !retired && binder != null && binder.pingBinder();
+			return !retired && binder != null && binder.isBinderAlive();
 		}
 
 		/** Marks the one guest onUnbind call that follows the final client leaving. */
 		public synchronized boolean beginUnbindIfNeeded() {
-			if (retired || unbindInFlight || binder == null || !binder.pingBinder()) {
+			if (retired || unbindInFlight || binder == null || !binder.isBinderAlive()) {
 				return false;
 			}
 			unbindInFlight = true;
