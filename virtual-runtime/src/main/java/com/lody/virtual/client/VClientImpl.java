@@ -62,6 +62,7 @@ import java.lang.reflect.Field;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashSet;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -95,6 +96,7 @@ public final class VClientImpl extends IVClient.Stub {
 
     private static final int NEW_INTENT = 11;
     private static final int RECEIVER = 12;
+    private static final long CANCELLED_RECEIVER_TOMBSTONE_MILLIS = 30_000L;
 
     private static final String TAG = VClientImpl.class.getSimpleName();
     @SuppressLint("StaticFieldLeak")
@@ -120,6 +122,7 @@ public final class VClientImpl extends IVClient.Stub {
     private Application mInitialApplication;
     private CrashHandler crashHandler;
     private IUiCallback mUiCallback;
+    private final Map<IBinder, BroadcastCompletion> mBroadcastCompletions = new HashMap<>();
 
     public static VClientImpl get() {
         return gClient;
@@ -865,13 +868,70 @@ public final class VClientImpl extends IVClient.Stub {
     }
 
     @Override
-    public void scheduleReceiver(String processName, ComponentName component, Intent intent, PendingResultData resultData) {
+    public void scheduleReceiver(String processName, ComponentName component, Intent intent,
+            PendingResultData resultData, long dispatchToken, long processGeneration) {
+        synchronized (mBroadcastCompletions) {
+            mBroadcastCompletions.put(resultData.mToken,
+                    new BroadcastCompletion(dispatchToken, processGeneration, resultData));
+        }
         ReceiverData receiverData = new ReceiverData();
         receiverData.resultData = resultData;
         receiverData.intent = intent;
         receiverData.component = component;
         receiverData.processName = processName;
+        receiverData.dispatchToken = dispatchToken;
+        receiverData.processGeneration = processGeneration;
         sendMessage(RECEIVER, receiverData);
+    }
+
+    @Override
+    public void cancelReceiver(long dispatchToken, long processGeneration) {
+        synchronized (mBroadcastCompletions) {
+            for (Map.Entry<IBinder, BroadcastCompletion> entry
+                    : mBroadcastCompletions.entrySet()) {
+                BroadcastCompletion completion = entry.getValue();
+                if (completion.dispatchToken == dispatchToken
+                        && completion.processGeneration == processGeneration) {
+                    completion.cancelled = true;
+                    IBinder resultToken = entry.getKey();
+                    mH.postDelayed(() -> removeCancelledReceiver(
+                                    resultToken, dispatchToken, processGeneration),
+                            CANCELLED_RECEIVER_TOMBSTONE_MILLIS);
+                    return;
+                }
+            }
+        }
+    }
+
+    private void removeCancelledReceiver(IBinder resultToken, long dispatchToken,
+            long processGeneration) {
+        synchronized (mBroadcastCompletions) {
+            BroadcastCompletion completion = mBroadcastCompletions.get(resultToken);
+            if (completion != null && completion.cancelled
+                    && completion.dispatchToken == dispatchToken
+                    && completion.processGeneration == processGeneration) {
+                mBroadcastCompletions.remove(resultToken);
+            }
+        }
+    }
+
+    /** Consumes a PendingResult.finishReceiver call owned by the static dispatcher. */
+    public boolean finishReceiverIfOwned(IBinder resultToken, int resultCode,
+            String resultData, android.os.Bundle resultExtras, boolean abortBroadcast) {
+        BroadcastCompletion completion;
+        synchronized (mBroadcastCompletions) {
+            completion = mBroadcastCompletions.remove(resultToken);
+        }
+        if (completion == null) return false;
+        if (completion.cancelled) return true;
+        completion.result.mResultCode = resultCode;
+        completion.result.mResultData = resultData;
+        completion.result.mResultExtras = resultExtras;
+        completion.result.mAbortBroadcast = abortBroadcast;
+        completion.result.mFinished = true;
+        VActivityManager.get().broadcastFinish(
+                completion.dispatchToken, completion.processGeneration, completion.result);
+        return true;
     }
 
     private void handleReceiver(ReceiverData data) {
@@ -894,10 +954,13 @@ public final class VClientImpl extends IVClient.Stub {
                 result.finish();
             }
         } catch (Exception e) {
-            // must be this for misjudge of anti-virus!!
-            throw new RuntimeException(String.format("Unable to start receiver: %s ", data.component), e);
+            VLog.e(TAG, "Unable to start receiver: " + data.component, e);
+            finishReceiverIfOwned(data.resultData.mToken, data.resultData.mResultCode,
+                    data.resultData.mResultData, data.resultData.mResultExtras,
+                    data.resultData.mAbortBroadcast);
+            throw new RuntimeException(String.format(
+                    "Unable to start receiver: %s ", data.component), e);
         }
-        VActivityManager.get().broadcastFinish(data.resultData);
     }
 
     @Override
@@ -951,6 +1014,22 @@ public final class VClientImpl extends IVClient.Stub {
         Intent intent;
         ComponentName component;
         String processName;
+        long dispatchToken;
+        long processGeneration;
+    }
+
+    private static final class BroadcastCompletion {
+        final long dispatchToken;
+        final long processGeneration;
+        final PendingResultData result;
+        boolean cancelled;
+
+        BroadcastCompletion(long dispatchToken, long processGeneration,
+                PendingResultData result) {
+            this.dispatchToken = dispatchToken;
+            this.processGeneration = processGeneration;
+            this.result = result;
+        }
     }
 
     private class H extends Handler {

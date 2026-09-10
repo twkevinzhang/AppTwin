@@ -9,7 +9,10 @@ import android.content.pm.ServiceInfo;
 import com.lody.virtual.remote.PendingResultData;
 
 interface IVClient {
-    void scheduleReceiver(in String processName,in ComponentName component, in Intent intent, in PendingResultData resultData);
+    oneway void scheduleReceiver(in String processName, in ComponentName component,
+            in Intent intent, in PendingResultData resultData, long dispatchToken,
+            long processGeneration);
+    oneway void cancelReceiver(long dispatchToken, long processGeneration);
     void scheduleNewIntent(in String creator, in IBinder token, in Intent intent);
     void finishActivity(in IBinder token);
     IBinder createProxyService(in ComponentName component, in IBinder binder);

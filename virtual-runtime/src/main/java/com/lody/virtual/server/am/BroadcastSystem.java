@@ -7,14 +7,11 @@ import android.content.IntentFilter;
 import android.content.pm.ActivityInfo;
 import android.os.Build;
 import android.os.Handler;
-import android.os.IBinder;
-import android.os.Message;
 
 import com.lody.virtual.client.core.VirtualCore;
 import com.lody.virtual.client.env.SpecialComponentList;
 import com.lody.virtual.helper.collection.ArrayMap;
 import com.lody.virtual.helper.utils.BroadcastPackageScope;
-import com.lody.virtual.helper.utils.VLog;
 import com.lody.virtual.os.VUserHandle;
 import com.lody.virtual.remote.PendingResultData;
 import com.lody.virtual.server.pm.PackageSetting;
@@ -23,11 +20,8 @@ import com.lody.virtual.server.pm.parser.VPackage;
 
 import java.util.ArrayList;
 import java.util.Collections;
-import java.util.HashMap;
-import java.util.Iterator;
 import java.util.LinkedList;
 import java.util.List;
-import java.util.Map;
 
 import mirror.android.app.ContextImpl;
 import mirror.android.app.LoadedApkHuaWei;
@@ -44,19 +38,13 @@ import static android.content.Intent.FLAG_RECEIVER_REGISTERED_ONLY;
 public class BroadcastSystem {
 
     private static final String TAG = BroadcastSystem.class.getSimpleName();
-    /**
-     * MUST < 10000.
-     */
-    private static final int BROADCAST_TIME_OUT = 8500;
     private static final String INTERNAL_BROADCAST_PERMISSION_SUFFIX =
             ".permission.INTERNAL_BROADCAST";
     private static BroadcastSystem gDefault;
 
     private final ArrayMap<String, List<BroadcastReceiver>> mReceivers = new ArrayMap<>();
-    private final Map<IBinder, BroadcastRecord> mBroadcastRecords = new HashMap<>();
     private final Context mContext;
     private final StaticScheduler mScheduler;
-    private final TimeoutHandler mTimeoutHandler;
     private final VActivityManagerService mAMS;
     private final VAppManagerService mApp;
 
@@ -65,7 +53,6 @@ public class BroadcastSystem {
         this.mApp = app;
         this.mAMS = ams;
         mScheduler = new StaticScheduler();
-        mTimeoutHandler = new TimeoutHandler();
         fuckHuaWeiVerifier();
     }
 
@@ -199,22 +186,9 @@ public class BroadcastSystem {
 
 
     public void stopApp(String packageName) {
-        LinePushStopFence.StopScope lineStop =
+        VActivityManagerService.StaticBroadcastStopScope stopScope =
                 mAMS.beginStaticBroadcastAppStop(packageName);
         try {
-            synchronized (mBroadcastRecords) {
-                Iterator<Map.Entry<IBinder, BroadcastRecord>> iterator = mBroadcastRecords.entrySet().iterator();
-                while (iterator.hasNext()) {
-                    Map.Entry<IBinder, BroadcastRecord> entry = iterator.next();
-                    BroadcastRecord record = entry.getValue();
-                    if (record.receiverInfo.packageName.equals(packageName)) {
-                        record.pendingResult.finish();
-                        mAMS.onStaticBroadcastFinished(entry.getKey());
-                        LinePushDeliveryDiagnostics.finish(entry.getKey(), "app-stopped");
-                        iterator.remove();
-                    }
-                }
-            }
             synchronized (mReceivers) {
                 List<BroadcastReceiver> receivers = mReceivers.get(packageName);
                 if (receivers != null) {
@@ -225,66 +199,19 @@ public class BroadcastSystem {
                 mReceivers.remove(packageName);
             }
         } finally {
-            mAMS.endStaticBroadcastAppStop(lineStop);
+            mAMS.endStaticBroadcastAppStop(stopScope);
         }
     }
 
-    void broadcastFinish(PendingResultData res) {
-        synchronized (mBroadcastRecords) {
-            BroadcastRecord record = mBroadcastRecords.remove(res.mToken);
-            if (record == null) {
-                VLog.e(TAG, "Unable to find the BroadcastRecord for completed receiver");
-            }
-        }
-        mTimeoutHandler.removeMessages(0, res.mToken);
-        mAMS.onStaticBroadcastFinished(res.mToken);
-        LinePushDeliveryDiagnostics.finish(res.mToken, "completed");
-        res.finish();
-    }
-
-    void broadcastSent(int vuid, ActivityInfo receiverInfo, PendingResultData res) {
-        BroadcastRecord record = new BroadcastRecord(vuid, receiverInfo, res);
-        synchronized (mBroadcastRecords) {
-            mBroadcastRecords.put(res.mToken, record);
-        }
-        Message msg = new Message();
-        msg.obj = res.mToken;
-        mTimeoutHandler.sendMessageDelayed(msg, BROADCAST_TIME_OUT);
+    void broadcastFinish(PendingResultData original, PendingResultData updated) {
+        if (original == null || original.mToken == null) return;
+        original.copyResultFrom(updated);
+        original.finish();
     }
 
     private static final class StaticScheduler extends Handler {
 
     }
-
-    private static final class BroadcastRecord {
-        int vuid;
-        ActivityInfo receiverInfo;
-        PendingResultData pendingResult;
-
-        BroadcastRecord(int vuid, ActivityInfo receiverInfo, PendingResultData pendingResult) {
-            this.vuid = vuid;
-            this.receiverInfo = receiverInfo;
-            this.pendingResult = pendingResult;
-        }
-    }
-
-    private final class TimeoutHandler extends Handler {
-        @Override
-        public void handleMessage(Message msg) {
-            IBinder token = (IBinder) msg.obj;
-            BroadcastRecord r;
-            synchronized (mBroadcastRecords) {
-                r = mBroadcastRecords.remove(token);
-            }
-            if (r != null) {
-                VLog.w(TAG, "Broadcast timeout, cancel to dispatch it.");
-                mAMS.onStaticBroadcastFinished(token);
-                LinePushDeliveryDiagnostics.finish(token, "timeout");
-                r.pendingResult.finish();
-            }
-        }
-    }
-
 
     private final class StaticBroadcastReceiver extends BroadcastReceiver {
         private int appId;

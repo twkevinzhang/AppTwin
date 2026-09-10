@@ -114,7 +114,8 @@ interface IActivityManager {
 
     void processRestarted(in String packageName, in String processName, int userId);
 
-    void broadcastFinish(in PendingResultData res);
+    oneway void broadcastFinish(long dispatchToken, long processGeneration,
+            in PendingResultData res);
 
     String issueLinePushBroadcastAttestation(String action, String targetPackage);
 

@@ -106,6 +106,8 @@ public class VActivityManagerService extends IActivityManager.Stub
     private final GmsReconciliationReliability mGmsReconciliationReliability =
             new GmsReconciliationReliability(this);
     private final LinePushStopFence mLinePushStopFence = new LinePushStopFence();
+    private final BroadcastDispatchStopFence mBroadcastDispatchStopFence =
+            new BroadcastDispatchStopFence();
     private final LinePushBroadcastAttestationRegistry mLinePushBroadcastAttestations =
             new LinePushBroadcastAttestationRegistry();
     private final Map<Long, LinePushDaemonAuthorizationScope> mLinePushDaemonAuthorizations =
@@ -128,6 +130,7 @@ public class VActivityManagerService extends IActivityManager.Stub
     private TrustedGmsCloudMessagingSupervisor mTrustedGmsCloudMessagingSupervisor;
     private LinePushProcessGuard mLinePushProcessGuard;
     private LinePushClosedGateRecovery mLinePushClosedGateRecovery;
+    private StaticBroadcastDispatcher mStaticBroadcastDispatcher;
     private int mDaemonWorkloadMutationsInFlight;
     private Handler mServiceHandler;
     private ActivityManager am = (ActivityManager) VirtualCore.get().getContext()
@@ -184,7 +187,9 @@ public class VActivityManagerService extends IActivityManager.Stub
                 mTrustedGmsCloudMessagingSupervisor;
         GmsBackgroundKeepAlive keepAlive = mGmsBackgroundKeepAlive;
         LinePushProcessGuard lineGuard = mLinePushProcessGuard;
-        boolean initialized = gmsSupervisor != null && keepAlive != null && lineGuard != null;
+        StaticBroadcastDispatcher broadcastDispatcher = mStaticBroadcastDispatcher;
+        boolean initialized = gmsSupervisor != null && keepAlive != null && lineGuard != null
+                && broadcastDispatcher != null;
         boolean nonActivityObservationReliable = initialized
                 && mGmsReconciliationReliability.isComplete()
                 && mDaemonWorkloadMutationsInFlight == 0;
@@ -193,7 +198,8 @@ public class VActivityManagerService extends IActivityManager.Stub
                 gmsSupervisor == null ? 0 : gmsSupervisor.desiredUserCount(),
                 0,
                 0,
-                activeServices,
+                activeServices + (broadcastDispatcher == null
+                        ? 0 : broadcastDispatcher.pendingCount()),
                 mPreparedActivityLaunches.pendingCount(),
                 keepAlive == null ? 0 : keepAlive.activeBindingCount(),
                 lineGuard == null ? 0 : lineGuard.activeLeaseCount(),
@@ -346,6 +352,12 @@ public class VActivityManagerService extends IActivityManager.Stub
             }
         });
         mLinePushProcessGuard = new LinePushProcessGuard(context, mServiceHandler);
+        mStaticBroadcastDispatcher = new StaticBroadcastDispatcher(
+                context, mServiceHandler, this::isCurrentBroadcastOwner,
+                (original, updated, reason) -> {
+                    BroadcastSystem.get().broadcastFinish(original, updated);
+                    mDaemonWorkloadGate.workloadChanged();
+                });
         mLinePushClosedGateRecovery = new LinePushClosedGateRecovery((runnable, delayMillis) -> {
             if (!mServiceHandler.postDelayed(runnable, delayMillis)) {
                 throw new IllegalStateException("LINE push recovery handler rejected callback");
@@ -611,6 +623,9 @@ public class VActivityManagerService extends IActivityManager.Stub
 
     /** Synchronously retires all runtime ownership before a virtual user id can be reused. */
     public boolean clearUserRuntimeState(int userId) {
+        BroadcastDispatchStopFence.StopScope broadcastStop =
+                mBroadcastDispatchStopFence.beginUser(userId);
+        mStaticBroadcastDispatcher.cancelUser(userId, "user-cleanup");
         LinePushStopFence.StopScope lineStop = beginLinePushStop(
                 LinePushBroadcastPolicy.LINE_PACKAGE, userId);
         try {
@@ -620,6 +635,7 @@ public class VActivityManagerService extends IActivityManager.Stub
             return !hasUserRuntimeState(userId);
         } finally {
             endLinePushStop(lineStop);
+            mBroadcastDispatchStopFence.end(broadcastStop);
         }
     }
 
@@ -1678,6 +1694,7 @@ public class VActivityManagerService extends IActivityManager.Stub
             int leasesBefore = mLinePushProcessGuard.activeLeaseCount();
             mGmsBackgroundKeepAlive.release(process);
             mLinePushProcessGuard.release(process);
+            mStaticBroadcastDispatcher.cancelProcess(process, reason);
             if (bindingsBefore != mGmsBackgroundKeepAlive.activeBindingCount()
                     || leasesBefore != mLinePushProcessGuard.activeLeaseCount()) {
                 mDaemonWorkloadGate.workloadChanged();
@@ -2607,6 +2624,16 @@ public class VActivityManagerService extends IActivityManager.Stub
         return mProcessNames.get(record.processName, record.vuid) == record;
     }
 
+    private boolean isCurrentBroadcastOwner(ProcessRecord process) {
+        if (process == null || process.osIsolatedWorker || process.terminalCleanupStarted
+                || process.client == null) {
+            return false;
+        }
+        synchronized (mProcessNames) {
+            return isCurrentProcessOwner(process);
+        }
+    }
+
     private static boolean isProcessEndpointAlive(ProcessRecord process) {
         if (process == null || process.appThread == null) {
             return false;
@@ -2663,6 +2690,7 @@ public class VActivityManagerService extends IActivityManager.Stub
                     + " slot=" + process.vpid + " pid=" + pid + " uid=" + uid
                     + " generation=" + process.generation);
             drainProcessLifecycle(process);
+            mStaticBroadcastDispatcher.onProcessReady(process);
         }
     }
 
@@ -2759,11 +2787,18 @@ public class VActivityManagerService extends IActivityManager.Stub
     @Override
     public void killAllApps() {
         com.lody.virtual.server.VirtualUserAccessPolicy.enforceHost();
-        synchronized (mPidsSelfLocked) {
-            for (int i = 0; i < mPidsSelfLocked.size(); i++) {
-                ProcessRecord r = mPidsSelfLocked.valueAt(i);
-                killProcess(r.pid);
+        BroadcastDispatchStopFence.StopScope broadcastStop =
+                mBroadcastDispatchStopFence.beginAll();
+        mStaticBroadcastDispatcher.cancelAll("all-apps-stopped");
+        try {
+            synchronized (mPidsSelfLocked) {
+                for (int i = 0; i < mPidsSelfLocked.size(); i++) {
+                    ProcessRecord r = mPidsSelfLocked.valueAt(i);
+                    killProcess(r.pid);
+                }
             }
+        } finally {
+            mBroadcastDispatchStopFence.end(broadcastStop);
         }
     }
 
@@ -2774,6 +2809,9 @@ public class VActivityManagerService extends IActivityManager.Stub
         } else {
             enforceCallerUserOrHost(userId);
         }
+        BroadcastDispatchStopFence.StopScope broadcastStop =
+                mBroadcastDispatchStopFence.beginPackage(pkg, userId);
+        mStaticBroadcastDispatcher.cancelPackageUser(pkg, userId, "package-stopped");
         LinePushStopFence.StopScope lineStop = beginLinePushStop(pkg, userId);
         try {
             synchronized (mProcessNames) {
@@ -2796,6 +2834,7 @@ public class VActivityManagerService extends IActivityManager.Stub
             }
         } finally {
             endLinePushStop(lineStop);
+            mBroadcastDispatchStopFence.end(broadcastStop);
         }
     }
 
@@ -2914,6 +2953,7 @@ public class VActivityManagerService extends IActivityManager.Stub
             VLog.i(TAG, "process-lifecycle pid=" + r.pid + " generation=" + r.generation
                     + " STARTING->READY pending=" + r.lifecycle.pendingCount());
             drainProcessLifecycle(r);
+            mStaticBroadcastDispatcher.onProcessReady(r);
         }
     }
 
@@ -2937,6 +2977,9 @@ public class VActivityManagerService extends IActivityManager.Stub
     }
 
     public int stopUser(int userHandle, IStopUserCallback.Stub stub) {
+        BroadcastDispatchStopFence.StopScope broadcastStop =
+                mBroadcastDispatchStopFence.beginUser(userHandle);
+        mStaticBroadcastDispatcher.cancelUser(userHandle, "user-stop");
         LinePushStopFence.StopScope lineStop = beginLinePushStop(
                 LinePushBroadcastPolicy.LINE_PACKAGE, userHandle);
         try {
@@ -2952,6 +2995,7 @@ public class VActivityManagerService extends IActivityManager.Stub
             return 0;
         } finally {
             endLinePushStop(lineStop);
+            mBroadcastDispatchStopFence.end(broadcastStop);
         }
     }
 
@@ -3338,38 +3382,41 @@ public class VActivityManagerService extends IActivityManager.Stub
             LinePushDeliveryDiagnostics.checkpoint(result, "target-unavailable");
             return false;
         }
+        BroadcastDispatchStopFence.Permit broadcastStopPermit =
+                mBroadcastDispatchStopFence.acquire(info.packageName, userId);
+        if (broadcastStopPermit == null) {
+            LinePushDeliveryDiagnostics.checkpoint(result, "dispatch-app-stopping");
+            return false;
+        }
         LinePushDeliveryDiagnostics.checkpoint(result,
-                "target-ready user=" + getUserId(vuid));
-        final ProcessRecord target = r;
-        Runnable dispatch = linePush
-                ? () -> performLinePushDispatchIfCurrent(dispatchStopPermit,
-                        target.client, vuid, info, intent, result)
-                : () -> performScheduleReceiver(target.client, vuid, info, intent, result);
-        boolean protectedDispatch;
-        synchronized (this) {
-            int leasesBefore = mLinePushProcessGuard.activeLeaseCount();
-            protectedDispatch = mLinePushProcessGuard.protectAndDispatch(
-                    target, intent.getAction(), result, dispatch);
-            if (leasesBefore != mLinePushProcessGuard.activeLeaseCount()) {
-                mDaemonWorkloadGate.workloadChanged();
-            }
-        }
-        if (!protectedDispatch) {
-            LinePushDeliveryDiagnostics.checkpoint(result, "dispatch-direct");
-            dispatch.run();
-        }
+                "target-resolved user=" + getUserId(vuid));
+        LinePushDeliveryDiagnostics.checkpoint(result, "dispatch-queued");
+        mStaticBroadcastDispatcher.enqueue(r, info, intent, result,
+                () -> mBroadcastDispatchStopFence.isCurrent(broadcastStopPermit)
+                        && (!linePush
+                        || mLinePushStopFence.isCurrent(dispatchStopPermit)));
+        mDaemonWorkloadGate.workloadChanged();
         return true;
         } finally {
             endDaemonWorkloadMutation();
         }
     }
 
-    synchronized LinePushStopFence.StopScope beginStaticBroadcastAppStop(String packageName) {
-        return beginLinePushStopLocked(packageName, LinePushStopFence.ALL_USERS);
+    synchronized StaticBroadcastStopScope beginStaticBroadcastAppStop(String packageName) {
+        BroadcastDispatchStopFence.StopScope broadcastStop =
+                mBroadcastDispatchStopFence.beginPackage(
+                        packageName, BroadcastDispatchStopFence.ALL_USERS);
+        mStaticBroadcastDispatcher.cancelPackageUser(
+                packageName, VUserHandle.USER_ALL, "app-stopped");
+        LinePushStopFence.StopScope lineStop =
+                beginLinePushStopLocked(packageName, LinePushStopFence.ALL_USERS);
+        return new StaticBroadcastStopScope(broadcastStop, lineStop);
     }
 
-    synchronized void endStaticBroadcastAppStop(LinePushStopFence.StopScope scope) {
-        mLinePushStopFence.end(scope);
+    synchronized void endStaticBroadcastAppStop(StaticBroadcastStopScope scope) {
+        if (scope == null) return;
+        mLinePushStopFence.end(scope.lineStop);
+        mBroadcastDispatchStopFence.end(scope.broadcastStop);
     }
 
     private synchronized LinePushStopFence.StopScope beginLinePushStop(
@@ -3380,18 +3427,27 @@ public class VActivityManagerService extends IActivityManager.Stub
     /** Keeps LINE push recovery fenced for a complete package data/binding mutation. */
     public synchronized LinePushPackageStateMutation beginLinePushPackageStateMutation(
             String packageName, int userId) {
-        return new LinePushPackageStateMutation(beginLinePushStopLocked(packageName, userId));
+        BroadcastDispatchStopFence.StopScope broadcastStop =
+                mBroadcastDispatchStopFence.beginPackage(packageName, userId);
+        mStaticBroadcastDispatcher.cancelPackageUser(
+                packageName, userId, "package-state-mutation");
+        return new LinePushPackageStateMutation(
+                beginLinePushStopLocked(packageName, userId), broadcastStop);
     }
 
     public synchronized void endLinePushPackageStateMutation(
             LinePushPackageStateMutation mutation) {
-        if (mutation != null) mLinePushStopFence.end(mutation.scope);
+        if (mutation == null) return;
+        mLinePushStopFence.end(mutation.scope);
+        mBroadcastDispatchStopFence.end(mutation.broadcastScope);
     }
 
     private LinePushStopFence.StopScope beginLinePushStopLocked(
             String packageName, int userId) {
         LinePushStopFence.StopScope scope = mLinePushStopFence.begin(packageName, userId);
         if (scope == LinePushStopFence.StopScope.NONE) return scope;
+        mStaticBroadcastDispatcher.cancelPackageUser(
+                packageName, userId, "line-stop-fence");
         mLinePushClosedGateRecovery.cancelPackageUser(packageName, userId);
         mLinePushProcessGuard.cancelPackageUser(packageName, userId);
         mDaemonWorkloadGate.workloadChanged();
@@ -3400,18 +3456,6 @@ public class VActivityManagerService extends IActivityManager.Stub
 
     private synchronized void endLinePushStop(LinePushStopFence.StopScope scope) {
         mLinePushStopFence.end(scope);
-    }
-
-    private synchronized void performLinePushDispatchIfCurrent(
-            LinePushStopFence.Permit stopPermit, IVClient client, int vuid,
-            ActivityInfo info, Intent intent, PendingResultData result) {
-        if (!mLinePushStopFence.isCurrent(stopPermit)) {
-            LinePushDeliveryDiagnostics.finish(
-                    result == null ? null : result.mToken, "dispatch-stop-epoch-changed");
-            if (result != null) result.finish();
-            return;
-        }
-        performScheduleReceiver(client, vuid, info, intent, result);
     }
 
     /** Atomically validates the LINE stop epoch and reopens the gate for one consumed nonce. */
@@ -3476,9 +3520,23 @@ public class VActivityManagerService extends IActivityManager.Stub
     /** Opaque cross-service handle; only VAMS may inspect the underlying stop scope. */
     public static final class LinePushPackageStateMutation {
         private final LinePushStopFence.StopScope scope;
+        private final BroadcastDispatchStopFence.StopScope broadcastScope;
 
-        private LinePushPackageStateMutation(LinePushStopFence.StopScope scope) {
+        private LinePushPackageStateMutation(LinePushStopFence.StopScope scope,
+                BroadcastDispatchStopFence.StopScope broadcastScope) {
             this.scope = scope;
+            this.broadcastScope = broadcastScope;
+        }
+    }
+
+    static final class StaticBroadcastStopScope {
+        final BroadcastDispatchStopFence.StopScope broadcastStop;
+        final LinePushStopFence.StopScope lineStop;
+
+        StaticBroadcastStopScope(BroadcastDispatchStopFence.StopScope broadcastStop,
+                LinePushStopFence.StopScope lineStop) {
+            this.broadcastStop = broadcastStop;
+            this.lineStop = lineStop;
         }
     }
 
@@ -3486,32 +3544,10 @@ public class VActivityManagerService extends IActivityManager.Stub
         return Constants.PRIVILEGE_APP.contains(packageName);
     }
 
-    private void performScheduleReceiver(IVClient client, int vuid, ActivityInfo info, Intent intent,
-                                         PendingResultData result) {
-
-        ComponentName componentName = ComponentUtils.toComponentName(info);
-        BroadcastSystem.get().broadcastSent(vuid, info, result);
-        try {
-            LinePushDeliveryDiagnostics.checkpoint(result, "schedule-receiver");
-            client.scheduleReceiver(info.processName, componentName, intent, result);
-        } catch (Throwable e) {
-            LinePushDeliveryDiagnostics.checkpoint(result, "schedule-failed");
-            if (result != null) {
-                BroadcastSystem.get().broadcastFinish(result);
-            }
-        }
-    }
-
-    void onStaticBroadcastFinished(IBinder token) {
-        synchronized (this) {
-            mLinePushProcessGuard.complete(token);
-            mDaemonWorkloadGate.workloadChanged();
-        }
-    }
-
     @Override
-    public void broadcastFinish(PendingResultData res) {
-        BroadcastSystem.get().broadcastFinish(res);
+    public void broadcastFinish(long dispatchToken, long processGeneration,
+            PendingResultData res) {
+        mStaticBroadcastDispatcher.complete(processGeneration, dispatchToken, res);
     }
 
     @Override

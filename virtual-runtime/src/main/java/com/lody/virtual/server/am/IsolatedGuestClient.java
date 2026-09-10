@@ -254,7 +254,9 @@ final class IsolatedGuestClient extends IVClient.Stub
     @Override public IBinder getAppThread() { return asBinder(); }
     @Override public String getDebugInfo() { return "isolated-worker-slot=" + slot; }
     @Override public void scheduleReceiver(String processName, ComponentName component,
-            Intent intent, PendingResultData resultData) {}
+            Intent intent, PendingResultData resultData, long dispatchToken,
+            long processGeneration) {}
+    @Override public void cancelReceiver(long dispatchToken, long processGeneration) {}
     @Override public void scheduleNewIntent(String creator, IBinder token, Intent intent) {}
     @Override public void finishActivity(IBinder token) {}
     @Override public IBinder createProxyService(ComponentName component, IBinder binder) {

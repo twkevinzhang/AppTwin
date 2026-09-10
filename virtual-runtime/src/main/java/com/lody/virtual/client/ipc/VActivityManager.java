@@ -615,9 +615,10 @@ public class VActivityManager {
         }
     }
 
-    public void broadcastFinish(PendingResultData res) {
+    public void broadcastFinish(long dispatchToken, long processGeneration,
+            PendingResultData res) {
         try {
-            getService().broadcastFinish(res);
+            getService().broadcastFinish(dispatchToken, processGeneration, res);
         } catch (RemoteException e) {
             VirtualRuntime.crash(e);
         }

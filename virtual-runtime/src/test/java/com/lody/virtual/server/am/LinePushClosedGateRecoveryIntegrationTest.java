@@ -134,20 +134,18 @@ public class LinePushClosedGateRecoveryIntegrationTest {
             throws Exception {
         String source = read("com/lody/virtual/server/am/VActivityManagerService.java");
         int retry = source.indexOf("boolean retryStaticBroadcastThroughNormalGate(");
-        int finishCallback = source.indexOf("void onStaticBroadcastFinished(", retry);
+        int finishCallback = source.indexOf("public void broadcastFinish(", retry);
         String retryAndDispatch = source.substring(retry, finishCallback);
 
         int executionPermit = retryAndDispatch.indexOf(
                 "mLinePushClosedGateRecovery.isExecutionAllowed(recoveryToken)");
         int gate = retryAndDispatch.indexOf("beginDaemonWorkloadAcquisition()");
         int startPolicy = retryAndDispatch.indexOf("LinePushBroadcastPolicy.shouldStart(");
-        int guard = retryAndDispatch.indexOf("mLinePushProcessGuard.protectAndDispatch(");
-        int dispatch = retryAndDispatch.indexOf("performScheduleReceiver(");
+        int dispatch = retryAndDispatch.indexOf("mStaticBroadcastDispatcher.enqueue(");
         assertTrue(executionPermit >= 0);
         assertTrue(gate > executionPermit);
         assertTrue(startPolicy > gate);
-        assertTrue(guard > startPolicy);
-        assertTrue(dispatch > gate);
+        assertTrue(dispatch > startPolicy);
         assertTrue(retryAndDispatch.contains("endDaemonWorkloadMutation();"));
     }
 
@@ -181,7 +179,7 @@ public class LinePushClosedGateRecoveryIntegrationTest {
         String vams = read("com/lody/virtual/server/am/VActivityManagerService.java");
 
         assertTrue(broadcasts.contains("mAMS.beginStaticBroadcastAppStop(packageName)"));
-        assertTrue(broadcasts.contains("mAMS.endStaticBroadcastAppStop(lineStop)"));
+        assertTrue(broadcasts.contains("mAMS.endStaticBroadcastAppStop(stopScope)"));
         assertTrue(vams.contains("mLinePushClosedGateRecovery.cancelPackageUser(packageName, userId)"));
         assertTrue(vams.contains("mLinePushProcessGuard.cancelPackageUser(packageName, userId)"));
         assertTrue(vams.contains("LinePushStopFence.StopScope lineStop = beginLinePushStop(pkg, userId)"));
@@ -206,19 +204,21 @@ public class LinePushClosedGateRecoveryIntegrationTest {
     }
 
     @Test
-    public void queuedGuardDispatchRechecksStopEpochBeforeRegisteringBroadcastRecord()
+    public void queuedDispatcherRechecksStopEpochBeforeOnewayDispatch()
             throws Exception {
         String source = read("com/lody/virtual/server/am/VActivityManagerService.java");
         int dispatch = source.indexOf("boolean dispatchStaticBroadcastWithAcquiredGate(");
-        int perform = source.indexOf("void performLinePushDispatchIfCurrent(", dispatch);
-        int schedule = source.indexOf("void performScheduleReceiver(", perform);
-        String path = source.substring(dispatch, schedule);
+        int stop = source.indexOf(
+                "synchronized StaticBroadcastStopScope beginStaticBroadcastAppStop", dispatch);
+        String path = source.substring(dispatch, stop);
 
         assertTrue(path.contains("mLinePushStopFence.acquire(info.packageName, userId)"));
-        assertTrue(path.contains("performLinePushDispatchIfCurrent(dispatchStopPermit"));
-        assertTrue(path.contains("mLinePushStopFence.isCurrent(stopPermit)"));
-        assertTrue(path.indexOf("mLinePushStopFence.isCurrent(stopPermit)")
-                < path.lastIndexOf("performScheduleReceiver("));
+        assertTrue(path.contains("mBroadcastDispatchStopFence.acquire(info.packageName, userId)"));
+        assertTrue(path.contains("mStaticBroadcastDispatcher.enqueue"));
+        assertTrue(path.indexOf("mBroadcastDispatchStopFence.acquire(info.packageName, userId)")
+                < path.indexOf("mStaticBroadcastDispatcher.enqueue"));
+        assertTrue(path.indexOf("mLinePushStopFence.isCurrent(dispatchStopPermit)")
+                < path.lastIndexOf("mStaticBroadcastDispatcher.enqueue"));
     }
 
     @Test
