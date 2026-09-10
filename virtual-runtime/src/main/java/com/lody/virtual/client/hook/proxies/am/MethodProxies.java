@@ -1487,7 +1487,7 @@ class MethodProxies {
                     ? getHostDynamicReceiverPermission()
                     : null;
             IntentFilter filter = (IntentFilter) args[mIntentFilterIndex];
-            filter = withoutBlockingLineScreenActions(filter);
+            filter = withoutBlockingScreenActions(filter);
             args[mIntentFilterIndex] = filter;
             SpecialComponentList.protectIntentFilter(filter);
             if (args.length > mIIntentReceiverIndex && IIntentReceiver.class.isInstance(args[mIIntentReceiverIndex])) {
@@ -1524,7 +1524,7 @@ class MethodProxies {
             return method.invoke(who, args);
         }
 
-        private static IntentFilter withoutBlockingLineScreenActions(IntentFilter original) {
+        private static IntentFilter withoutBlockingScreenActions(IntentFilter original) {
             if (original == null) {
                 return null;
             }
@@ -1536,7 +1536,7 @@ class MethodProxies {
             Iterator<String> actions = original.actionsIterator();
             while (actions != null && actions.hasNext()) {
                 String action = actions.next();
-                if (!LineScreenReceiverPolicy.shouldSuppress(
+                if (!BlockingScreenReceiverPolicy.shouldSuppress(
                         packageName, processName, action)) {
                     continue;
                 }
