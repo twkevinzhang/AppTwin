@@ -12,7 +12,7 @@ import android.os.ParcelFileDescriptor;
 
 import com.lody.virtual.client.VClientImpl;
 import com.lody.virtual.client.core.VirtualCore;
-import com.lody.virtual.client.fixer.ContextFixer;
+import com.lody.virtual.client.fixer.GuestAudioIdentityDiagnostics;
 import com.lody.virtual.client.hook.base.MethodBox;
 import com.lody.virtual.helper.compat.BuildCompat;
 import com.lody.virtual.helper.utils.VLog;
@@ -290,6 +290,10 @@ public class ProviderHook implements InvocationHandler {
                 ? null : currentApplication.packageName;
         String packageName = ProviderAttributionIdentityPolicy.packageName(
                 isExternalProvider(), currentPackage, VirtualCore.get().getHostPkg());
-        ContextFixer.fixAttributionSource(attribution, packageName, VirtualCore.get().myUid());
+        Object callAttribution = ProviderAttributionCallCopy.copyForCall(attribution,
+                currentPackage, VirtualCore.get().getHostPkg(), VClientImpl.get().getVUid(),
+                VirtualCore.get().myUid(), packageName);
+        args[0] = callAttribution;
+        GuestAudioIdentityDiagnostics.providerCallCopy(attribution, callAttribution);
     }
 }

@@ -16,6 +16,7 @@ import com.lody.virtual.client.core.VirtualCore;
 import com.lody.virtual.client.fixer.ActivityFixer;
 import com.lody.virtual.client.fixer.ContextFixer;
 import com.lody.virtual.client.fixer.GuestEdgeToEdgeCompat;
+import com.lody.virtual.client.fixer.GuestWindowDiagnostics;
 import com.lody.virtual.client.interfaces.IInjector;
 import com.lody.virtual.client.ipc.ActivityClientRecord;
 import com.lody.virtual.client.ipc.VActivityManager;
@@ -107,6 +108,7 @@ public final class AppInstrumentation extends InstrumentationDelegate implements
             throw e;
         }
         VirtualCore.get().getComponentDelegate().afterActivityCreate(activity);
+        GuestWindowDiagnostics.afterLifecycle(activity, "create");
     }
 
     @Override
@@ -139,6 +141,7 @@ public final class AppInstrumentation extends InstrumentationDelegate implements
     public void callActivityOnCreate(Activity activity, Bundle icicle, PersistableBundle persistentState) {
         ActivitySavedStateCompat.prepare(icicle, activity.getClassLoader());
         super.callActivityOnCreate(activity, icicle, persistentState);
+        GuestWindowDiagnostics.afterLifecycle(activity, "persistable-create");
     }
 
     @Override
@@ -147,6 +150,7 @@ public final class AppInstrumentation extends InstrumentationDelegate implements
         super.callActivityOnResume(activity);
         VActivityManager.get().onActivityResumed(activity);
         VirtualCore.get().getComponentDelegate().afterActivityResume(activity);
+        GuestWindowDiagnostics.afterLifecycle(activity, "resume");
         Intent intent = activity.getIntent();
 
         callUiCallback(intent, true);

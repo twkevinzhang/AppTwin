@@ -601,6 +601,8 @@ public final class VClientImpl extends IVClient.Stub {
             }
         }
         VirtualCore.get().getComponentDelegate().afterApplicationCreate(mInitialApplication);
+        com.lody.virtual.client.fixer.GuestAudioIdentityDiagnostics.snapshot(
+                "application-created", mInitialApplication);
         IBinder processToken = getToken();
         if (processToken == null) {
             VLog.e(TAG, "appDoneExecuting rejected locally reason=no-authoritative-owner"

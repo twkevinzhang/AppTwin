@@ -32,6 +32,7 @@ public class ContextFixer {
      * @param context Context
      */
     public static void fixContext(Context context) {
+        GuestAudioIdentityDiagnostics.snapshot("fix-context-before", context);
         try {
             context.getPackageName();
         } catch (Throwable e) {
@@ -88,6 +89,7 @@ public class ContextFixer {
             // provider queries fail with "Calling uid doesn't match source uid".
             fixAttributionSource(ContextImpl.getAttributionSource.call(context), hostPkg, VirtualCore.get().myUid());
         }
+        GuestAudioIdentityDiagnostics.snapshot("fix-context-after", context);
     }
 
     static String guestBasePackageName(String currentPackage, String hostPackage) {
