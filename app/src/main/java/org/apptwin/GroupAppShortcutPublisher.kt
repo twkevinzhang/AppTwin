@@ -12,6 +12,7 @@ import android.graphics.Paint
 import android.graphics.Rect
 import android.graphics.drawable.Drawable
 import android.graphics.drawable.Icon
+import android.os.PersistableBundle
 import org.apptwin.groups.Group
 import org.apptwin.groups.GroupApp
 import org.apptwin.groups.GroupAppState
@@ -41,6 +42,7 @@ internal data class ProductShortcutSpec(
 internal interface ProductShortcutPlatform {
     val pinSupported: Boolean
     fun pinnedIds(): Set<String>
+    fun isCurrent(spec: ProductShortcutSpec): Boolean
     fun requestPin(spec: ProductShortcutSpec): Boolean
     fun update(specs: List<ProductShortcutSpec>): Boolean
     fun enable(ids: List<String>): Boolean
@@ -60,18 +62,17 @@ internal class GroupAppShortcutPublisher(
     private val sourceInstalled: (String) -> Boolean = { packageName ->
         runCatching { application.packageManager.getApplicationInfo(packageName, 0) }.isSuccess
     },
+    private val pendingPinIds: () -> Set<String> = ShortcutPinState(application)::pendingIds,
 ) {
     fun requestPin(item: GroupAppItem): ShortcutCreationResult {
         val spec = item.toShortcutSpec()
         return runCatching {
-            if (spec.id in platform.pinnedIds()) {
-                if (platform.enable(listOf(spec.id)) && platform.update(listOf(spec))) {
-                    ShortcutCreationResult.Updated
-                }
-                else ShortcutCreationResult.Failed("啟動器暫時無法更新捷徑")
-            } else if (!platform.pinSupported) {
+            if (!platform.pinSupported) {
                 ShortcutCreationResult.Unsupported
-            } else if (platform.requestPin(spec)) {
+            } else if (
+                prepareExistingShortcut(spec) &&
+                platform.requestPin(spec)
+            ) {
                 ShortcutCreationResult.Requested
             } else {
                 ShortcutCreationResult.Failed("啟動器未接受捷徑要求")
@@ -89,7 +90,12 @@ internal class GroupAppShortcutPublisher(
         val expectedById = groups.asSequence()
             .flatMap { group -> group.apps.asSequence().map { app -> group.toShortcutSpec(app) } }
             .associateBy(ProductShortcutSpec::id)
-        val repairs = platform.pinnedIds().mapNotNull(expectedById::get)
+        val pendingIds = pendingPinIds()
+        val repairs = platform.pinnedIds().asSequence()
+            .filterNot(pendingIds::contains)
+            .mapNotNull(expectedById::get)
+            .filterNot(platform::isCurrent)
+            .toList()
         when {
             repairs.isEmpty() -> ShortcutReconciliationResult.Reconciled(0)
             platform.enable(repairs.map(ProductShortcutSpec::id)) && platform.update(repairs) ->
@@ -98,6 +104,12 @@ internal class GroupAppShortcutPublisher(
         }
     }.getOrElse { error ->
         ShortcutReconciliationResult.Failed(error.message ?: error.javaClass.simpleName)
+    }
+
+    private fun prepareExistingShortcut(spec: ProductShortcutSpec): Boolean {
+        if (spec.id !in platform.pinnedIds()) return true
+        if (!platform.enable(listOf(spec.id))) return false
+        return platform.isCurrent(spec) || platform.update(listOf(spec))
     }
 
     fun disable(group: Group): ShortcutReconciliationResult = disable(
@@ -152,6 +164,8 @@ internal class GroupAppShortcutPublisher(
 private class AndroidProductShortcutPlatform(
     private val application: Application,
 ) : ProductShortcutPlatform {
+    private val pinState = ShortcutPinState(application)
+
     private val manager: ShortcutManager?
         get() = application.getSystemService(ShortcutManager::class.java)
 
@@ -162,8 +176,42 @@ private class AndroidProductShortcutPlatform(
         .orEmpty()
         .mapTo(linkedSetOf(), ShortcutInfo::getId)
 
-    override fun requestPin(spec: ProductShortcutSpec): Boolean =
-        manager?.requestPinShortcut(shortcut(spec), null) == true
+    override fun isCurrent(spec: ProductShortcutSpec): Boolean {
+        val current = manager?.pinnedShortcuts
+            ?.firstOrNull { shortcut -> shortcut.id == spec.id }
+            ?: return false
+        val expectedIntent = GroupAppLaunchContract.intent(
+            application,
+            spec.groupId,
+            spec.packageName,
+        )
+        val currentIntent = current.intent ?: return false
+        return current.isEnabled &&
+            current.shortLabel.toString() == shortLabel(spec) &&
+            current.longLabel?.toString() == longLabel(spec) &&
+            current.extras?.getString(EXTRA_RENDER_FINGERPRINT) == renderFingerprint(spec) &&
+            currentIntent.filterEquals(expectedIntent) &&
+            currentIntent.flags == expectedIntent.flags &&
+            currentIntent.getStringExtra(GroupAppLaunchContract.EXTRA_GROUP_ID) == spec.groupId &&
+            currentIntent.getStringExtra(GroupAppLaunchContract.EXTRA_PACKAGE_NAME) == spec.packageName
+    }
+
+    override fun requestPin(spec: ProductShortcutSpec): Boolean {
+        val shortcutManager = manager ?: return false
+        val shortcut = shortcut(spec)
+        val nonce = pinState.markRequested(spec.id)
+        return try {
+            shortcutManager.requestPinShortcut(
+                shortcut,
+                ShortcutPinResultReceiver.intentSender(application, spec.id, nonce),
+            ).also { accepted ->
+                if (!accepted) pinState.cancel(spec.id, nonce)
+            }
+        } catch (error: RuntimeException) {
+            pinState.cancel(spec.id, nonce)
+            throw error
+        }
+    }
 
     override fun update(specs: List<ProductShortcutSpec>): Boolean =
         manager?.updateShortcuts(specs.map(::shortcut)) == true
@@ -188,7 +236,26 @@ private class AndroidProductShortcutPlatform(
         .setLongLabel(longLabel(spec))
         .setIcon(Icon.createWithBitmap(badgedIcon(spec)))
         .setIntent(GroupAppLaunchContract.intent(application, spec.groupId, spec.packageName))
+        .setExtras(PersistableBundle().apply {
+            putString(EXTRA_RENDER_FINGERPRINT, renderFingerprint(spec))
+        })
         .build()
+
+    private fun renderFingerprint(spec: ProductShortcutSpec): String {
+        val sourceUpdateTime = runCatching {
+            application.packageManager.getPackageInfo(spec.packageName, 0).lastUpdateTime
+        }.getOrDefault(0L)
+        return listOf(
+            SHORTCUT_RENDER_VERSION,
+            sourceUpdateTime,
+            spec.groupName,
+            spec.appLabel,
+            spec.available,
+        ).joinToString(separator = "|") { field ->
+            val value = field.toString()
+            "${value.length}:$value"
+        }
+    }
 
     private fun shortLabel(spec: ProductShortcutSpec): String =
         "${spec.groupName} ${spec.appLabel}".take(MAX_SHORT_LABEL_LENGTH)
@@ -251,5 +318,7 @@ private class AndroidProductShortcutPlatform(
         const val BADGE_RADIUS_RATIO = 0.22f
         const val BADGE_COLOR = 0xFF6750A4.toInt()
         const val UNAVAILABLE_ICON_ALPHA = 150
+        const val EXTRA_RENDER_FINGERPRINT = "org.apptwin.shortcut.RENDER_FINGERPRINT"
+        const val SHORTCUT_RENDER_VERSION = 1
     }
 }
