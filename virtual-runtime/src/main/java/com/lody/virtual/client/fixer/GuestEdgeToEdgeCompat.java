@@ -19,16 +19,22 @@ public final class GuestEdgeToEdgeCompat {
 
     public static void apply(Activity activity, ActivityInfo activityInfo) {
         Integer targetSdkVersion = targetSdkVersion(activityInfo);
+        Boolean floating = null;
+        Boolean optOut = null;
+        boolean applied = false;
+        String result = "ineligible";
         if (activity == null
                 || Build.VERSION.SDK_INT < EDGE_TO_EDGE_ENFORCEMENT_SDK
                 || targetSdkVersion == null
                 || targetSdkVersion < EDGE_TO_EDGE_ENFORCEMENT_SDK) {
+            GuestWindowDiagnostics.policy(activity, targetSdkVersion, floating, optOut, false, result);
             return;
         }
 
         TypedArray windowAttributes = null;
         TypedArray edgeToEdgeAttributes = null;
         try {
+            result = "theme-unavailable";
             int[] windowStyleable = R_Hide.styleable.Window.get();
             int windowIsFloating = R_Hide.styleable.Window_windowIsFloating.get();
             if (windowStyleable == null
@@ -44,6 +50,7 @@ public final class GuestEdgeToEdgeCompat {
                 return;
             }
             boolean isFloating = windowAttributes.getBoolean(windowIsFloating, true);
+            floating = isFloating;
 
             // This public attribute is deliberately resolved independently of the hidden Window
             // styleable. An absent declaration has the platform default of false; any lookup
@@ -56,18 +63,25 @@ public final class GuestEdgeToEdgeCompat {
             }
             boolean optsOutOfEdgeToEdge = edgeToEdgeAttributes.hasValue(0)
                     && edgeToEdgeAttributes.getBoolean(0, false);
+            optOut = optsOutOfEdgeToEdge;
+            result = "policy-skip";
             if (!shouldApply(Build.VERSION.SDK_INT, targetSdkVersion, isFloating,
                     optsOutOfEdgeToEdge)) {
                 return;
             }
 
+            result = "window-unavailable";
             Window window = activity.getWindow();
             if (window != null) {
                 window.setDecorFitsSystemWindows(false);
+                applied = true;
+                result = "applied";
             }
-        } catch (Throwable ignored) {
+        } catch (Throwable error) {
+            result = "error:" + error.getClass().getSimpleName();
             // A missing/changed framework styleable must not alter or crash the guest lifecycle.
         } finally {
+            GuestWindowDiagnostics.policy(activity, targetSdkVersion, floating, optOut, applied, result);
             if (windowAttributes != null) {
                 try {
                     windowAttributes.recycle();
