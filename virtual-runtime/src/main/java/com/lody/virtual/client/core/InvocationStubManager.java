@@ -24,6 +24,7 @@ import com.lody.virtual.client.hook.proxies.context_hub.ContextHubServiceStub;
 import com.lody.virtual.client.hook.proxies.credential.CredentialManagerStub;
 import com.lody.virtual.client.hook.proxies.crossprofile.CrossProfileAppsStub;
 import com.lody.virtual.client.hook.proxies.devicepolicy.DevicePolicyManagerStub;
+import com.lody.virtual.client.hook.proxies.deviceidle.DeviceIdleControllerStub;
 import com.lody.virtual.client.hook.proxies.display.DisplayStub;
 import com.lody.virtual.client.hook.proxies.dropbox.DropBoxManagerStub;
 import com.lody.virtual.client.hook.proxies.fingerprint.FingerprintManagerStub;
@@ -192,6 +193,7 @@ public final class InvocationStubManager {
 				addInjector(new LauncherAppsStub());
 			}
 			if (Build.VERSION.SDK_INT >= M) {
+				addInjector(new DeviceIdleControllerStub());
 				addInjector(new FingerprintManagerStub());
 				addInjector(new NetworkManagementStub());
 				addInjector(new TelecomManagerStub());
