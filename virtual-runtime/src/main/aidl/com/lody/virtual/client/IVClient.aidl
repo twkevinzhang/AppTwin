@@ -30,4 +30,7 @@ interface IVClient {
     oneway void scheduleServiceArgs(in IBinder token, boolean taskRemoved, int startId, int flags,
             in Intent intent, long processGeneration);
     oneway void scheduleStopService(in IBinder token, long processGeneration);
+    oneway void bootstrapApplication(in String packageName, in String processName,
+            int vuid, long processGeneration, long deadlineUptimeMillis, in IBinder capability);
+    oneway void cancelBootstrap(in IBinder capability, long processGeneration);
 }

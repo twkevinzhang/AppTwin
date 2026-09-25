@@ -963,6 +963,55 @@ public final class VClientImpl extends IVClient.Stub {
         sendMessage(NEW_INTENT, data);
     }
 
+    private final Map<IBinder, BroadcastBootstrap> mBroadcastBootstraps = new HashMap<>();
+
+    /** Independent of receiver scheduling: READY is acknowledged by appDoneExecuting only. */
+    @Override
+    public void bootstrapApplication(String packageName, String processName, int vuid,
+            long processGeneration, long deadlineUptimeMillis, IBinder capability) {
+        if (capability == null) return;
+        final BroadcastBootstrap request = new BroadcastBootstrap(
+                processGeneration, deadlineUptimeMillis);
+        synchronized (mBroadcastBootstraps) {
+            if (mBroadcastBootstraps.containsKey(capability)) return;
+            mBroadcastBootstraps.put(capability, request);
+        }
+        boolean posted = mH.post(() -> {
+            try {
+                StubProcessOwner.Identity owner = mProcessOwner.snapshot();
+                boolean exactOwner = owner != null && owner.getVuid() == vuid
+                        && packageName != null && packageName.equals(owner.getPackageName())
+                        && processName != null && processName.equals(owner.getProcessName())
+                        && owner.getServerToken() instanceof IBinder
+                        && ((IBinder) owner.getServerToken()).isBinderAlive();
+                if (!request.start(owner == null ? -1 : owner.getGeneration(),
+                        SystemClock.uptimeMillis(), exactOwner)) return;
+                // The main thread serializes activity/service/bootstrap initialization.
+                if (!isBound() && !mProcessOwner.isGuestBound()) {
+                    bindApplication(packageName, processName);
+                }
+            } finally {
+                synchronized (mBroadcastBootstraps) {
+                    mBroadcastBootstraps.remove(capability);
+                }
+            }
+        });
+        if (!posted) {
+            request.cancel(processGeneration);
+            synchronized (mBroadcastBootstraps) {
+                mBroadcastBootstraps.remove(capability);
+            }
+        }
+    }
+
+    @Override
+    public void cancelBootstrap(IBinder capability, long processGeneration) {
+        synchronized (mBroadcastBootstraps) {
+            BroadcastBootstrap request = mBroadcastBootstraps.get(capability);
+            if (request != null) request.cancel(processGeneration);
+        }
+    }
+
     @Override
     public void scheduleReceiver(String processName, ComponentName component, Intent intent,
             PendingResultData resultData, long dispatchToken, long processGeneration) {

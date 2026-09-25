@@ -75,6 +75,13 @@ final class BroadcastDispatchQueue<T> {
         return EnqueueResult.ACCEPTED;
     }
 
+    /** Observes the FIFO head without marking a receiver in flight during initialization. */
+    synchronized Item<T> peek(Object owner, long generation) {
+        OwnerQueue<T> queue = queues.get(owner);
+        if (queue == null || queue.generation != generation) return null;
+        return queue.inFlight != null ? queue.inFlight : queue.pending.peekFirst();
+    }
+
     synchronized Item<T> takeNext(Object owner, long generation) {
         OwnerQueue<T> queue = queues.get(owner);
         if (queue == null || queue.generation != generation || queue.inFlight != null) {
