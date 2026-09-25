@@ -1,0 +1,28 @@
+{
+  "stage": "before-idle30",
+  "observed_at": "2026-09-26T03:18:19.427644+08:00",
+  "marker": "A_bootstrap_20260926_idle30",
+  "microg": [
+    [
+      96,
+      1790361594554,
+      1,
+      1
+    ]
+  ],
+  "line_db": [
+    [
+      0,
+      null,
+      null
+    ]
+  ],
+  "notification": [
+    {
+      "line_channel": true,
+      "contains_marker": false,
+      "importance": "4"
+    }
+  ],
+  "guest_line_processes": []
+}

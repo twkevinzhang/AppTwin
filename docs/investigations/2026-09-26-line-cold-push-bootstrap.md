@@ -49,13 +49,19 @@
 
 上述均未打開 cloned LINE Activity。另一次 UI 發送操作過快，將兩個測試標記合併成一則訊息；不計為兩則成功樣本，也不視為 AppTwin 丟訊息。
 
-30 分鐘熄屏驗收：02:40:12 至 03:10:21，系統 `mLastSleepTime` 顯示連續睡眠 1,808,697 ms，期間 `mLastWakeTime` 未變。03:10 喚醒後顯示 keyguard locked，需要使用者本人解鎖才能操作 host LINE；尚未發送此輪訊息，因此 **30 分鐘後入庫與通知仍待驗證**，不能把睡眠計時完成等同收訊通過。
+30 分鐘熄屏驗收已完成：02:40:12 至 03:10:21，系統 `mLastSleepTime` 顯示連續睡眠 1,808,697 ms，期間 `mLastWakeTime` 未變。解鎖後於 03:19:04.100 從同機 host LINE 發送 `A_bootstrap_20260926_idle30`，03:19:04.253 已要求再次熄屏；接收時為 Asleep。此間沒有開啟 cloned LINE。
+
+- 發送前：guest LINE 程序不存在，精確測試標記 DB 筆數 0，microG count 96。
+- 03:19:06.649 ingress；07.711 bootstrap；08.341 新 PID 18701 / generation 7 READY；09.144 receiver completed。從發送到完成約 5.0 秒，從 ingress 到完成約 2.5 秒。
+- 發送後：microG count 97；精確標記入庫 1 筆；AppTwin LINE channel 通知命中，importance 4；鎖定畫面也目視顯示該測試通知。
+- 測試邊界：已涵蓋連續熄屏 30 分鐘後的背景冷啟動，發送時曾喚醒同機 host LINE，不能稱為外部裝置在全程未喚醒的接收手機上發送。手機接電與 ADB 相連，亦不等同拔線深度 Doze。
+
 
 ## 判斷與邊界
 
 - 觀察事實：修正前 cold 兩次逾時，手動開啟才 READY；修正後多次 cold/reclaim 都自行 READY，且真實訊息入庫並出現通知。
 - 推論：已解除本次 STARTING 與 receiver 初始化互等的根因；此判斷不外推為修復所有歷史 LINE 通知原因。
-- 結論：原始冷啟動故障路徑已在 Pixel 7 通過驗證。可靠度分數：97%。若相同版本在 ingress 已抵達時仍停於 bootstrap/READY 前，此分數應下修並重新定位第一個失敗 checkpoint。
+- 結論：原始冷啟動故障路徑已在 Pixel 7 通過驗證。可靠度分數：98%（對本次冷啟動根因與修補有效性的判斷，非長期通知送達率）。若相同版本在 ingress 已抵達時仍停於 bootstrap/READY 前，此分數應下修並重新定位第一個失敗 checkpoint。
 - 驗證限制：ASUS 未測；手機接電，不能代表拔線深度 Doze。仍依賴 LINE backend、microG ingress、網路、OS 與使用者未停止 space，不能保證永遠收到通知。
 
 
