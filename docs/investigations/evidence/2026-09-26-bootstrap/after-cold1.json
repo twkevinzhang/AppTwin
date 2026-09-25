@@ -1,0 +1,30 @@
+{
+  "stage": "after-cold1",
+  "observed_at": "2026-09-26T02:33:04.029460+08:00",
+  "marker": "A_bootstrap_20260926_cold1",
+  "microg": [
+    [
+      92,
+      1790361181300,
+      1,
+      1
+    ]
+  ],
+  "line_db": [
+    [
+      1,
+      "1790361179273",
+      "1790361179273"
+    ]
+  ],
+  "notification": [
+    {
+      "line_channel": true,
+      "contains_marker": true,
+      "importance": "4"
+    }
+  ],
+  "guest_line_processes": [
+    "11291  6805 jp.naver.line.android"
+  ]
+}

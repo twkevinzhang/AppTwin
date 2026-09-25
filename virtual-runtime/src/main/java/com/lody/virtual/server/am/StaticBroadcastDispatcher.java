@@ -11,6 +11,7 @@ import android.os.Binder;
 import android.os.SystemClock;
 
 import com.lody.virtual.client.stub.StubKeepAliveService;
+import com.lody.virtual.client.BroadcastBootstrap;
 import com.lody.virtual.client.stub.VASettings;
 import com.lody.virtual.helper.utils.ComponentUtils;
 import com.lody.virtual.helper.utils.VLog;
@@ -181,9 +182,19 @@ final class StaticBroadcastDispatcher {
             if (lease == null) return;
             handler.removeCallbacks(lease.releaseTask);
         }
-        if (process.lifecycle.state() == ProcessLifecycle.State.STARTING) return;
-        if (process.lifecycle.state() != ProcessLifecycle.State.READY) {
+        if (process.lifecycle.state() != ProcessLifecycle.State.STARTING
+                && process.lifecycle.state() != ProcessLifecycle.State.READY) {
             cancelProcessOnHandler(process, process.generation, "owner-not-ready");
+            return;
+        }
+        BroadcastDispatchQueue.Item<Request> head = queue.peek(process, process.generation);
+        if (head == null) {
+            scheduleRelease(lease);
+            return;
+        }
+        if (!head.value.dispatchPermit.getAsBoolean()
+                || SystemClock.uptimeMillis() >= head.value.deadlineUptimeMillis) {
+            cancelProcessOnHandler(process, process.generation, "dispatch-expired-or-revoked");
             return;
         }
         synchronized (this) {
@@ -193,7 +204,7 @@ final class StaticBroadcastDispatcher {
             }
         }
         if (lease.connected) {
-            dispatchNext(lease);
+            bootstrapOrDispatch(lease);
         } else if (beginBinding) {
             beginBinding(lease);
         }
@@ -223,12 +234,48 @@ final class StaticBroadcastDispatcher {
             lease.connected = true;
             handler.removeCallbacks(lease.bindTimeoutTask);
         }
-        if (!validator.isCurrentOwner(lease.process)
-                || lease.process.lifecycle.state() != ProcessLifecycle.State.READY) {
+        if (!validator.isCurrentOwner(lease.process)) {
             cancelProcessOnHandler(lease.process, lease.process.generation, "stale-after-bind");
             return;
         }
-        dispatchNext(lease);
+        bootstrapOrDispatch(lease);
+    }
+
+    private void bootstrapOrDispatch(Lease lease) {
+        if (!validator.isCurrentOwner(lease.process)) {
+            cancelProcessOnHandler(lease.process, lease.process.generation, "stale-bootstrap-owner");
+            return;
+        }
+        ProcessLifecycle.State state = lease.process.lifecycle.state();
+        if (state != ProcessLifecycle.State.STARTING && state != ProcessLifecycle.State.READY) {
+            cancelProcessOnHandler(lease.process, lease.process.generation, "owner-not-ready");
+            return;
+        }
+        BroadcastDispatchQueue.Item<Request> head = queue.peek(
+                lease.process, lease.process.generation);
+        if (head == null) {
+            scheduleRelease(lease);
+            return;
+        }
+        Request request = head.value;
+        BroadcastBootstrap.Action action = lease.bootstrap.next(
+                state == ProcessLifecycle.State.READY, request.dispatchPermit.getAsBoolean(),
+                SystemClock.uptimeMillis(), request.deadlineUptimeMillis);
+        if (action == BroadcastBootstrap.Action.REJECT) {
+            cancelProcessOnHandler(lease.process, lease.process.generation,
+                    "bootstrap-expired-or-revoked");
+        } else if (action == BroadcastBootstrap.Action.DISPATCH) {
+            dispatchNext(lease);
+        } else if (action == BroadcastBootstrap.Action.BOOTSTRAP) {
+            try {
+                LinePushDeliveryDiagnostics.checkpoint(request.result, "bootstrap-requested");
+                lease.process.client.bootstrapApplication(request.info.packageName,
+                        request.info.processName, lease.process.vuid, request.generation,
+                        request.deadlineUptimeMillis, lease.bootstrapCapability);
+            } catch (Throwable error) {
+                cancelProcessOnHandler(lease.process, request.generation, "bootstrap-schedule-failed");
+            }
+        }
     }
 
     private void dispatchNext(Lease lease) {
@@ -307,12 +354,24 @@ final class StaticBroadcastDispatcher {
             process.client.cancelReceiver(token, generation);
         } catch (Throwable ignored) {
         }
-        finish(timedOut.value.result, null, "receiver-timeout");
+        boolean bootstrapping = process.lifecycle.state() == ProcessLifecycle.State.STARTING;
+        finish(timedOut.value.result, null, bootstrapping ? "bootstrap-timeout" : "receiver-timeout");
+        if (bootstrapping) {
+            cancelProcessOnHandler(process, generation, "bootstrap-timeout");
+            return;
+        }
         Lease lease;
         synchronized (this) {
             lease = leases.get(process);
         }
         if (lease != null) dispatchNext(lease);
+    }
+
+    private void cancelLease(Lease lease, String reason) {
+        synchronized (this) {
+            if (leases.get(lease.process) != lease) return;
+        }
+        cancelProcessOnHandler(lease.process, lease.process.generation, reason);
     }
 
     private void cancelProcessOnHandler(ProcessRecord process, long generation, String reason) {
@@ -354,7 +413,12 @@ final class StaticBroadcastDispatcher {
     }
 
     private void unbind(Lease lease) {
-        if (lease == null || !lease.bound) return;
+        if (lease == null) return;
+        try {
+            lease.process.client.cancelBootstrap(lease.bootstrapCapability, lease.process.generation);
+        } catch (Throwable ignored) {
+        }
+        if (!lease.bound) return;
         try {
             context.unbindService(lease.connection);
         } catch (IllegalArgumentException ignored) {
@@ -458,6 +522,8 @@ final class StaticBroadcastDispatcher {
 
     private final class Lease {
         final ProcessRecord process;
+        final BroadcastBootstrap.Lease bootstrap = new BroadcastBootstrap.Lease();
+        final IBinder bootstrapCapability = new Binder();
         final Runnable bindTimeoutTask;
         final Runnable releaseTask;
         final ServiceConnection connection;
@@ -466,8 +532,7 @@ final class StaticBroadcastDispatcher {
         boolean bindingStarted;
         Lease(ProcessRecord process) {
             this.process = process;
-            bindTimeoutTask = () -> cancelProcessOnHandler(
-                    process, process.generation, "bind-timeout");
+            bindTimeoutTask = () -> cancelLease(this, "bind-timeout");
             releaseTask = () -> releaseIfIdle(this);
             connection = new ServiceConnection() {
                 @Override
@@ -477,20 +542,17 @@ final class StaticBroadcastDispatcher {
 
                 @Override
                 public void onServiceDisconnected(ComponentName name) {
-                    handler.post(() -> cancelProcessOnHandler(
-                            process, process.generation, "binding-disconnected"));
+                    handler.post(() -> cancelLease(Lease.this, "binding-disconnected"));
                 }
 
                 @Override
                 public void onBindingDied(ComponentName name) {
-                    handler.post(() -> cancelProcessOnHandler(
-                            process, process.generation, "binding-died"));
+                    handler.post(() -> cancelLease(Lease.this, "binding-died"));
                 }
 
                 @Override
                 public void onNullBinding(ComponentName name) {
-                    handler.post(() -> cancelProcessOnHandler(
-                            process, process.generation, "null-binding"));
+                    handler.post(() -> cancelLease(Lease.this, "null-binding"));
                 }
             };
         }

@@ -274,6 +274,10 @@ final class IsolatedGuestClient extends IVClient.Stub
             Intent intent, PendingResultData resultData, long dispatchToken,
             long processGeneration) {}
     @Override public void cancelReceiver(long dispatchToken, long processGeneration) {}
+    // Isolated workers expose services only; broadcasts and their bootstrap are unsupported.
+    @Override public void bootstrapApplication(String packageName, String processName, int vuid,
+            long processGeneration, long deadlineUptimeMillis, IBinder capability) {}
+    @Override public void cancelBootstrap(IBinder capability, long processGeneration) {}
     @Override public void scheduleNewIntent(String creator, IBinder token, Intent intent,
             long processGeneration) {}
     @Override public void finishActivity(IBinder token, long processGeneration) {}

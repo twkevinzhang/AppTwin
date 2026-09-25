@@ -1,0 +1,14 @@
+09-26 02:39:54.560  8432  9656 I LinePushDelivery: stage=hook-entry user=1 sender=gms target=line action=c2dm method=with-feature
+09-26 02:39:54.562  8432  9656 I LinePushDelivery: stage=attestation-issued user=1 sender=gms target=line action=c2dm method=with-feature
+09-26 02:39:54.562  8432  9656 I LinePushDelivery: stage=redirected-wrapper-created user=1 sender=gms target=line action=c2dm method=with-feature
+09-26 02:39:54.563  8432  9656 I LinePushDelivery: stage=system-broadcast-invoke-result user=1 sender=gms target=line action=c2dm method=with-feature
+09-26 02:39:54.569  8322  8322 I LinePushDelivery: wrapper scope=allow user=1 target=line receiver=line
+09-26 02:39:54.569  8322  8322 I LinePushDelivery: trace=3 stage=entry user=1 target=line receiver=line
+09-26 02:39:54.569  8322  8322 I LinePushDelivery: trace=3 stage=gate-allow user=1 target=line receiver=line
+09-26 02:39:55.192  8322  8322 I LinePushDelivery: trace=3 stage=target-resolved user=1 user=1 target=line receiver=line
+09-26 02:39:55.192  8322  8322 I LinePushDelivery: trace=3 stage=dispatch-queued user=1 target=line receiver=line
+09-26 02:39:55.199  8322  8322 I LinePushDelivery: trace=3 stage=bootstrap-requested user=1 target=line receiver=line
+09-26 02:39:55.678  8322  9685 I VActivityManagerService: process-lifecycle pid=9850 generation=6 STARTING->READY pending=0
+09-26 02:39:55.679  8322  8322 I LinePushDelivery: trace=3 stage=target-ready user=1 user=1 target=line receiver=line
+09-26 02:39:55.679  8322  8322 I LinePushDelivery: trace=3 stage=schedule-receiver user=1 target=line receiver=line
+09-26 02:39:56.429  8322  8322 I LinePushDelivery: trace=3 stage=finish reason=completed user=1 target=line receiver=line

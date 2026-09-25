@@ -1,0 +1,25 @@
+{
+  "variant": "runtimeProbeDebug",
+  "versionName": "0.1.3-bootstrap.20260926",
+  "versionCode": 1003,
+  "apk_sha256": "acea6a6a9d56f6b2da32a31687935d2faf294d26b2ad764b1263dd8ac9176d40",
+  "jvm": {
+    "runtime": {
+      "tests": 677,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "app": {
+      "tests": 146,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    }
+  },
+  "instrumentation": {
+    "passed": 6,
+    "seconds": 8.086
+  },
+  "lint": "BUILD SUCCESSFUL; existing baseline and warnings remain"
+}
