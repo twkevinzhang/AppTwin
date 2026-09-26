@@ -41,6 +41,14 @@ final class DaemonWorkloadAtomicGate {
         }
     }
 
+    void close() {
+        synchronized (lock) {
+            shutdownCommitted = true;
+            generation++;
+            lock.notifyAll();
+        }
+    }
+
     void reopen() {
         synchronized (lock) {
             // Every legitimate Service.onStartCommand is a distinct handshake, including when

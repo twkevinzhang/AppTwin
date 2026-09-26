@@ -87,6 +87,169 @@ import static com.lody.virtual.os.VUserHandle.getUserId;
 public class VActivityManagerService extends IActivityManager.Stub
         implements IsolatedGuestClient.Listener {
 
+    private Handler mGmsSupervisorHandler;
+
+    private final Map<IBinder, ActivityRecord> mVisibleGuestActivities = new IdentityHashMap<>();
+    private final Map<String, Long> mForegroundLaunches = new java.util.HashMap<>();
+    private final Map<String, Long> mForegroundTransitions = new java.util.HashMap<>();
+    private static final long FOREGROUND_LAUNCH_MS = 15_000L;
+    private static final long FOREGROUND_TRANSITION_MS = 400L;
+
+    private Context backgroundContext() { return VirtualCore.get().getContext(); }
+    private boolean backgroundEnabled() {
+        return com.lody.virtual.client.env.BackgroundExecutionSettings.isEnabled(backgroundContext());
+    }
+    private static String foregroundKey(String packageName, int userId) {
+        return userId + ":" + packageName;
+    }
+    private static void expireForegroundScopes(Map<String, Long> scopes, long now) {
+        Iterator<Map.Entry<String, Long>> entries = scopes.entrySet().iterator();
+        while (entries.hasNext()) if (entries.next().getValue() <= now) entries.remove();
+    }
+    private synchronized boolean foregroundAllows(String packageName, int userId) {
+        if (backgroundEnabled()) return true;
+        android.os.PowerManager power = (android.os.PowerManager) backgroundContext()
+                .getSystemService(Context.POWER_SERVICE);
+        if (power == null || !power.isInteractive()) return false;
+        long now = SystemClock.uptimeMillis();
+        expireForegroundScopes(mForegroundLaunches, now);
+        expireForegroundScopes(mForegroundTransitions, now);
+        boolean gms = "com.google.android.gms".equals(packageName)
+                || "com.google.android.gsf".equals(packageName);
+        String prefix = userId + ":";
+        Set<String> authorized = new HashSet<>(mForegroundLaunches.keySet());
+        authorized.addAll(mForegroundTransitions.keySet());
+        for (String key : authorized) {
+            if (key.equals(foregroundKey(packageName, userId)) || (gms && key.startsWith(prefix))) return true;
+        }
+        for (ActivityRecord activity : mVisibleGuestActivities.values()) {
+            if (activity.userId == userId && isCurrentActivityProcessOwner(activity.process)
+                    && (gms || activity.component.getPackageName().equals(packageName))) return true;
+        }
+        return false;
+    }
+    @Override
+    public synchronized boolean beginForegroundLaunch(String packageName, int userId) {
+        com.lody.virtual.server.VirtualUserAccessPolicy.enforceHost();
+        if (backgroundEnabled()) return true;
+        if (userId <= 0 || TextUtils.isEmpty(packageName)
+                || VPackageManagerService.get().getApplicationInfo(packageName, 0, userId) == null) return false;
+        android.os.PowerManager power = (android.os.PowerManager) backgroundContext()
+                .getSystemService(Context.POWER_SERVICE);
+        if (power == null || !power.isInteractive()) return false;
+        mForegroundLaunches.put(foregroundKey(packageName, userId),
+                SystemClock.uptimeMillis() + FOREGROUND_LAUNCH_MS);
+        mDaemonWorkloadGate.reopen();
+        mServiceHandler.postDelayed(this::scheduleForegroundStopIfIdle, FOREGROUND_LAUNCH_MS);
+        return true;
+    }
+    @Override
+    public synchronized void cancelForegroundLaunch(String packageName, int userId) {
+        com.lody.virtual.server.VirtualUserAccessPolicy.enforceHost();
+        mForegroundLaunches.remove(foregroundKey(packageName, userId));
+        scheduleForegroundStopIfIdle();
+    }
+    @Override
+    public synchronized void onActivityVisibilityChanged(int userId, IBinder token, boolean visible) {
+        enforceCallerUserOrHost(userId);
+        ActivityRecord record = mMainStack.findActivityByToken(userId, token);
+        if (record == null || !isCurrentActivityProcessOwner(record.process)
+                || (VBinder.getCallingPid() != Process.myPid()
+                && VBinder.getCallingPid() != record.process.pid)) return;
+        if (visible) {
+            if (!foregroundAllows(record.component.getPackageName(), userId)) return;
+            mVisibleGuestActivities.put(token, record);
+            mForegroundLaunches.remove(foregroundKey(record.component.getPackageName(), userId));
+            mForegroundTransitions.remove(foregroundKey(record.component.getPackageName(), userId));
+            } else {
+            boolean wasVisible = mVisibleGuestActivities.remove(token) != null;
+            if (wasVisible && !backgroundEnabled()) {
+                mForegroundTransitions.put(foregroundKey(record.component.getPackageName(), userId),
+                        SystemClock.uptimeMillis() + FOREGROUND_TRANSITION_MS);
+                mServiceHandler.postDelayed(this::scheduleForegroundStopIfIdle,
+                        FOREGROUND_TRANSITION_MS);
+            }
+            scheduleForegroundStopIfIdle();
+        }
+    }
+    private synchronized void scheduleForegroundStopIfIdle() {
+        if (backgroundEnabled()) return;
+        long now = SystemClock.uptimeMillis();
+        expireForegroundScopes(mForegroundLaunches, now);
+        expireForegroundScopes(mForegroundTransitions, now);
+        Iterator<ActivityRecord> visible = mVisibleGuestActivities.values().iterator();
+        while (visible.hasNext()) if (!isCurrentActivityProcessOwner(visible.next().process)) visible.remove();
+        // Each package loses its own background runtime even while another clone stays visible.
+        stopUnauthorizedForegroundProcesses();
+        if (!mVisibleGuestActivities.isEmpty() || !mForegroundLaunches.isEmpty()
+                || !mForegroundTransitions.isEmpty()) return;
+        stopForegroundOnlyRuntime();
+    }
+    private void stopUnauthorizedForegroundProcesses() {
+        List<ProcessRecord> processes = new ArrayList<>();
+        synchronized (mPidsSelfLocked) {
+            for (int i = 0; i < mPidsSelfLocked.size(); i++) processes.add(mPidsSelfLocked.valueAt(i));
+        }
+        processes.addAll(mIsolatedClients.values());
+        for (ProcessRecord process : processes) {
+            if (!foregroundAllows(process.info.packageName, process.userId)) {
+                mGuestProcessThawCoordinator.cancel(process, "foreground-scope-ended");
+                mStaticBroadcastDispatcher.cancelPackageUser(process.info.packageName,
+                        process.userId, "foreground-scope-ended");
+                stopForegroundProcess(process);
+            }
+        }
+    }
+    private void stopForegroundProcess(ProcessRecord process) {
+        if (process.osIsolatedWorker) {
+            cleanupProcessGeneration(process, "foreground-scope-ended", true);
+        } else if (process.pid > 0) {
+            killProcess(process.pid);
+        }
+    }
+    private synchronized void stopForegroundOnlyRuntime() {
+        if (backgroundEnabled()) return;
+        mForegroundLaunches.clear();
+        mForegroundTransitions.clear();
+        mVisibleGuestActivities.clear();
+        mDaemonWorkloadGate.close();
+        mDaemonLaunchAuthorizationToken = null;
+        mStaticBroadcastDispatcher.cancelAll("background-disabled");
+        mLinePushClosedGateRecovery.cancelPackage("jp.naver.line.android");
+        mLinePushProcessGuard.cancelPackageUser("jp.naver.line.android", VUserHandle.USER_ALL);
+        for (Long nonce : new ArrayList<>(mLinePushDaemonAuthorizations.keySet())) {
+            revokeLinePushDaemonAuthorization(nonce);
+        }
+        mTrustedGmsCloudMessagingSupervisor.suspendRuntime();
+        List<ProcessRecord> processes = new ArrayList<>();
+        synchronized (mPidsSelfLocked) {
+            for (int i = 0; i < mPidsSelfLocked.size(); i++) processes.add(mPidsSelfLocked.valueAt(i));
+        }
+        processes.addAll(mIsolatedClients.values());
+        for (ProcessRecord process : processes) {
+            mGuestProcessThawCoordinator.cancel(process, "background-disabled");
+            stopForegroundProcess(process);
+        }
+    }
+    @Override
+    public synchronized void setBackgroundExecutionEnabled(boolean enabled) {
+        com.lody.virtual.server.VirtualUserAccessPolicy.enforceHost();
+        com.lody.virtual.client.env.BackgroundExecutionSettings.setEnabled(backgroundContext(), enabled);
+        if (!enabled) {
+            mTrustedGmsCloudMessagingSupervisor.suspendRuntime();
+            mStaticBroadcastDispatcher.cancelAll("background-disabled");
+            mLinePushClosedGateRecovery.cancelPackage("jp.naver.line.android");
+            mLinePushProcessGuard.cancelPackageUser("jp.naver.line.android", VUserHandle.USER_ALL);
+            // Preserve only genuinely visible guests; all other clones must stop immediately.
+            stopUnauthorizedForegroundProcesses();
+            if (mVisibleGuestActivities.isEmpty()) stopForegroundOnlyRuntime();
+            com.lody.virtual.client.stub.DaemonJobService.cancelJob(backgroundContext());
+            backgroundContext().stopService(new Intent(backgroundContext(), DaemonService.class));
+        } else {
+            mTrustedGmsCloudMessagingSupervisor.resumeRuntime();
+        }
+    }
+
     private static final boolean BROADCAST_NOT_STARTED_PKG = false;
     private static final long SERVICE_STARTUP_TIMEOUT_MS = 15_000L;
     private static final long PREPARED_LAUNCH_ACK_TIMEOUT_MS = 5_000L;
@@ -219,6 +382,7 @@ public class VActivityManagerService extends IActivityManager.Stub
 
     /** Reopens background workload acquisition after a legitimate visible FGS start. */
     public void reopenDaemonWorkloadGate() {
+        if (!backgroundEnabled()) return;
         mDaemonWorkloadGate.reopen();
     }
 
@@ -339,8 +503,11 @@ public class VActivityManagerService extends IActivityManager.Stub
         AttributeCache.init(context);
         mServiceHandler = new Handler(Looper.getMainLooper());
         mGmsBackgroundKeepAlive = new GmsBackgroundKeepAlive(context);
+        android.os.HandlerThread gmsWorker = new android.os.HandlerThread("apptwin-gms-supervisor");
+        gmsWorker.start();
+        mGmsSupervisorHandler = new Handler(gmsWorker.getLooper());
         mTrustedGmsCloudMessagingSupervisor = new TrustedGmsCloudMessagingSupervisor(
-                context, new TrustedGmsRuntimeOperations(), mServiceHandler);
+                context, new TrustedGmsRuntimeOperations(), mGmsSupervisorHandler);
         mGmsBackgroundKeepAlive.setListener(new GmsBackgroundKeepAlive.Listener() {
             @Override
             public void onGmsBindingConnected(int userId, long processGeneration) {
@@ -382,6 +549,13 @@ public class VActivityManagerService extends IActivityManager.Stub
             throw new RuntimeException("Unable to found PackageInfo : " + context.getPackageName());
         }
         sService.set(this);
+        android.content.IntentFilter screenFilter = new android.content.IntentFilter(Intent.ACTION_SCREEN_OFF);
+        context.registerReceiver(new BroadcastReceiver() {
+            @Override public void onReceive(Context context, Intent intent) {
+                if (Intent.ACTION_SCREEN_OFF.equals(intent.getAction())) stopForegroundOnlyRuntime();
+            }
+        }, screenFilter);
+        if (!backgroundEnabled()) mTrustedGmsCloudMessagingSupervisor.suspendRuntime();
         scheduleOrphanedStubTaskReconciliation(null, "engine-startup");
 
         // A provider/job process must not start guest MCS without an active, user-visible FGS.
@@ -397,11 +571,11 @@ public class VActivityManagerService extends IActivityManager.Stub
     }
 
     private void scheduleInitialGmsReconciliation() {
-        mServiceHandler.postDelayed(() -> {
+        mGmsSupervisorHandler.postDelayed(() -> {
             if (!DaemonService.isForegroundSessionActive()) {
                 return;
             }
-            if (!beginDaemonWorkloadAcquisition()) return;
+            if (!backgroundEnabled() || !beginDaemonWorkloadAcquisition()) return;
             long reconciliationGeneration = mGmsReconciliationReliability.begin();
             try {
                 boolean reconciled = mTrustedGmsCloudMessagingSupervisor.reconcile();
@@ -812,6 +986,8 @@ public class VActivityManagerService extends IActivityManager.Stub
     @Override
     public synchronized boolean onActivityDestroyed(int userId, IBinder token) {
         enforceCallerUserOrHost(userId);
+        mVisibleGuestActivities.remove(token);
+        scheduleForegroundStopIfIdle();
         ActivityRecord r = mMainStack.onActivityDestroyed(userId, token);
         mPreparedActivityLaunches.cancelActivity(userId, token);
         if (r != null) mDaemonWorkloadGate.workloadChanged();
@@ -1007,6 +1183,9 @@ public class VActivityManagerService extends IActivityManager.Stub
             VLog.w(TAG, "startService unresolved: " + service + " user=" + userId);
             return null;
         }
+        if (!foregroundAllows(serviceInfo.packageName, userId)) return null;
+        if (!backgroundEnabled() && serviceInfo.name != null
+                && TrustedGmsCloudMessagingSupervisor.MCS_SERVICE.equals(serviceInfo.name)) return null;
         notifyTrustedGmsMcsReconnectIfNeeded(caller, service, serviceInfo, userId);
         VLog.i(TAG, "startService " + service + " resolved="
                 + ComponentUtils.toComponentName(serviceInfo) + " user=" + userId);
@@ -1274,6 +1453,9 @@ public class VActivityManagerService extends IActivityManager.Stub
         if (serviceInfo == null) {
             return 0;
         }
+        if (!foregroundAllows(serviceInfo.packageName, userId)) return 0;
+        if (!backgroundEnabled() && serviceInfo.name != null
+                && TrustedGmsCloudMessagingSupervisor.MCS_SERVICE.equals(serviceInfo.name)) return 0;
         ServiceRecord r;
         synchronized (this) {
             r = findRecordLocked(userId, serviceInfo, instanceName);
@@ -1769,6 +1951,7 @@ public class VActivityManagerService extends IActivityManager.Stub
         if (!process.osIsolatedWorker) {
             synchronized (this) {
                 emptiedTaskIds = mMainStack.processDied(process);
+                mServiceHandler.post(this::scheduleForegroundStopIfIdle);
                 mDaemonWorkloadGate.workloadChanged();
             }
         }
@@ -1900,6 +2083,7 @@ public class VActivityManagerService extends IActivityManager.Stub
     }
 
     private void postNotification(int userId, int id, String pkg, Notification notification) {
+        if (!backgroundEnabled()) return;
         id = VNotificationManager.get().dealNotificationId(id, pkg, null, userId);
         String tag = VNotificationManager.get().dealNotificationTag(id, pkg, null, userId);
 //        VNotificationManager.get().dealNotification(id, notification, pkg);
@@ -2121,7 +2305,7 @@ public class VActivityManagerService extends IActivityManager.Stub
      * VAMS monitor while another VAMS entry point waits for process creation.
      */
     private void retainStartedProcessIfAuthorized(ProcessRecord app) {
-        if (app == null || !beginDaemonWorkloadAcquisition()) return;
+        if (app == null || !backgroundEnabled() || !beginDaemonWorkloadAcquisition()) return;
         try {
             int bindingsBefore = mGmsBackgroundKeepAlive.activeBindingCount();
             mGmsBackgroundKeepAlive.retain(app);
@@ -2241,6 +2425,7 @@ public class VActivityManagerService extends IActivityManager.Stub
     private ProcessRecord startProcessIfNeedLocked(String processName, int userId,
                                                     String packageName,
                                                     boolean isolatedProcess) {
+        if (!foregroundAllows(packageName, userId)) return null;
         final ProcessRecord started;
         mProcessStartGate.enter();
         try {
@@ -2249,6 +2434,13 @@ public class VActivityManagerService extends IActivityManager.Stub
         } finally {
             mProcessStartGate.exit();
         }
+        // Recheck after releasing ProcessStartGate: taking the VAMS monitor inside that gate
+        // reverses the order used by service acquisition. A concurrent OFF may have won while
+        // the stub was attaching, so retire that late process before returning its endpoint.
+        if (started != null && !foregroundAllows(packageName, userId)) {
+            killProcess(started.pid);
+            return null;
+        }
         retainStartedProcessIfAuthorized(started);
         return started;
     }
@@ -2256,6 +2448,7 @@ public class VActivityManagerService extends IActivityManager.Stub
     private ProcessRecord tryStartProcessForBinding(String processName, int userId,
                                                      String packageName,
                                                      boolean isolatedProcess) {
+        if (!foregroundAllows(packageName, userId)) return null;
         ProcessRecord existing = findLiveLogicalProcess(processName, userId, packageName);
         if (existing != null) {
             return existing;
@@ -2280,6 +2473,13 @@ public class VActivityManagerService extends IActivityManager.Stub
                     processName, userId, packageName, isolatedProcess);
         } finally {
             mProcessStartGate.exit();
+        }
+        // Recheck after releasing ProcessStartGate: taking the VAMS monitor inside that gate
+        // reverses the order used by service acquisition. A concurrent OFF may have won while
+        // the stub was attaching, so retire that late process before returning its endpoint.
+        if (started != null && !foregroundAllows(packageName, userId)) {
+            killProcess(started.pid);
+            return null;
         }
         retainStartedProcessIfAuthorized(started);
         return started;
@@ -2822,6 +3022,10 @@ public class VActivityManagerService extends IActivityManager.Stub
             }
             process.pid = pid;
             process.physicalUid = uid;
+            if (!foregroundAllows(process.info.packageName, process.userId)) {
+                stopForegroundProcess(process);
+                return;
+            }
         }
         if (process.lifecycle.markReady(process.generation)) {
             VLog.i(TAG, "isolated-worker-ready key=" + process.isolatedOwnerKey
@@ -3341,6 +3545,7 @@ public class VActivityManagerService extends IActivityManager.Stub
                                                 int virtualSenderVuid,
                                                 int virtualSenderUserId,
                                                 String linePushAttestation) {
+        if (!backgroundEnabled()) return false;
         if (!beginDaemonWorkloadAcquisition()) {
             LinePushDeliveryDiagnostics.checkpoint(result, "gate-reject");
             int userId = getUserId(vuid);
@@ -3611,6 +3816,7 @@ public class VActivityManagerService extends IActivityManager.Stub
 
     /** Atomically validates the LINE stop epoch and reopens the gate for one consumed nonce. */
     public synchronized boolean authorizeLinePushDaemonReopen(long nonce) {
+        if (!backgroundEnabled()) return false;
         LinePushDaemonAuthorizationScope scope = mLinePushDaemonAuthorizations.remove(nonce);
         if (scope == null || !mLinePushStopFence.isCurrent(scope.stopPermit)
                 || !mTrustedGmsCloudMessagingSupervisor.isDesiredUser(scope.userId)) {

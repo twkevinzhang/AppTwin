@@ -30,6 +30,9 @@ import androidx.compose.material3.SegmentedButton
 import androidx.compose.material3.SegmentedButtonDefaults
 import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.Text
+import androidx.compose.material3.Switch
+import android.os.Build
+import org.apptwin.runtime.BackgroundServiceState
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -38,6 +41,8 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -58,12 +63,24 @@ fun SettingsScreen(
     notificationsGranted: Boolean,
     onRequestNotifications: () -> Unit,
     onPermissionAction: (ClonePermissionSummary) -> Unit,
+    backgroundServiceState: BackgroundServiceState = BackgroundServiceState(),
+    onBackgroundServiceChange: (Boolean) -> Unit = {},
+    onBackgroundServiceRetry: () -> Unit = {},
+    onAddBackgroundServiceTile: () -> Unit = {},
 ) {
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
         contentPadding = PaddingValues(20.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
+        item {
+            BackgroundServiceSettingsCard(
+                state = backgroundServiceState,
+                onEnabledChange = onBackgroundServiceChange,
+                onRetry = onBackgroundServiceRetry,
+                onAddTile = onAddBackgroundServiceTile,
+            )
+        }
         item {
             ArchiveExportSettingsCard(
                 archiveCompression = state.archiveCompression,
@@ -180,6 +197,71 @@ fun SettingsScreen(
                     Text("產生並分享報告", modifier = Modifier.padding(start = 8.dp))
                 }
             }
+        }
+    }
+}
+
+@Composable
+internal fun BackgroundServiceSettingsCard(
+    state: BackgroundServiceState,
+    onEnabledChange: (Boolean) -> Unit,
+    onRetry: () -> Unit = {},
+    onAddTile: () -> Unit,
+) {
+    SettingsCard(
+        modifier = Modifier.testTag("background-service-card"),
+        icon = { Icon(Icons.Default.Security, contentDescription = null) },
+        title = "AppTwin 背景服務",
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                when {
+                    state.busy -> "切換中…"
+                    !state.loaded -> "讀取設定中…"
+                    state.enabled -> "已開啟"
+                    else -> "已關閉"
+                },
+                modifier = Modifier.weight(1f),
+            )
+            Switch(
+                modifier = Modifier
+                    .testTag("background-service-switch")
+                    .semantics { contentDescription = "AppTwin 背景服務" },
+                checked = state.enabled,
+                enabled = state.loaded && !state.busy,
+                onCheckedChange = onEnabledChange,
+            )
+        }
+        Text(
+            if (state.enabled) {
+                "允許分身在背景運作及接收通知。實際送達仍取決於網路與 App 通知設定。"
+            } else {
+                "分身僅在前景使用，離開後停止；背景不接收通知。前景可能同步訊息，但不顯示分身通知。"
+            },
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        Text(
+            "關閉狀態會保留，重開 AppTwin 或重新開機不會自動開啟。重新開啟後可能補收積壓訊息。",
+            modifier = Modifier.padding(top = 8.dp),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        state.error?.let {
+            Text(it, color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(top = 8.dp))
+            TextButton(onClick = onRetry, enabled = !state.busy) {
+                Text("重試")
+            }
+        }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            TextButton(onClick = onAddTile, modifier = Modifier.testTag("add-background-service-tile")) {
+                Text("加入通知欄快速設定")
+            }
+        } else {
+            Text(
+                "可從通知欄的快速設定編輯頁加入 AppTwin 背景服務方塊。",
+                modifier = Modifier.padding(top = 8.dp),
+                style = MaterialTheme.typography.bodySmall,
+            )
         }
     }
 }

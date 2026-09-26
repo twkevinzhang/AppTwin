@@ -149,7 +149,7 @@ import static android.content.pm.ActivityInfo.LAUNCH_SINGLE_TOP;
         return null;
     }
 
-    private ActivityRecord findActivityByToken(int userId, IBinder token) {
+    ActivityRecord findActivityByToken(int userId, IBinder token) {
         ActivityRecord target = null;
         if (token != null) {
             for (int i = 0; i < this.mHistory.size(); i++) {

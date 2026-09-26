@@ -146,7 +146,11 @@ public class VAppManagerService extends IAppManager.Stub {
             return false;
         }
         pkg.trustedPackageProvenance = ps.trustedPackageProvenance;
+        long signatureStartedAt = android.os.SystemClock.elapsedRealtime();
+        android.util.Log.i("AppTwinStartup", "package-signature-begin");
         PackageParserEx.readSignature(pkg, new File(ps.apkPath), ps.trustedPackageProvenance);
+        android.util.Log.i("AppTwinStartup", "package-signature-complete durationMs="
+                + (android.os.SystemClock.elapsedRealtime() - signatureStartedAt));
         if (pkg.mSignatures == null || pkg.mRealSignatures == null) {
             VLog.e(TAG, "Rejecting package whose activated signer cannot be verified");
             return false;

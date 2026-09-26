@@ -44,6 +44,7 @@ import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -56,6 +57,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.unit.dp
+import org.apptwin.runtime.BackgroundServiceController
 import org.apptwin.MainDestination
 import org.apptwin.MainViewModel
 import org.apptwin.permissions.ClonePermissionAction
@@ -79,8 +81,10 @@ fun AppTwinApp(
     onOpenStorageSettings: () -> Unit,
     onOpenPermissionSettings: (String) -> Unit,
     onShareDiagnostics: (String) -> Unit,
+    onAddBackgroundServiceTile: () -> Unit = {},
 ) {
     val state = viewModel.uiState
+    val backgroundServiceState by BackgroundServiceController.state.collectAsState()
     val snackbarHostState = remember { SnackbarHostState() }
     var showCreateGroup by rememberSaveable { mutableStateOf(false) }
     var pendingPermissionAppKey by rememberSaveable { mutableStateOf<String?>(null) }
@@ -291,6 +295,15 @@ fun AppTwinApp(
                                 )
                                 else -> SettingsScreen(
                                     state = state,
+                                    backgroundServiceState = backgroundServiceState,
+                                    onBackgroundServiceChange = { BackgroundServiceController.setEnabled(context, it) },
+                                    onBackgroundServiceRetry = {
+                                        backgroundServiceState.retry(
+                                            requestChange = { BackgroundServiceController.setEnabled(context, it) },
+                                            refresh = { BackgroundServiceController.refresh(context) },
+                                        )
+                                    },
+                                    onAddBackgroundServiceTile = onAddBackgroundServiceTile,
                                     onArchiveCompressionChange = viewModel::setArchiveCompression,
                                     onOpenStorageSettings = onOpenStorageSettings,
                                     onExportDiagnostics = viewModel::exportDiagnostics,

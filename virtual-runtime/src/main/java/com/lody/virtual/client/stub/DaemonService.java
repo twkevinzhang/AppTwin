@@ -94,7 +94,10 @@ public class DaemonService extends Service {
     private DaemonLifetimePolicy lifetimePolicy;
     private int latestStartId;
     private boolean foreground;
-    private boolean destroyed;
+    private volatile boolean destroyed;
+    private final LatestRuntimeTaskExecutor reconciliationExecutor = new LatestRuntimeTaskExecutor();
+    private final java.util.concurrent.atomic.AtomicLong reconciliationEpoch =
+            new java.util.concurrent.atomic.AtomicLong();
     private boolean preexistingForegroundSessionOnCreate;
     private boolean acceptedStartSeen;
     private int foregroundGmsUserCount = -1;
@@ -171,6 +174,7 @@ public class DaemonService extends Service {
     public static void startup(Context context, int[] desiredGmsUserIds,
             String launchAuthorizationToken) {
         Context appContext = context.getApplicationContext();
+        if (!com.lody.virtual.client.env.BackgroundExecutionSettings.isEnabled(appContext)) return;
         long visibleStartAt = System.currentTimeMillis();
         recordVisibleStart(appContext, visibleStartAt);
         // Clear only after publishing the newer visible timestamp. A concurrent recovery job can
@@ -228,6 +232,7 @@ public class DaemonService extends Service {
 
     private static void startForegroundDaemon(Context appContext, int[] desiredGmsUserIds,
             String launchAuthorizationToken, long linePushRecoveryNonce) {
+        if (!com.lody.virtual.client.env.BackgroundExecutionSettings.isEnabled(appContext)) return;
         Intent intent = new Intent(appContext, DaemonService.class);
         if (desiredGmsUserIds != null) {
             intent.putExtra(EXTRA_DESIRED_GMS_USER_IDS, desiredGmsUserIds.clone());
@@ -252,6 +257,7 @@ public class DaemonService extends Service {
      */
     public static boolean allowsAutomaticRecovery(Context context) {
         Context appContext = context.getApplicationContext();
+        if (!com.lody.virtual.client.env.BackgroundExecutionSettings.isEnabled(appContext)) return false;
         long lastVisibleStartAt = readVisibleStart(appContext);
         DaemonRecoveryPolicy.Suppression suppression = readRecoverySuppression(
                 appContext, lastVisibleStartAt);
@@ -652,34 +658,52 @@ public class DaemonService extends Service {
             activityManager.reopenDaemonWorkloadGate();
         }
 
-        try {
+        if (linePushRecovery != LinePushRecoveryAuthorization.AUTHORIZED) {
             int[] desiredGmsUserIds = intent == null
                     ? null : intent.getIntArrayExtra(EXTRA_DESIRED_GMS_USER_IDS);
             String launchAuthorizationToken = intent == null
                     ? null : intent.getStringExtra(EXTRA_LAUNCH_AUTHORIZATION_TOKEN);
-            boolean exactReconciliationAccepted = false;
-            if (linePushRecovery == LinePushRecoveryAuthorization.AUTHORIZED) {
-                // The authenticated wrapper already proved an existing durable GMS scope. Do not
-                // let a LINE delivery perturb MCS retry/timeout state or exact desired-user data.
-            } else if (desiredGmsUserIds == null) {
-                VActivityManager.get().reconcileTrustedGmsCloudMessaging();
-            } else {
-                exactReconciliationAccepted =
-                        VActivityManager.get().reconcileTrustedGmsCloudMessagingForUsers(
-                        desiredGmsUserIds.clone());
-            }
-            if (exactReconciliationAccepted && activityManager != null
-                    && launchAuthorizationToken != null) {
-                activityManager.recordDaemonLaunchAuthorization(
-                        launchAuthorizationToken, desiredGmsUserIds.clone());
-            }
-        } catch (Throwable ignored) {
-            // The engine may still be initializing. Its active-session fallback and persisted
-            // maintenance job provide independent, bounded recovery attempts.
+            scheduleReconciliation(desiredGmsUserIds, launchAuthorizationToken, activityManager);
         }
 
         handler.post(workloadMonitor);
         return START_STICKY;
+    }
+
+    private void scheduleReconciliation(int[] desiredUsers, String launchToken,
+            VActivityManagerService activityManager) {
+        final int[] users = desiredUsers == null ? null : desiredUsers.clone();
+        final long epoch = reconciliationEpoch.incrementAndGet();
+        reconciliationExecutor.submit(() -> {
+            if (!isReconciliationCurrent(epoch)) return;
+            long startedAt = SystemClock.elapsedRealtime();
+            try {
+                boolean accepted = false;
+                if (users == null) {
+                    VActivityManager.get().reconcileTrustedGmsCloudMessaging();
+                } else {
+                    accepted = VActivityManager.get().reconcileTrustedGmsCloudMessagingForUsers(users);
+                }
+                // A slow cold stub may finish after OFF, a newer visible start, or destruction.
+                // Only the current exact request may publish the launch fast-path token.
+                if (accepted && activityManager != null && launchToken != null
+                        && isReconciliationCurrent(epoch)) {
+                    activityManager.recordDaemonLaunchAuthorization(launchToken, users);
+                }
+                android.util.Log.i("AppTwinEngine", "daemon-reconcile-complete durationMs="
+                        + (SystemClock.elapsedRealtime() - startedAt)
+                        + " current=" + isReconciliationCurrent(epoch));
+            } catch (Throwable failure) {
+                android.util.Log.w("AppTwinEngine", "daemon-reconcile-failed type="
+                        + failure.getClass().getSimpleName());
+            }
+        });
+    }
+
+    private boolean isReconciliationCurrent(long epoch) {
+        return !destroyed && epoch == reconciliationEpoch.get()
+                && foregroundSessionActive
+                && com.lody.virtual.client.env.BackgroundExecutionSettings.isEnabled(this);
     }
 
     private static synchronized long authorizeLinePushRecovery() {
@@ -764,6 +788,8 @@ public class DaemonService extends Service {
     @Override
     public void onDestroy() {
         destroyed = true;
+        reconciliationEpoch.incrementAndGet();
+        reconciliationExecutor.close();
         if (handler != null) {
             handler.removeCallbacks(workloadMonitor);
         }

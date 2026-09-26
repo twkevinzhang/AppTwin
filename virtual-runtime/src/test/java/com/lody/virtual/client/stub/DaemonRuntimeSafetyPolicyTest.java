@@ -197,23 +197,30 @@ public class DaemonRuntimeSafetyPolicyTest {
         assertFalse(recoveryEntry.contains("writeRecoverySuppression"));
 
         int onStart = source.indexOf("int onStartCommand(");
-        int taskRemoved = source.indexOf("void onTaskRemoved(", onStart);
-        String onStartBody = source.substring(onStart, taskRemoved);
+        int worker = source.indexOf("private void scheduleReconciliation(", onStart);
+        String onStartBody = source.substring(onStart, worker);
         assertTrue(onStartBody.indexOf("consumeLinePushRecoveryAuthorization(intent)")
                 < onStartBody.indexOf("allowsAutomaticRecovery(this)"));
-        int modeCheck = onStartBody.indexOf(
-                "linePushRecovery == LinePushRecoveryAuthorization.AUTHORIZED");
-        int genericReconcile = onStartBody.indexOf(
-                "reconcileTrustedGmsCloudMessaging();");
-        int exactReconcile = onStartBody.indexOf(
-                "reconcileTrustedGmsCloudMessagingForUsers(");
         assertTrue(onStartBody.contains("activityManager.reopenDaemonWorkloadGate();"));
-        assertTrue(modeCheck >= 0);
-        assertTrue(genericReconcile > modeCheck);
-        assertTrue(exactReconcile > modeCheck);
-        assertTrue(onStartBody.substring(modeCheck,
-                onStartBody.indexOf("} else if", modeCheck))
-                .contains("Do not"));
+        int normalStartOnly = onStartBody.indexOf(
+                "if (linePushRecovery != LinePushRecoveryAuthorization.AUTHORIZED) {");
+        int enqueue = onStartBody.indexOf(
+                "scheduleReconciliation(desiredGmsUserIds, launchAuthorizationToken, activityManager);");
+        int endNormalBranch = onStartBody.indexOf("}\n", enqueue);
+        assertTrue(normalStartOnly >= 0);
+        assertTrue(enqueue > normalStartOnly);
+        assertTrue(endNormalBranch > enqueue);
+        assertTrue(endNormalBranch < onStartBody.indexOf("handler.post(workloadMonitor)"));
+        assertFalse(onStartBody.contains("reconcileTrustedGmsCloudMessaging();"));
+        assertFalse(onStartBody.contains("reconcileTrustedGmsCloudMessagingForUsers("));
+
+        String workerBody = source.substring(worker,
+                source.indexOf("private boolean isReconciliationCurrent", worker));
+        int submit = workerBody.indexOf("reconciliationExecutor.submit(() -> {");
+        assertTrue(submit >= 0);
+        assertTrue(workerBody.indexOf("if (!isReconciliationCurrent(epoch)) return;") > submit);
+        assertTrue(workerBody.indexOf("reconcileTrustedGmsCloudMessaging();") > submit);
+        assertTrue(workerBody.indexOf("reconcileTrustedGmsCloudMessagingForUsers(") > submit);
         assertTrue(source.contains("MAX_PENDING_LINE_RECOVERY_NONCES = 64"));
         assertTrue(source.contains("SecureRandom lineRecoveryNonceRandom"));
     }
@@ -223,16 +230,15 @@ public class DaemonRuntimeSafetyPolicyTest {
             throws Exception {
         String source = readSource("com/lody/virtual/client/stub/DaemonService.java");
         int onStart = source.indexOf("int onStartCommand(");
-        int taskRemoved = source.indexOf("void onTaskRemoved(", onStart);
-        String onStartBody = source.substring(onStart, taskRemoved);
+        int worker = source.indexOf("private void scheduleReconciliation(", onStart);
+        String onStartBody = source.substring(onStart, worker);
 
         int consume = onStartBody.indexOf("consumeLinePushRecoveryAuthorization(intent)");
         int invalid = onStartBody.indexOf(
                 "linePushRecovery == LinePushRecoveryAuthorization.INVALID");
         int invalidReturn = onStartBody.indexOf("return START_NOT_STICKY", invalid);
         int gateReopen = onStartBody.indexOf("activityManager.reopenDaemonWorkloadGate()");
-        int genericReconcile = onStartBody.indexOf(
-                "reconcileTrustedGmsCloudMessaging();");
+        int genericReconcile = onStartBody.indexOf("scheduleReconciliation(");
         assertTrue(consume >= 0);
         assertTrue(invalid > consume);
         assertTrue(invalidReturn > invalid);

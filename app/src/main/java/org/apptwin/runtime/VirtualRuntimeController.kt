@@ -11,6 +11,7 @@ import android.os.Looper
 import android.util.Log
 import com.lody.virtual.client.core.InstallStrategy
 import com.lody.virtual.client.core.VirtualCore
+import com.lody.virtual.client.env.BackgroundExecutionSettings
 import com.lody.virtual.client.ipc.VActivityManager
 import com.lody.virtual.client.ipc.VDeviceManager
 import com.lody.virtual.client.ipc.VPackageManager
@@ -82,6 +83,13 @@ class VirtualRuntimeController internal constructor(
             val activityManager =
                 activity.getSystemService(Context.ACTIVITY_SERVICE) as ActivityManager
             activityManager.moveTaskToFront(taskId, 0)
+        },
+        backgroundExecutionEnabled = { BackgroundExecutionSettings.isEnabled(appContext) },
+        beginForegroundLaunch = { packageName, userId ->
+            VActivityManager.get().beginForegroundLaunch(packageName, userId)
+        },
+        cancelForegroundLaunch = { packageName, userId ->
+            VActivityManager.get().cancelForegroundLaunch(packageName, userId)
         },
         observeDaemonReopenEpoch = DaemonWorkloadAuthorization::observeReopenEpoch,
         reuseVisibleDaemonSession = {
@@ -612,6 +620,9 @@ internal class HostActivityLaunchAdapter<Host : Any>(
     private val pause: (Long) -> Unit = Thread::sleep,
     private val mainDispatchTimeoutMs: Long = 5_000L,
     private val daemonReadyTimeoutMs: Long = 5_000L,
+    private val backgroundExecutionEnabled: () -> Boolean = { true },
+    private val beginForegroundLaunch: (String, Int) -> Boolean = { _, _ -> false },
+    private val cancelForegroundLaunch: (String, Int) -> Unit = { _, _ -> },
 ) {
     fun launch(intent: Intent, expectedPackage: String, userId: Int): PreparedActivityLaunch {
         if (isMainThread()) {
@@ -626,88 +637,101 @@ internal class HostActivityLaunchAdapter<Host : Any>(
             "AppTwin must be resumed to launch a guest activity",
         )
 
-        val daemonSessionReused = runCatching(reuseVisibleDaemonSession).getOrDefault(false)
-        if (daemonSessionReused) {
-            Log.i("AppTwinRuntime", "daemon-launch-fast-path")
-        } else {
-            // The epoch query is a runtime Binder call. Keep it off the Android main thread so a
-            // busy engine cannot turn a bounded guest launch into a host ANR.
-            val observedReopenEpoch = runCatching(observeDaemonReopenEpoch).getOrElse { error ->
-                return PreparedActivityLaunch.failure(
-                    error.message ?: "Unable to observe the AppTwin background service gate",
-                )
-            }
-            val daemonStart = callOnMain {
-                check(resumedHost() === host) {
-                    "AppTwin activity is no longer resumed"
+        val foregroundOnly = !backgroundExecutionEnabled()
+        try {
+            if (foregroundOnly) {
+                if (!beginForegroundLaunch(expectedPackage, userId)) {
+                    return PreparedActivityLaunch.failure("無法建立分身前景工作階段")
                 }
-                // The runtime starts with its workload gate closed. Request the FGS while this host
-                // is visibly resumed, then wait off-main for DaemonService.onStartCommand to reopen
-                // the gate before any prepared task or virtual service can be created.
-                refreshDaemonFromVisibleHost(host)
-            }
-            val daemonStartError = daemonStart.exceptionOrNull()
-            if (daemonStartError != null) {
-                return PreparedActivityLaunch.failure(
-                    daemonStartError.message ?: "Unable to start the AppTwin background service",
-                )
-            }
-            daemonStart.getOrThrow()
-            if (!awaitDaemonReady(observedReopenEpoch, daemonReadyTimeoutMs)) {
-                return PreparedActivityLaunch.failure(
-                    "AppTwin background service did not become ready",
-                )
-            }
-        }
-
-        val prepared = prepareActivity(Intent(intent), expectedPackage, userId)
-        if (!prepared.isSuccess) return prepared
-
-        val launchId = requireNotNull(prepared.launchId)
-        var acknowledged = false
-        val result = try {
-            val startError = callOnMain {
-                check(resumedHost() === host) {
-                    "AppTwin activity is no longer resumed"
-                }
-                if (prepared.isReused) {
-                    moveTaskToFront(host, prepared.taskId)
-                } else {
-                    startActivity(host, Intent(requireNotNull(prepared.intent)))
-                }
-            }.exceptionOrNull()
-            if (startError != null) {
-                PreparedActivityLaunch.failure(
-                    startError.message ?: "Unable to start guest activity",
-                )
             } else {
-                acknowledged = awaitAcknowledgement(launchId, acknowledgementTimeoutMs)
-                val guestActivityStarted = acknowledged || awaitExpectedGuestActivity(
-                    expectedPackage,
-                    userId,
-                    prepared,
-                )
-                if (guestActivityStarted) {
-                    prepared
+                val daemonSessionReused = runCatching(reuseVisibleDaemonSession).getOrDefault(false)
+                if (daemonSessionReused) {
+                    Log.i("AppTwinRuntime", "daemon-launch-fast-path")
                 } else {
-                    PreparedActivityLaunch.failure(
-                        "Expected Group activity did not resume",
-                    )
+                    // The epoch query is a runtime Binder call. Keep it off the Android main thread so a
+                    // busy engine cannot turn a bounded guest launch into a host ANR.
+                    val observedReopenEpoch = runCatching(observeDaemonReopenEpoch).getOrElse { error ->
+                        return PreparedActivityLaunch.failure(
+                            error.message ?: "Unable to observe the AppTwin background service gate",
+                        )
+                    }
+                    val daemonStart = callOnMain {
+                        check(resumedHost() === host) {
+                            "AppTwin activity is no longer resumed"
+                        }
+                        // The runtime starts with its workload gate closed. Request the FGS while this host
+                        // is visibly resumed, then wait off-main for DaemonService.onStartCommand to reopen
+                        // the gate before any prepared task or virtual service can be created.
+                        refreshDaemonFromVisibleHost(host)
+                    }
+                    val daemonStartError = daemonStart.exceptionOrNull()
+                    if (daemonStartError != null) {
+                        return PreparedActivityLaunch.failure(
+                            daemonStartError.message ?: "Unable to start the AppTwin background service",
+                        )
+                    }
+                    daemonStart.getOrThrow()
+                    if (!awaitDaemonReady(observedReopenEpoch, daemonReadyTimeoutMs)) {
+                        return PreparedActivityLaunch.failure(
+                            "AppTwin background service did not become ready",
+                        )
+                    }
                 }
             }
-        } catch (error: Throwable) {
-            PreparedActivityLaunch.failure(
-                error.message ?: "Unable to start guest activity",
-            )
-        }
-        if (!acknowledged) {
-            try {
-                cancelAcknowledgement(launchId)
-            } catch (_: Throwable) {
-                // Cleanup must not replace the launch failure.
+
+            val prepared = prepareActivity(Intent(intent), expectedPackage, userId)
+            if (!prepared.isSuccess) return prepared
+
+            val launchId = requireNotNull(prepared.launchId)
+            var acknowledged = false
+            val result = try {
+                val startError = callOnMain {
+                    check(resumedHost() === host) {
+                        "AppTwin activity is no longer resumed"
+                    }
+                    if (prepared.isReused) {
+                        moveTaskToFront(host, prepared.taskId)
+                    } else {
+                        startActivity(host, Intent(requireNotNull(prepared.intent)))
+                    }
+                }.exceptionOrNull()
+                if (startError != null) {
+                    PreparedActivityLaunch.failure(
+                        startError.message ?: "Unable to start guest activity",
+                    )
+                } else {
+                    acknowledged = awaitAcknowledgement(launchId, acknowledgementTimeoutMs)
+                    val guestActivityStarted = acknowledged || awaitExpectedGuestActivity(
+                        expectedPackage,
+                        userId,
+                        prepared,
+                    )
+                    if (guestActivityStarted) {
+                        prepared
+                    } else {
+                        PreparedActivityLaunch.failure(
+                            "Expected Group activity did not resume",
+                        )
+                    }
+                }
+            } catch (error: Throwable) {
+                PreparedActivityLaunch.failure(
+                    error.message ?: "Unable to start guest activity",
+                )
+            }
+            if (!acknowledged) {
+                try {
+                    cancelAcknowledgement(launchId)
+                } catch (_: Throwable) {
+                    // Cleanup must not replace the launch failure.
+                }
+            }
+            return result
+        } finally {
+            if (foregroundOnly) {
+                runCatching { cancelForegroundLaunch(expectedPackage, userId) }
             }
         }
-        return result
     }
 
     private fun awaitExpectedGuestActivity(

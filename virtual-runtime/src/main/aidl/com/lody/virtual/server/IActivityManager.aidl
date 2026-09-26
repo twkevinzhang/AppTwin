@@ -145,4 +145,8 @@ interface IActivityManager {
     boolean awaitDaemonWorkloadGateOpenAfter(long observedReopenEpoch, long timeoutMs);
 
     TrustedGmsCloudMessagingState getTrustedGmsCloudMessagingState(int userId);
+    void setBackgroundExecutionEnabled(boolean enabled);
+    boolean beginForegroundLaunch(String packageName, int userId);
+    void cancelForegroundLaunch(String packageName, int userId);
+    void onActivityVisibilityChanged(int userId, in IBinder token, boolean visible);
 }

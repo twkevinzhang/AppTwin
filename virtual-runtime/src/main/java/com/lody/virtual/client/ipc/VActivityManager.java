@@ -231,6 +231,24 @@ public class VActivityManager {
         }
     }
 
+    public void setBackgroundExecutionEnabled(boolean enabled) {
+        try { getService().setBackgroundExecutionEnabled(enabled); }
+        catch (RemoteException error) { throw new IllegalStateException(error); }
+    }
+    public boolean beginForegroundLaunch(String packageName, int userId) {
+        try { return getService().beginForegroundLaunch(packageName, userId); }
+        catch (RemoteException error) { return false; }
+    }
+    public void cancelForegroundLaunch(String packageName, int userId) {
+        try { getService().cancelForegroundLaunch(packageName, userId); }
+        catch (RemoteException ignored) { }
+    }
+    public void onActivityVisibilityChanged(Activity activity, boolean visible) {
+        IBinder token = mirror.android.app.Activity.mToken.get(activity);
+        try { getService().onActivityVisibilityChanged(VUserHandle.myUserId(), token, visible); }
+        catch (RemoteException ignored) { }
+    }
+
     public void onActivityResumed(Activity activity) {
         IBinder token = mirror.android.app.Activity.mToken.get(activity);
         onActivityResumed(token);

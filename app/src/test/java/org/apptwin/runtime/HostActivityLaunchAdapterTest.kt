@@ -14,6 +14,55 @@ import org.junit.Test
 
 class HostActivityLaunchAdapterTest {
     @Test
+    fun `foreground only launch never starts daemon and releases launch lease`() {
+        val events = mutableListOf<String>()
+        val adapter = HostActivityLaunchAdapter(
+            prepareActivity = { _, _, _ -> PreparedActivityLaunch.reused(73, "foreground") },
+            resumedHost = { "visible-host" },
+            startActivity = { _, _ -> error("reused task") },
+            moveTaskToFront = { _, _ -> events += "move" },
+            backgroundExecutionEnabled = { false },
+            beginForegroundLaunch = { pkg, user ->
+                assertEquals("com.example.guest", pkg)
+                assertEquals(2, user)
+                events += "begin"
+                true
+            },
+            cancelForegroundLaunch = { _, _ -> events += "release" },
+            observeDaemonReopenEpoch = { error("OFF must not request daemon") },
+            reuseVisibleDaemonSession = { error("OFF must not reuse daemon") },
+            refreshDaemonFromVisibleHost = { error("OFF must not start daemon") },
+            dispatchToMain = ::runImmediately,
+            isMainThread = { false },
+            awaitAcknowledgement = { _, _ -> true },
+            cancelAcknowledgement = {},
+        )
+        assertTrue(adapter.launch(Intent("test"), "com.example.guest", 2).isSuccess)
+        assertEquals(listOf("begin", "move", "release"), events)
+    }
+
+    @Test
+    fun `failed foreground preparation releases lease without starting activity`() {
+        var released = false
+        val adapter = HostActivityLaunchAdapter(
+            prepareActivity = { _, _, _ -> PreparedActivityLaunch.failure("failure") },
+            resumedHost = { "visible-host" },
+            startActivity = { _, _ -> error("failed preparation") },
+            moveTaskToFront = { _, _ -> error("failed preparation") },
+            backgroundExecutionEnabled = { false },
+            beginForegroundLaunch = { _, _ -> true },
+            cancelForegroundLaunch = { _, _ -> released = true },
+            reuseVisibleDaemonSession = { error("OFF must not use daemon") },
+            dispatchToMain = ::runImmediately,
+            isMainThread = { false },
+            awaitAcknowledgement = { _, _ -> false },
+            cancelAcknowledgement = {},
+        )
+        assertFalse(adapter.launch(Intent("test"), "com.example.guest", 2).isSuccess)
+        assertTrue(released)
+    }
+
+    @Test
     fun `visible daemon request captures epoch before starting service`() {
         val source = File(
             "src/main/java/org/apptwin/runtime/DaemonWorkloadAuthorization.kt",

@@ -49,6 +49,7 @@ public class DaemonJobService extends JobService {
     }
 
     public static void scheduleJob(Context context) {
+        if (!com.lody.virtual.client.env.BackgroundExecutionSettings.isEnabled(context)) { cancelJob(context); return; }
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.LOLLIPOP) {
             return;
         }

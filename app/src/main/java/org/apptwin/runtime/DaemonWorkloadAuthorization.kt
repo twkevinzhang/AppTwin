@@ -1,6 +1,7 @@
 package org.apptwin.runtime
 
 import android.content.Context
+import com.lody.virtual.client.env.BackgroundExecutionSettings
 import com.lody.virtual.client.ipc.VActivityManager
 import com.lody.virtual.client.stub.DaemonService
 import java.io.File
@@ -67,6 +68,10 @@ internal object DaemonWorkloadAuthorization {
     @Synchronized
     fun startFromVisibleHost(context: Context) {
         val appContext = context.applicationContext
+        if (!BackgroundExecutionSettings.isEnabled(appContext)) {
+            visibleAuthorization = null
+            return
+        }
         val generationBefore = DaemonAuthorizationGeneration.current(appContext.filesDir)
         val enabledUsers = loadEnabledVirtualUserIds(context)
         val generationAfter = DaemonAuthorizationGeneration.current(appContext.filesDir)
@@ -98,6 +103,7 @@ internal object DaemonWorkloadAuthorization {
      * desired-user set makes the runtime reject the token and falls back to the full handshake.
      */
     fun isVisibleSessionReady(context: Context): Boolean {
+        if (!BackgroundExecutionSettings.isEnabled(context)) return false
         val authorization = visibleAuthorization ?: return false
         val appContext = context.applicationContext
         if (DaemonAuthorizationGeneration.current(appContext.filesDir) != authorization.generation) {

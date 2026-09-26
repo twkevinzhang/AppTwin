@@ -37,6 +37,9 @@ public class VNotificationManager {
 
     public boolean dealNotification(int id, Notification notification, String packageName) {
         if(notification == null)return false;
+        if (!VirtualCore.get().getHostPkg().equals(packageName)
+                && !com.lody.virtual.client.env.BackgroundExecutionSettings.isEnabled(
+                VirtualCore.get().getContext())) return false;
         return VirtualCore.get().getHostPkg().equals(packageName)
                 || mNotificationCompat.dealNotification(id, notification, packageName);
     }

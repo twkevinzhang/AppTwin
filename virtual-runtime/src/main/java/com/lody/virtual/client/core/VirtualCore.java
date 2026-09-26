@@ -179,11 +179,13 @@ public final class VirtualCore {
 
 
     public void startup(Context context) throws Throwable {
+        android.util.Log.i("AppTwinStartup", "core-startup-begin");
         if (!isStartUp) {
             if (Looper.myLooper() != Looper.getMainLooper()) {
                 throw new IllegalStateException("VirtualCore.startup() must called in main thread.");
             }
             Reflection.unseal(context);
+            android.util.Log.i("AppTwinStartup", "core-unsealed");
 
             VASettings.STUB_CP_AUTHORITY = context.getPackageName() + "." + VASettings.STUB_DEF_AUTHORITY;
             ServiceManagerNative.SERVICE_CP_AUTH = context.getPackageName() + "." + ServiceManagerNative.SERVICE_DEF_AUTH;
@@ -192,15 +194,20 @@ public final class VirtualCore {
             unHookPackageManager = context.getPackageManager();
             hostPkgInfo = unHookPackageManager.getPackageInfo(context.getPackageName(), PackageManager.GET_PROVIDERS);
             detectProcessType();
+            android.util.Log.i("AppTwinStartup", "core-process-detected");
             // Capture the raw system ActivityManager before ActivityManagerStub replaces the
             // process-local singleton. Server authority checks must never recurse through hooks
             // or trust guest-mutable argv[0].
             RawSystemProcessAuthority.captureBeforeHooks();
+            android.util.Log.i("AppTwinStartup", "core-authority-captured");
             InvocationStubManager invocationStubManager = InvocationStubManager.getInstance();
             invocationStubManager.init();
+            android.util.Log.i("AppTwinStartup", "core-hooks-created");
             invocationStubManager.injectAll();
+            android.util.Log.i("AppTwinStartup", "core-hooks-injected");
             ContextFixer.fixContext(context);
             isStartUp = true;
+            android.util.Log.i("AppTwinStartup", "core-startup-complete");
             if (initLock != null) {
                 initLock.open();
                 initLock = null;
