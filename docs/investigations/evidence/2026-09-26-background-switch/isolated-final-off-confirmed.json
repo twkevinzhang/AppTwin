@@ -1,0 +1,28 @@
+{
+  "stage": "isolated-final-off-confirmed",
+  "observed_at": "2026-09-26T10:24:39.957977+08:00",
+  "marker": "BG_switch_20260926_final_off",
+  "microg": [
+    [
+      102,
+      1790389325777,
+      1,
+      1
+    ]
+  ],
+  "line_db": [
+    [
+      0,
+      null,
+      null
+    ]
+  ],
+  "notification": [
+    {
+      "line_channel": true,
+      "contains_marker": false,
+      "importance": "4"
+    }
+  ],
+  "guest_line_processes": []
+}

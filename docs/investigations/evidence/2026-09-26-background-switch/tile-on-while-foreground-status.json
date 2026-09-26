@@ -1,0 +1,19 @@
+{
+  "at": "2026-09-26T09:42:04.778513+08:00",
+  "stage": "tile-on-while-foreground",
+  "daemon_service_present": true,
+  "foreground_service": true,
+  "enabled": true,
+  "processes": [
+    "11291 22119 org.apptwin",
+    "11291 22795 org.apptwin:x",
+    "11291 24282 jp.naver.line.android",
+    "11291 24310 com.google.android.gms",
+    "11291 24699 com.google.android.gms:persistent",
+    "11291 24712 com.google.android.gms",
+    "11291 24726 com.google.android.gms:persistent"
+  ],
+  "resumed": [
+    "topResumedActivity=ActivityRecord{227904833 u0 org.apptwin/com.lody.virtual.client.stub.StubActivity$C0 t2361}"
+  ]
+}

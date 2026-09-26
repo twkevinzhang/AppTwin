@@ -1,0 +1,30 @@
+{
+  "stage": "on1-delivered",
+  "observed_at": "2026-09-26T09:40:29.032314+08:00",
+  "marker": "BG_switch_20260926_on1",
+  "microg": [
+    [
+      101,
+      1790386800254,
+      1,
+      1
+    ]
+  ],
+  "line_db": [
+    [
+      1,
+      "1790386820683",
+      "1790386820683"
+    ]
+  ],
+  "notification": [
+    {
+      "line_channel": true,
+      "contains_marker": true,
+      "importance": "4"
+    }
+  ],
+  "guest_line_processes": [
+    "11291 23670 jp.naver.line.android"
+  ]
+}

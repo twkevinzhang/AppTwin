@@ -232,6 +232,10 @@
 
     <application>
         <service
+            android:name="com.lody.virtual.client.stub.ForegroundEngineService"
+            android:exported="false"
+            android:process="@string/engine_process_name" />
+        <service
             android:name="com.lody.virtual.client.stub.DaemonService"
             android:exported="false"
             android:foregroundServiceType="specialUse"

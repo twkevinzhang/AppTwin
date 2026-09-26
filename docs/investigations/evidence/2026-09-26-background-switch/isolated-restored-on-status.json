@@ -1,0 +1,19 @@
+{
+  "at": "2026-09-26T10:28:32.800169+08:00",
+  "stage": "isolated-restored-on",
+  "daemon_service_present": true,
+  "foreground_service": true,
+  "enabled": true,
+  "processes": [
+    "11291  3937 org.apptwin",
+    "11291 15438 org.apptwin:x",
+    "11291 15507 com.google.android.gms",
+    "11291 15521 com.google.android.gms:persistent",
+    "11291 15540 com.google.android.gms",
+    "11291 15555 com.google.android.gms:persistent",
+    "11291 15592 jp.naver.line.android"
+  ],
+  "resumed": [
+    "topResumedActivity=ActivityRecord{218317869 u0 com.google.android.apps.nexuslauncher/.NexusLauncherActivity t2}"
+  ]
+}

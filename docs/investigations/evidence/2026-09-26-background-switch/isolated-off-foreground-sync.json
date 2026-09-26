@@ -1,0 +1,30 @@
+{
+  "stage": "isolated-off-foreground-sync",
+  "observed_at": "2026-09-26T10:25:36.355741+08:00",
+  "marker": "BG_switch_20260926_final_off",
+  "microg": [
+    [
+      102,
+      1790389325777,
+      1,
+      1
+    ]
+  ],
+  "line_db": [
+    [
+      1,
+      "1790389433949",
+      "1790389433949"
+    ]
+  ],
+  "notification": [
+    {
+      "line_channel": true,
+      "contains_marker": false,
+      "importance": "4"
+    }
+  ],
+  "guest_line_processes": [
+    "11291 14949 jp.naver.line.android"
+  ]
+}

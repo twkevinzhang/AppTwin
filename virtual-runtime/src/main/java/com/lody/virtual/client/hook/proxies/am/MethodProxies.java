@@ -959,6 +959,15 @@ class MethodProxies {
             IInterface caller = (IInterface) args[0];
             IBinder token = (IBinder) args[1];
             Intent service = (Intent) args[2];
+            // This exact host service is a physical Activity importance dependency. Resolve it
+            // before any VAMS RPC: VAMS may currently be frozen, which is precisely why we bind.
+            ComponentName physicalTarget = service == null ? null : service.getComponent();
+            if (physicalTarget != null
+                    && com.lody.virtual.client.stub.ForegroundEngineBindingPolicy.isEngineBinding(
+                    getHostPkg(), physicalTarget.getPackageName(), physicalTarget.getClassName())) {
+                replacePhysicalServiceCaller(args, getHostPkg());
+                return method.invoke(who, args);
+            }
             String resolvedType = (String) args[3];
             IServiceConnection conn = (IServiceConnection) args[4];
             int flags = serviceBindFlags(args[5]);

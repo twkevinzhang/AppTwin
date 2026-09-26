@@ -1,0 +1,22 @@
+{
+  "stage": "release-off-early",
+  "observed_at": "2026-09-26T10:37:37.606201+08:00",
+  "marker": "BG_switch_20260926_release",
+  "microg": [
+    [
+      103,
+      1790389702073,
+      1,
+      1
+    ]
+  ],
+  "line_db": [
+    [
+      0,
+      null,
+      null
+    ]
+  ],
+  "notification": [],
+  "guest_line_processes": []
+}

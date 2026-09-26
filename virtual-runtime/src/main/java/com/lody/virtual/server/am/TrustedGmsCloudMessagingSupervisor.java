@@ -177,6 +177,21 @@ final class TrustedGmsCloudMessagingSupervisor {
         return ensureDurableUser(userId);
     }
 
+    /** Stops live supervision without changing the durable per-space desired configuration. */
+    private volatile boolean runtimeSuspended;
+
+    void resumeRuntime() { runtimeSuspended = false; }
+
+    void suspendRuntime() {
+        runtimeSuspended = true;
+        Set<Integer> users;
+        synchronized (this) {
+            users = new HashSet<>(states.keySet());
+            for (Integer user : users) disableStateLocked(user, null);
+        }
+        for (Integer user : users) stopRuntimeOutsideLock(user);
+    }
+
     boolean stopForUser(int userId) {
         synchronized (this) {
             Set<Integer> desired = new HashSet<>(durableDesiredUsers);
@@ -487,6 +502,7 @@ final class TrustedGmsCloudMessagingSupervisor {
     }
 
     private boolean ensureDurableUser(int userId) {
+        if (runtimeSuspended) return false;
         boolean installed = runtime.isInstalled(userId);
         if (!installed) {
             markDesiredUnavailable(userId);
@@ -497,7 +513,7 @@ final class TrustedGmsCloudMessagingSupervisor {
         long generation;
         long connectionEpoch;
         synchronized (this) {
-            if (!durableDesiredUsers.contains(userId)) return false;
+            if (runtimeSuspended || !durableDesiredUsers.contains(userId)) return false;
             UserState state = stateFor(userId);
             if (!state.desired) {
                 state.desired = true;
@@ -532,7 +548,7 @@ final class TrustedGmsCloudMessagingSupervisor {
     private boolean attemptStart(int userId, long generation, long connectionEpoch) {
         synchronized (this) {
             UserState state = states.get(userId);
-            if (state == null || !state.desired || state.generation != generation
+            if (runtimeSuspended || state == null || !state.desired || state.generation != generation
                     || state.connectionEpoch != connectionEpoch
                     || !durableDesiredUsers.contains(userId)) {
                 return false;
@@ -547,7 +563,7 @@ final class TrustedGmsCloudMessagingSupervisor {
         }
         boolean accepted;
         try {
-            accepted = runtime.startCloudMessaging(userId);
+            accepted = !runtimeSuspended && runtime.startCloudMessaging(userId);
         } catch (RuntimeException error) {
             VLog.e(TAG, "Unable to start trusted Cloud Messaging user=" + userId
                     + " error=" + error);
@@ -559,7 +575,7 @@ final class TrustedGmsCloudMessagingSupervisor {
         boolean superseded;
         synchronized (this) {
             UserState state = states.get(userId);
-            unauthorized = state == null || !state.desired || state.generation != generation
+            unauthorized = runtimeSuspended || state == null || !state.desired || state.generation != generation
                     || !durableDesiredUsers.contains(userId);
             superseded = !unauthorized && state.connectionEpoch != connectionEpoch;
             if (!unauthorized && !superseded) {
@@ -583,7 +599,7 @@ final class TrustedGmsCloudMessagingSupervisor {
 
     private void markDesiredUnavailable(int userId) {
         synchronized (this) {
-            if (!durableDesiredUsers.contains(userId)) return;
+            if (runtimeSuspended || !durableDesiredUsers.contains(userId)) return;
             UserState state = stateFor(userId);
             if (!state.desired) {
                 state.desired = true;
@@ -609,7 +625,7 @@ final class TrustedGmsCloudMessagingSupervisor {
         }
         boolean desiredAgain;
         synchronized (this) {
-            desiredAgain = durableDesiredUsers.contains(userId);
+            desiredAgain = !runtimeSuspended && durableDesiredUsers.contains(userId);
         }
         if (desiredAgain) ensureDurableUser(userId);
     }

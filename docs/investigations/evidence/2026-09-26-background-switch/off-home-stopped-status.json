@@ -1,0 +1,14 @@
+{
+  "at": "2026-09-26T09:39:23.052864+08:00",
+  "stage": "off-home-stopped",
+  "daemon_service_present": false,
+  "foreground_service": false,
+  "enabled": false,
+  "processes": [
+    "11291 22119 org.apptwin",
+    "11291 22795 org.apptwin:x"
+  ],
+  "resumed": [
+    "topResumedActivity=ActivityRecord{163559943 u0 com.google.android.apps.nexuslauncher/.NexusLauncherActivity t2}"
+  ]
+}

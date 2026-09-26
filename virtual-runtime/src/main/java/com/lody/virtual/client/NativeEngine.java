@@ -37,14 +37,18 @@ public class NativeEngine {
 
     static {
         try {
+            android.util.Log.i("AppTwinStartup", "native-load-begin");
             System.loadLibrary(LIB_NAME);
+            android.util.Log.i("AppTwinStartup", "native-load-complete");
         } catch (Throwable e) {
             VLog.e(TAG, VLog.getStackTraceString(e));
         }
     }
 
     static {
+        android.util.Log.i("AppTwinStartup", "native-methods-begin");
         NativeMethods.init();
+        android.util.Log.i("AppTwinStartup", "native-methods-complete");
     }
 
 

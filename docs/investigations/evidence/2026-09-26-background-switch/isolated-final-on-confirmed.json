@@ -1,0 +1,30 @@
+{
+  "stage": "isolated-final-on-confirmed",
+  "observed_at": "2026-09-26T10:22:46.756876+08:00",
+  "marker": "BG_switch_20260926_final_on",
+  "microg": [
+    [
+      102,
+      1790389325777,
+      1,
+      1
+    ]
+  ],
+  "line_db": [
+    [
+      1,
+      "1790389326535",
+      "1790389326535"
+    ]
+  ],
+  "notification": [
+    {
+      "line_channel": true,
+      "contains_marker": true,
+      "importance": "4"
+    }
+  ],
+  "guest_line_processes": [
+    "11291 13317 jp.naver.line.android"
+  ]
+}

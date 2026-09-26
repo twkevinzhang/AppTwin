@@ -1,6 +1,10 @@
 package org.apptwin
 
 import android.app.ForegroundServiceStartNotAllowedException
+import android.app.StatusBarManager
+import android.content.ComponentName
+import android.graphics.drawable.Icon
+import android.widget.Toast
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
@@ -18,6 +22,8 @@ import com.lody.virtual.client.isolated.IsolatedWorkerProbe
 import com.lody.virtual.client.stub.DaemonJobService
 import org.apptwin.permissions.permissionSettingsDestination
 import org.apptwin.runtime.DaemonWorkloadAuthorization
+import org.apptwin.runtime.BackgroundServiceController
+import org.apptwin.runtime.BackgroundServiceTile
 import org.apptwin.runtime.GroupAppRuntimeSupport
 import org.apptwin.runtime.mainActivityLaunchHosts
 import org.apptwin.ui.AppTwinApp
@@ -44,6 +50,7 @@ class MainActivity : ComponentActivity() {
                 onOpenStorageSettings = ::openAllFilesAccessSettings,
                 onOpenPermissionSettings = ::openPermissionSettings,
                 onShareDiagnostics = ::shareDiagnostics,
+                onAddBackgroundServiceTile = ::addBackgroundServiceTile,
             )
         }
         if (BuildConfig.DEBUG) {
@@ -96,6 +103,7 @@ class MainActivity : ComponentActivity() {
     override fun onResume() {
         super.onResume()
         mainActivityLaunchHosts.onResumed(this)
+        BackgroundServiceController.refresh(this)
         if (::mainViewModel.isInitialized) mainViewModel.refresh()
     }
 
@@ -135,6 +143,25 @@ class MainActivity : ComponentActivity() {
     override fun onDestroy() {
         mainActivityLaunchHosts.onPaused(this)
         super.onDestroy()
+    }
+
+    private fun addBackgroundServiceTile() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) return
+        val statusBar = getSystemService(StatusBarManager::class.java) ?: return
+        statusBar.requestAddTileService(
+            ComponentName(this, BackgroundServiceTile::class.java),
+            "AppTwin 背景服務",
+            Icon.createWithResource(this, R.drawable.ic_background_service),
+            mainExecutor,
+        ) { result ->
+            val message = when (result) {
+                StatusBarManager.TILE_ADD_REQUEST_RESULT_TILE_ADDED -> "已加入快速設定"
+                StatusBarManager.TILE_ADD_REQUEST_RESULT_TILE_ALREADY_ADDED -> "快速設定已有此方塊"
+                StatusBarManager.TILE_ADD_REQUEST_RESULT_TILE_NOT_ADDED -> "未加入；也可從通知欄編輯快速設定"
+                else -> "無法加入，請從通知欄編輯快速設定"
+            }
+            Toast.makeText(this, message, Toast.LENGTH_SHORT).show()
+        }
     }
 
     private fun openAllFilesAccessSettings() {

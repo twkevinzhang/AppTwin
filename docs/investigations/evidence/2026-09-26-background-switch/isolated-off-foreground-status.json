@@ -1,0 +1,16 @@
+{
+  "at": "2026-09-26T10:25:38.635330+08:00",
+  "stage": "isolated-off-foreground",
+  "daemon_service_present": false,
+  "foreground_service": false,
+  "enabled": false,
+  "processes": [
+    "11291  3937 org.apptwin",
+    "11291  4207 org.apptwin:x",
+    "11291 14949 jp.naver.line.android",
+    "11291 15035 com.google.android.gms"
+  ],
+  "resumed": [
+    "topResumedActivity=ActivityRecord{210194879 u0 org.apptwin/com.lody.virtual.client.stub.StubActivity$C0 t2388}"
+  ]
+}

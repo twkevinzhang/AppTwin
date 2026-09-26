@@ -1,0 +1,14 @@
+{
+  "at": "2026-09-26T10:35:01.945271+08:00",
+  "stage": "binding-off-confirmed",
+  "daemon_service_present": false,
+  "foreground_service": false,
+  "enabled": false,
+  "processes": [
+    "11291 16742 org.apptwin",
+    "11291 16754 org.apptwin:x"
+  ],
+  "resumed": [
+    "topResumedActivity=ActivityRecord{245001354 u0 org.apptwin/.MainActivity t2393}"
+  ]
+}

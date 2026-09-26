@@ -1,0 +1,11 @@
+{
+  "at": "2026-09-26T09:44:16.999925+08:00",
+  "stage": "after-reboot-off",
+  "daemon_service_present": false,
+  "foreground_service": false,
+  "enabled": false,
+  "processes": [],
+  "resumed": [
+    "topResumedActivity=ActivityRecord{252579860 u0 com.google.android.apps.nexuslauncher/.NexusLauncherActivity t2}"
+  ]
+}

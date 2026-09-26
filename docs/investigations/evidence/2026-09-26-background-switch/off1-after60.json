@@ -1,0 +1,22 @@
+{
+  "stage": "off1-after60",
+  "observed_at": "2026-09-26T09:38:40.373873+08:00",
+  "marker": "BG_switch_20260926_off1",
+  "microg": [
+    [
+      100,
+      1790385337512,
+      1,
+      1
+    ]
+  ],
+  "line_db": [
+    [
+      0,
+      null,
+      null
+    ]
+  ],
+  "notification": [],
+  "guest_line_processes": []
+}

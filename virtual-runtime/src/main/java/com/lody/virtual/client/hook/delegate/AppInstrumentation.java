@@ -165,6 +165,7 @@ public final class AppInstrumentation extends InstrumentationDelegate implements
             super.callActivityOnDestroy(activity);
             VirtualCore.get().getComponentDelegate().afterActivityDestroy(activity);
         } finally {
+            com.lody.virtual.client.stub.ForegroundEngineBinding.stopped(activity);
             // Recent Android releases no longer reliably report activityDestroyed through the
             // legacy ActivityTaskManager binder callback. Keeping cleanup at the lifecycle
             // boundary prevents stale singleTask records from poisoning later clear-top starts.
@@ -177,6 +178,22 @@ public final class AppInstrumentation extends InstrumentationDelegate implements
                     VLog.e(TAG, "Unable to report destroyed activity", error);
                 }
             }
+        }
+    }
+
+    @Override
+    public void callActivityOnStart(Activity activity) {
+        com.lody.virtual.client.stub.ForegroundEngineBinding.started(activity);
+        super.callActivityOnStart(activity);
+        VActivityManager.get().onActivityVisibilityChanged(activity, true);
+    }
+
+    @Override
+    public void callActivityOnStop(Activity activity) {
+        try { super.callActivityOnStop(activity); }
+        finally {
+            try { VActivityManager.get().onActivityVisibilityChanged(activity, false); }
+            finally { com.lody.virtual.client.stub.ForegroundEngineBinding.stopped(activity); }
         }
     }
 

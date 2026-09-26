@@ -1,0 +1,14 @@
+{
+  "at": "2026-09-26T10:23:36.013170+08:00",
+  "stage": "isolated-off-stable",
+  "daemon_service_present": false,
+  "foreground_service": false,
+  "enabled": false,
+  "processes": [
+    "11291  3937 org.apptwin",
+    "11291  4207 org.apptwin:x"
+  ],
+  "resumed": [
+    "topResumedActivity=ActivityRecord{195994674 u0 jp.naver.line.android/.activity.chathistory.ChatHistoryActivity t2387}"
+  ]
+}

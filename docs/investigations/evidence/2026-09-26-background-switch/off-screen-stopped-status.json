@@ -1,0 +1,12 @@
+{
+  "at": "2026-09-26T09:42:16.629775+08:00",
+  "stage": "off-screen-stopped",
+  "daemon_service_present": false,
+  "foreground_service": false,
+  "enabled": false,
+  "processes": [
+    "11291 22119 org.apptwin",
+    "11291 22795 org.apptwin:x"
+  ],
+  "resumed": []
+}

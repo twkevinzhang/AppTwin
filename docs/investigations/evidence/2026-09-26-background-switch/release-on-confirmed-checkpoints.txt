@@ -1,0 +1,18 @@
+09-26 10:38:33.620 16754 17629 I VActivityManagerService: process-lifecycle pid=17993 generation=7 STARTING->READY pending=1
+09-26 10:38:35.077 16754 17054 I VActivityManagerService: process-lifecycle pid=18020 generation=8 STARTING->READY pending=1
+09-26 10:38:36.820 16754 17054 I VActivityManagerService: process-lifecycle pid=18044 generation=9 STARTING->READY pending=1
+09-26 10:38:38.532 16754 17629 I VActivityManagerService: process-lifecycle pid=18059 generation=10 STARTING->READY pending=1
+09-26 10:38:38.612 18020 18081 I LinePushDelivery: stage=hook-entry user=1 sender=gms target=line action=c2dm method=with-feature
+09-26 10:38:38.615 18020 18081 I LinePushDelivery: stage=attestation-issued user=1 sender=gms target=line action=c2dm method=with-feature
+09-26 10:38:38.615 18020 18081 I LinePushDelivery: stage=redirected-wrapper-created user=1 sender=gms target=line action=c2dm method=with-feature
+09-26 10:38:38.623 18020 18081 I LinePushDelivery: stage=system-broadcast-invoke-result user=1 sender=gms target=line action=c2dm method=with-feature
+09-26 10:38:38.825 16754 16754 I LinePushDelivery: wrapper scope=allow user=1 target=line receiver=line
+09-26 10:38:38.825 16754 16754 I LinePushDelivery: trace=1 stage=entry user=1 target=line receiver=line
+09-26 10:38:38.826 16754 16754 I LinePushDelivery: trace=1 stage=gate-allow user=1 target=line receiver=line
+09-26 10:38:40.686 16754 16754 I LinePushDelivery: trace=1 stage=target-resolved user=1 user=1 target=line receiver=line
+09-26 10:38:40.687 16754 16754 I LinePushDelivery: trace=1 stage=dispatch-queued user=1 target=line receiver=line
+09-26 10:38:40.707 16754 16754 I LinePushDelivery: trace=1 stage=bootstrap-requested user=1 target=line receiver=line
+09-26 10:38:42.157 16754 17054 I VActivityManagerService: process-lifecycle pid=18092 generation=11 STARTING->READY pending=0
+09-26 10:38:42.160 16754 16754 I LinePushDelivery: trace=1 stage=target-ready user=1 user=1 target=line receiver=line
+09-26 10:38:42.160 16754 16754 I LinePushDelivery: trace=1 stage=schedule-receiver user=1 target=line receiver=line
+09-26 10:38:44.285 16754 16754 I LinePushDelivery: trace=1 stage=finish reason=completed user=1 target=line receiver=line
