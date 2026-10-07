@@ -103,3 +103,8 @@ ASUS 解鎖且亮屏前置條件成立後，完整 27 項 instrumentation 於 10
 測試後僅保留既有空白 review 空間 A；本輪測試空間、合成 provider 資料、備份檔與 registry 清理完成，兩個專用 SAF 目錄為空。宿主權限及 stay-awake 設定已恢復。ASUS 安裝目前 debug APK 供檢視；instrumentation APK 與宿主測試 fixture 已解除安裝。未建立雲端資源或持續計費項目。
 
 證據：[最終 27 項](evidence/space-dashboard-asus/final-instrumentation.txt)、[帳號同步 checkpoint](evidence/space-dashboard-asus/account-sync-checkpoints.txt)、[系統 picker／Global SAF](evidence/space-dashboard-asus/selected-uri-and-global-backups.txt)、[儀錶板](evidence/space-dashboard-asus/dashboard.png)。
+
+
+## 帳號類型中文名稱修正
+
+2026-10-08：新增帳號選單與既有帳號列將 `com.google` 顯示為「Google 帳號」，`com.google.work` 顯示為「企業管理帳號」。內部 type、操作 callback 與 test tag 保持原值。APK 建置及 158 項 App unit tests 通過；ASUS 實際開啟選單確認兩個中文名稱、原始代碼不再顯示，既有 Google 帳號列亦確認顯示中文。本次僅檢查顯示，未新增、移除或同步使用者帳號。
