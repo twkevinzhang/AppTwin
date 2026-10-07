@@ -138,3 +138,18 @@ ASUS 原始驗收：當時 AppTwin 工具未列在快速面板配置中，重新
 觀察事實：舊版快取狀態不符durable設定；新版初次載入完成、三次面板重開與durable設定一致。推論：active 模式與僅在監聽時收集 Flow 的更新方式不匹配，令初始狀態長期保留。結論：已修復 ASUS 已驗證的快速工具持續讀取中路徑。可靠度分數：98%。驗證方式：其他實體Android版本執行相同首次載入、反覆收合／展開流程；切換行為本輪未另測，原控制邏輯未修改。
 
 證據：[舊版狀態](evidence/space-dashboard-asus/tile-before-state.txt)、[修正版首次讀取](evidence/space-dashboard-asus/tile-fixed-state.txt)、[三次面板重開](evidence/space-dashboard-asus/tile-reopen-state.txt)。
+
+
+## 快速工具可靠性與實際切換驗收
+
+2026-10-08：在已修正的面板監聽模式之外，檢查發現 Tile 顯示失敗時的點擊仍直接反轉 enabled。若啟用設定已儲存、後續啟動失敗，重新點擊會意外關閉服務。現在失敗時重試原 failedRequestedEnabled；讀取失敗只重讀，busy 不派送重複動作。首次讀取失敗保持可點擊重試，未知設定的 subtitle/contentDescription 不再宣稱已關閉。
+
+成功重讀只解除讀取錯誤；若仍有未完成的切換請求，保留錯誤與方向，不以設定讀取成功冒充服務啟動恢復。State 的 pure action／presentation／read-recovery helper 與 Tile 連接，未更動 runtime gate、LINE 或 background execution policy。
+
+App runtimeProbeDebug unit tests 172 項全通過（0 失敗／0 錯誤／0 略過），新增 9 項包括 partial enable failure 後 retry ON、failed disable 後 retry OFF、已載入／未知設定的讀取錯誤、成功重讀解除 read error、成功重讀仍保留失敗切換、busy 防重入與正常切換。APK 建置成功。
+
+ASUS 實際驗收：安裝 APK 重啟 process 後首次載入顯示已開啟；透過系統快速工具點擊關閉、立即收合再展開，顯示已關閉且 durable=0；再點擊開啟、立即收合再展開，顯示已開啟且 durable=1。完成三次收合／展開均正確。額外確認 DaemonService isForeground=true、foregroundId=1001，避免僅以設定寫入或文字更新當作服務啟動證明。所有等待有 30 秒單步上限，最後 original durable=1 與原 stay-awake=0 已恢復，未新增／移除使用者空間或帳號。
+
+觀察事實：原程式失敗重試與設定頁不同；pure 回歸及 ASUS 以上正常真實流程皆通過。推論：保留原請求並將讀取恢復與服務恢復分開，涵蓋已發現的重試缺口。結論：已完成快速工具的可靠性修正與本輪實機切換驗收。可靠度分數：98%。驗證方式：其他實體 Android 裝置重跑相同首次載入與切換／收合流程；失敗狀態本輪以單元測試覆蓋，未故意破壞實機 runtime 製造啟動失敗。
+
+證據：[快速工具完整實機流程](evidence/space-dashboard-asus/tile-reliability-physical.txt)。無新增雲端或持續計費資源。

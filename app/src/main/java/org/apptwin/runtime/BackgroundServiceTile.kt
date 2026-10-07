@@ -25,20 +25,14 @@ class BackgroundServiceTile : TileService() {
                 qsTile?.apply {
                     label = "AppTwin 背景服務"
                     this.state = when {
-                        !state.loaded || state.busy -> Tile.STATE_UNAVAILABLE
-                        state.enabled -> Tile.STATE_ACTIVE
+                        !state.tileInteractive -> Tile.STATE_UNAVAILABLE
+                        state.loaded && state.enabled -> Tile.STATE_ACTIVE
                         else -> Tile.STATE_INACTIVE
                     }
                     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                        subtitle = when {
-                            state.busy -> "切換中…"
-                            state.error != null -> "切換失敗，請重試"
-                            !state.loaded -> "讀取中…"
-                            state.enabled -> "已開啟"
-                            else -> "已關閉"
-                        }
+                        subtitle = state.tileDescription
                     }
-                    contentDescription = "$label，${if (state.enabled) "已開啟" else "已關閉"}"
+                    contentDescription = "$label，${state.tileDescription}"
                     updateTile()
                 }
             }
@@ -50,10 +44,11 @@ class BackgroundServiceTile : TileService() {
         super.onClick()
         val toggle = Runnable {
             val state = BackgroundServiceController.state.value
-            if (state.loaded && !state.busy) {
-                BackgroundServiceController.setEnabled(this, !state.enabled)
-            } else if (!state.busy) {
-                BackgroundServiceController.refresh(this)
+            state.performTileClick(
+                requestChange = { BackgroundServiceController.setEnabled(this, it) },
+                refresh = { BackgroundServiceController.refresh(this) },
+            )
+            if (!state.loaded && !state.busy && state.error == null) {
                 Toast.makeText(this, "正在讀取設定，請稍後再試。", Toast.LENGTH_SHORT).show()
             }
         }
