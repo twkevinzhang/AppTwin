@@ -211,7 +211,7 @@ internal class AndroidMainOperations(private val application: Application) : Mai
                 val authorities = SpaceAccountSync.adapters(userId, account.type).map { it.authority }
                 SpaceAccountEntry(account.name,account.type,authorities,authorities.isNotEmpty(),if(authorities.isEmpty()) "此帳號沒有可用的同步服務" else "可手動同步")
             },
-            manager.getAuthenticatorTypes(userId).map { SpaceAccountType(it.type,it.type) }, archives.backups(groupId), archives.globalBackupLocation())
+            manager.getAuthenticatorTypes(userId).map { SpaceAccountType(it.type, when (it.type) { "com.google" -> "Google 帳號"; "com.google.work" -> "企業管理帳號"; else -> it.type }) }, archives.backups(groupId), archives.globalBackupLocation())
     }
     override suspend fun addSpaceAccount(groupId: String, type: String) {
         val userId = requireNotNull(prepareAccountApps(groupId).environmentBinding).internalId

@@ -135,7 +135,7 @@ fun SpaceDetailsScreen(
                 if (authenticators.isEmpty()) item { Text("此空間尚無可新增帳號的服務。請先加入提供 AccountManager 的 App。") }
                 if (accounts.isEmpty()) item { Text("尚無 AccountManager 帳號。App 自行儲存的登入請在該 App 中管理。") }
                 accounts.forEach { account -> item { DetailCard(account.name, "space-account-${account.type}-${account.name}") {
-                    Text(account.type, style = MaterialTheme.typography.bodySmall)
+                    Text(authenticators.firstOrNull { it.type == account.type }?.label ?: account.type, style = MaterialTheme.typography.bodySmall)
                     Text(account.syncStatus, style = MaterialTheme.typography.bodySmall)
                     account.syncAuthorities.forEach { authority ->
                         TextButton(onClick = { onSynchronizeAccount(account, authority) }, enabled = !busy,
