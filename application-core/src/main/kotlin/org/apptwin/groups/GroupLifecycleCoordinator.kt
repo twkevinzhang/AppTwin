@@ -39,8 +39,11 @@ class GroupLifecycleCoordinator(
     private val journal: GroupOperationJournal,
     private val idFactory: () -> String = { UUID.randomUUID().toString() },
     private val clock: () -> Long = System::currentTimeMillis,
+    private val initialize: (Group) -> Unit = {},
 ) {
-    fun createGroup(name: String): Group {
+    fun createGroup(name: String, initialApps: List<GroupApp> = emptyList(), finalizeCreation: (Group) -> Unit = {}, prepare: (Group) -> Unit = {}): Group {
+        // Finish interrupted deletion before allocating a runtime user ID that may be reused.
+        reconcile()
         val groupId = idFactory()
         val started = GroupOperation(
             groupId = groupId,
@@ -60,7 +63,13 @@ class GroupLifecycleCoordinator(
                     environmentBinding = binding,
                 ),
             )
-            val created = store.create(groupId, name, binding, started.startedAtEpochMillis)
+            val provisional = Group(groupId, name.trim(), started.startedAtEpochMillis, binding, GroupHealth.PROVISIONING, initialApps)
+            store.prepareCreation(provisional)
+            prepare(provisional)
+            initialize(provisional)
+            finalizeCreation(provisional)
+            val created = if (initialApps.isEmpty()) store.create(groupId, name, binding, started.startedAtEpochMillis)
+                else store.createWithApps(groupId, name, binding, started.startedAtEpochMillis, initialApps)
             metadataCommitted = true
             // Journal cleanup is post-commit and recoverable. It must never compensate a committed Group.
             runCatching { journal.remove(groupId) }
@@ -70,7 +79,11 @@ class GroupLifecycleCoordinator(
                 binding?.let { created ->
                     val rollback = runCatching { runtime.deleteEnvironment(created) }
                     rollback.exceptionOrNull()?.let(error::addSuppressed)
-                    if (rollback.isSuccess) runCatching { journal.remove(groupId) }
+                    if (rollback.isSuccess) {
+                        val cleanup = runCatching { store.discardCreation(groupId) }
+                        cleanup.exceptionOrNull()?.let(error::addSuppressed)
+                        if (cleanup.isSuccess) runCatching { journal.remove(groupId) }
+                    }
                 }
             }
             throw error
@@ -133,10 +146,12 @@ class GroupLifecycleCoordinator(
                     group != null -> journal.remove(operation.groupId)
                     operation.environmentBinding != null -> {
                         runtime.deleteEnvironment(operation.environmentBinding)
+                        store.discardCreation(operation.groupId)
                         journal.remove(operation.groupId)
                     }
                     else -> {
                         runtime.findEnvironment(operation.groupId)?.let(runtime::deleteEnvironment)
+                        store.discardCreation(operation.groupId)
                         journal.remove(operation.groupId)
                     }
                 }

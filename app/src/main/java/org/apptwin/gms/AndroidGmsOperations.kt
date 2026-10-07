@@ -66,6 +66,11 @@ internal class AndroidGmsOperations(
         issues,
     )
     private val coordinator = GmsLifecycleCoordinator(profiles, operations, releases, runtime)
+    private val spaceInitializer = EnableGmsUseCase(GmsLifecycleCoordinator(profiles, operations, releases,
+        object : GmsRuntimePort by runtime {
+            override fun ensureEnabled(groupId: GmsGroupId, release: org.apptwin.gms.artifacts.TrustedGmsManifest, operationId: String): GmsRuntimeMutationResult =
+                runtime.ensureSpaceInitialized(groupId, release, operationId)
+        }))
     private val reconcile = ReconcileGmsUseCase(coordinator, operations, releases)
     private val evaluateProfile = EvaluateGmsProfileUseCase(profiles, releases, runtime)
     private val evaluateCapability = EvaluateGmsCapabilityUseCase(evidence, releases)
@@ -143,6 +148,8 @@ internal class AndroidGmsOperations(
             )
         }
     }
+
+    fun initializeForSpace(groupId: String): GmsLifecycleResult = spaceInitializer.execute(GmsGroupId(groupId))
 
     fun enable(groupId: String): GmsLifecycleResult = enable.execute(GmsGroupId(groupId))
 

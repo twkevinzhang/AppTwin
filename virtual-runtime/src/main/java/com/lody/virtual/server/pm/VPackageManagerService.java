@@ -340,10 +340,9 @@ public class VPackageManagerService extends IPackageManager.Stub {
         }
     }
 
-    /** M3 exposes explicit per-space controls for camera and microphone only. */
+    /** Explicit per-space capabilities, intersected with the host grant. */
     private boolean isSpaceControlledDangerousPermission(String permission) {
-        return (Manifest.permission.CAMERA.equals(permission)
-                || Manifest.permission.RECORD_AUDIO.equals(permission))
+        return com.lody.virtual.client.hook.GuestPermissionPolicy.isControlled(permission)
                 && isDangerousPermission(permission);
     }
 
@@ -951,6 +950,7 @@ public class VPackageManagerService extends IPackageManager.Stub {
         // Runtime grants and installed flags are independently durable. Failure of either leaves
         // the user partial, so its numeric id cannot be reused with inherited authority.
         mRuntimePermissions.clearUser(userId);
+        com.lody.virtual.server.am.VActivityManagerService.get().clearSelectedUriGrantsInternal(userId, null);
         VAppManagerService appManager = VAppManagerService.get();
         if (appManager == null) {
             throw new IOException("Package settings are not loaded");

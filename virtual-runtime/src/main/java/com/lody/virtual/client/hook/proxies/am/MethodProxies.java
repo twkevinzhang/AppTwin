@@ -534,6 +534,19 @@ class MethodProxies {
                 resultWho = (String) args[resultToIndex + 1];
                 requestCode = (int) args[resultToIndex + 2];
             }
+            if (resultTo != null && (Intent.ACTION_OPEN_DOCUMENT.equals(intent.getAction())
+                    || Intent.ACTION_GET_CONTENT.equals(intent.getAction())
+                    || "android.provider.action.PICK_IMAGES".equals(intent.getAction()))) {
+                String session = VActivityManager.get().prepareUriPicker(intent, resultTo);
+                Intent bridge = new Intent();
+                bridge.setComponent(new ComponentName(getHostContext(),
+                        com.lody.virtual.client.stub.TrustedUriPickerActivity.class));
+                bridge.putExtra(com.lody.virtual.client.stub.TrustedUriPickerActivity.SESSION, session);
+                args[intentIndex] = bridge;
+                args[intentIndex + 1] = null;
+                MethodParameterUtils.replaceFirstAppPkg(args);
+                return method.invoke(who, args);
+            }
             // chooser
             if (ChooserActivity.check(intent)) {
                 intent.setComponent(new ComponentName(getHostContext(), ChooserActivity.class));
@@ -959,6 +972,9 @@ class MethodProxies {
             IInterface caller = (IInterface) args[0];
             IBinder token = (IBinder) args[1];
             Intent service = (Intent) args[2];
+            if (com.lody.virtual.client.hook.secondary.GuestGmsLocationGate.isLocation(service)) {
+                com.lody.virtual.client.hook.secondary.GuestGmsLocationGate.requireLocation();
+            }
             // This exact host service is a physical Activity importance dependency. Resolve it
             // before any VAMS RPC: VAMS may currently be frozen, which is precisely why we bind.
             ComponentName physicalTarget = service == null ? null : service.getComponent();
@@ -1350,8 +1366,7 @@ class MethodProxies {
             if (SpecialComponentList.isWhitePermission(permission)) {
                 return PackageManager.PERMISSION_GRANTED;
             }
-            if (Manifest.permission.CAMERA.equals(permission)
-                    || Manifest.permission.RECORD_AUDIO.equals(permission)) {
+            if (com.lody.virtual.client.hook.GuestPermissionPolicy.isControlled(permission)) {
                 return VPackageManager.get().checkPermission(
                         permission, getAppPkg(), getAppUserId());
             }

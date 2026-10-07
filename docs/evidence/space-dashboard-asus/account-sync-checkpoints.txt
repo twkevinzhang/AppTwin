@@ -1,0 +1,18 @@
+10-08 06:40:32.363 21148 21148 I FixtureAccount: service-bound
+10-08 06:40:32.542 21148 21148 I FixtureSync: service-bound
+10-08 06:40:32.543 21148 21148 I FixtureSync: endpoint descriptor=android.content.ISyncAdapter class=android.content.AbstractThreadedSyncAdapter$ISyncAdapterImpl loader=java.lang.BootClassLoader
+10-08 06:40:32.550 21148 21148 I FixtureSync: endpoint-methods=cancelSync,isCallerSystem,lambda$onUnsyncableAccount$0,onUnsyncableAccount,startSync
+10-08 06:40:32.550 21148 21148 I FixtureSync: contract loader=java.lang.BootClassLoader methods=cancelSync,onUnsyncableAccount,startSync
+10-08 06:40:32.550 21148 21148 I FixtureSync: runtime-wire stub=android.content.ISyncAdapter$Stub loader=java.lang.BootClassLoader field=TRANSACTION_startSync value=2
+10-08 06:40:32.550 21148 21148 I FixtureSync: runtime-wire stub=android.content.ISyncAdapter$Stub loader=java.lang.BootClassLoader field=TRANSACTION_cancelSync value=3
+10-08 06:40:32.553 21148 21148 I VirtualSyncBridge: registration user=1 manager=19555 expected=19555 exactPackage=true declared=true
+10-08 06:40:32.562 19555 19566 I ScopedAccountSync: start user=1 component=ComponentInfo{org.apptwin.fixture/org.apptwin.fixture.FixtureSyncService}
+10-08 06:40:32.563 21148 21175 I FixtureSync: perform-enter provider=true
+10-08 06:40:32.575 21148 21175 I FixtureSync: perform-completed
+10-08 06:40:32.577 19555 19566 I ScopedAccountSync: finished user=1 success=true
+10-08 06:40:43.628 21287 21287 I FixtureAccount: service-bound
+10-08 06:40:43.632 19555 21218 I VAccountManagerService: account-removal-request user=1
+10-08 06:40:43.632 19555 21218 I VAccountManagerService: account-removal-request-returned user=1
+10-08 06:40:43.633 21287 21298 I FixtureAccount: removal-enter
+10-08 06:40:43.644 21287 21298 I FixtureAccount: removal-approved
+10-08 06:40:43.644 19555 21218 I VAccountManagerService: account-removal-result user=1 active=true boolean=true intent=false

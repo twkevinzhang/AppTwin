@@ -214,6 +214,19 @@ final class TrustedGmsCloudMessagingSupervisor {
     }
 
     boolean reconcileDesiredUsers(int[] desiredUserIds) {
+        return reconcileDesiredUsers(desiredUserIds, true);
+    }
+
+    boolean recoverAuthorizedUsers(Set<Integer> expected) {
+        return reconcileDurableUsers(new HashSet<>(expected));
+    }
+
+    /** Exact authorization and stale-work teardown, without starting current users' network work. */
+    boolean reconcileDesiredUsersLocally(int[] desiredUserIds) {
+        return reconcileDesiredUsers(desiredUserIds, false);
+    }
+
+    private boolean reconcileDesiredUsers(int[] desiredUserIds, boolean startCurrentUsers) {
         Set<Integer> desired = new HashSet<>();
         if (desiredUserIds != null) {
             for (int userId : desiredUserIds) {
@@ -223,7 +236,7 @@ final class TrustedGmsCloudMessagingSupervisor {
         synchronized (this) {
             if (!persistDesiredUsersLocked(desired)) return false;
         }
-        return reconcileDurableUsers(desired);
+        return reconcileDurableUsers(desired, startCurrentUsers);
     }
 
     /**
@@ -231,6 +244,10 @@ final class TrustedGmsCloudMessagingSupervisor {
      * calls. Every state commit rechecks the current durable set, so a newer exact allowlist wins.
      */
     private boolean reconcileDurableUsers(Set<Integer> requestedDesired) {
+        return reconcileDurableUsers(requestedDesired, true);
+    }
+
+    private boolean reconcileDurableUsers(Set<Integer> requestedDesired, boolean startCurrentUsers) {
         int[] installedUsers = runtime.installedUserIds();
         Set<Integer> installed = new HashSet<>();
         if (installedUsers != null) {
@@ -268,7 +285,7 @@ final class TrustedGmsCloudMessagingSupervisor {
                 markDesiredUnavailable(userId);
                 accepted = false;
             } else {
-                accepted &= ensureDurableUser(userId);
+                if (startCurrentUsers) accepted &= ensureDurableUser(userId);
             }
         }
         return accepted;

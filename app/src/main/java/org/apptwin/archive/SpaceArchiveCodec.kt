@@ -374,7 +374,6 @@ private fun encodeManifest(manifest: SpaceArchiveManifest): ByteArray = StrictJs
                 "revisionId" to JsonValue.StringValue(app.revisionId),
             ))
         }),
-        "gmsEnabled" to JsonValue.BooleanValue(manifest.gmsEnabled),
         "custodianKeyspaceId" to JsonValue.StringValue(manifest.custodianKeyspaceId),
     )),
 )
@@ -389,7 +388,6 @@ private fun decodeManifest(bytes: ByteArray): SpaceArchiveManifest {
         "name",
         "createdAt",
         "apps",
-        "gmsEnabled",
         "custodianKeyspaceId",
     )
     val apps = fields.getValue("apps").requireArray("apps").mapIndexed { index, value ->
@@ -415,7 +413,6 @@ private fun decodeManifest(bytes: ByteArray): SpaceArchiveManifest {
         name = fields.getValue("name").requireString("name"),
         createdAt = fields.getValue("createdAt").requireLong("createdAt"),
         apps = apps,
-        gmsEnabled = fields.getValue("gmsEnabled").requireBoolean("gmsEnabled"),
         custodianKeyspaceId = fields.getValue("custodianKeyspaceId")
             .requireString("custodianKeyspaceId"),
         schemaVersion = schema.toInt(),
@@ -467,7 +464,11 @@ private fun validateManifest(manifest: SpaceArchiveManifest) {
     }
     requireCanonicalUuid(manifest.archiveId, "archiveId")
     requireCanonicalUuid(manifest.sourceSpaceId, "sourceSpaceId")
-    requireCanonicalUuid(manifest.custodianKeyspaceId, "custodianKeyspaceId")
+    if (manifest.apps.any { it.packageName == "jp.naver.line.android" }) {
+        requireCanonicalUuid(manifest.custodianKeyspaceId, "custodianKeyspaceId")
+    } else if (manifest.custodianKeyspaceId.isNotEmpty()) {
+        throw SpaceArchiveException("Non-LINE backup must not claim a Custodian keyspace")
+    }
     if (manifest.name.isBlank() || manifest.name.length > 200 || manifest.name.any { it.code < 0x20 }) {
         throw SpaceArchiveException("Space archive name is invalid")
     }

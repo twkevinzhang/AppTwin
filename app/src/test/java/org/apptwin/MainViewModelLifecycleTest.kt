@@ -42,7 +42,6 @@ import org.apptwin.gms.model.GmsObservedState
 import org.apptwin.gms.model.GmsProfile
 import org.apptwin.gms.ports.CloudMessagingHealth
 import org.apptwin.gms.ports.CloudMessagingState
-import org.apptwin.gms.usecases.GmsLifecycleResult
 import org.apptwin.gms.usecases.GmsReconciliationResult
 import org.junit.After
 import org.junit.Assert.assertEquals
@@ -408,58 +407,6 @@ class MainViewModelLifecycleTest {
     }
 
     @Test
-    fun `GMS consent and enable action run through operations then refresh`() = runTest {
-        val dispatcher = StandardTestDispatcher(testScheduler)
-        Dispatchers.setMain(dispatcher)
-        val operations = FakeOperations(groups = listOf(group()))
-        val viewModel = viewModel(SavedStateHandle(), operations, dispatcher)
-        advanceUntilIdle()
-
-        viewModel.enableGms(GROUP_ID, grantConsent = true)
-        advanceUntilIdle()
-
-        assertEquals(listOf(GROUP_ID), operations.gmsConsentGroups)
-        assertEquals(listOf(GROUP_ID), operations.gmsEnableGroups)
-        assertEquals(null, viewModel.uiState.gmsBusyGroupId)
-        assertTrue(viewModel.uiState.message.orEmpty().contains("沒有可用且受信任"))
-        assertEquals(2, operations.refreshCalls)
-    }
-
-    @Test
-    fun `GMS enable exposes exact busy action and blocks destructive space operations`() = runTest {
-        val dispatcher = StandardTestDispatcher(testScheduler)
-        Dispatchers.setMain(dispatcher)
-        val enableGate = CompletableDeferred<Unit>()
-        val operations = FakeOperations(
-            groups = listOf(
-                group().copy(apps = listOf(GroupApp(APP_PACKAGE, 2L, GroupAppState.ENABLED))),
-            ),
-            gmsEnableGate = enableGate,
-        )
-        val viewModel = viewModel(SavedStateHandle(), operations, dispatcher)
-        advanceUntilIdle()
-
-        viewModel.enableGms(GROUP_ID)
-        runCurrent()
-
-        assertEquals(GROUP_ID, viewModel.uiState.gmsBusyGroupId)
-        assertEquals(GmsBusyAction.ENABLE, viewModel.uiState.gmsBusyAction)
-
-        viewModel.deleteGroup(GROUP_ID)
-        viewModel.launchGroupApp(viewModel.uiState.groups.single().apps.single())
-        runCurrent()
-
-        assertTrue(operations.deletedGroupIds.isEmpty())
-        assertTrue(operations.launchedApps.isEmpty())
-
-        enableGate.complete(Unit)
-        advanceUntilIdle()
-
-        assertEquals(null, viewModel.uiState.gmsBusyGroupId)
-        assertEquals(null, viewModel.uiState.gmsBusyAction)
-    }
-
-    @Test
     fun `space deletion reports shortcut cleanup warning without hiding completed deletion`() =
         runTest {
             val dispatcher = StandardTestDispatcher(testScheduler)
@@ -538,7 +485,7 @@ class MainViewModelLifecycleTest {
             permission = "android.permission.CAMERA",
             label = "相機",
             category = ClonePermissionCategory.RUNTIME,
-            virtualScope = ClonePermissionVirtualScope.CAMERA_MIC_PER_SPACE,
+            virtualScope = ClonePermissionVirtualScope.SPACE_SCOPED,
             granted = false,
             action = ClonePermissionAction.REQUEST_RUNTIME,
             affectedClones = listOf(
@@ -1073,7 +1020,6 @@ class MainViewModelLifecycleTest {
         private val diagnostics: String? = null,
         private val deepLinkCandidates: List<Pair<String, String>>? = null,
         private val gmsReconcileError: Throwable? = null,
-        private val gmsEnableGate: CompletableDeferred<Unit>? = null,
         private val deleteShortcutWarning: String? = null,
         private val gmsStartupProductStates: Map<String, GmsGroupProductState> = emptyMap(),
         private val refreshWarnings: List<String> = emptyList(),
@@ -1099,8 +1045,6 @@ class MainViewModelLifecycleTest {
         var refreshCalls = 0
         var refreshRanOnIoDispatcher = false
         var refreshRanOnMainDispatcher = false
-        val gmsConsentGroups = mutableListOf<String>()
-        val gmsEnableGroups = mutableListOf<String>()
         val clearedGroupIds = mutableListOf<String>()
         val deletedGroupIds = mutableListOf<String>()
         val addedApps = mutableListOf<Pair<String, String>>()
@@ -1158,7 +1102,7 @@ class MainViewModelLifecycleTest {
             destination: android.net.Uri,
             compression: org.apptwin.archive.SpaceArchiveCompression,
         ): SpaceArchiveExportResult = error("unused")
-        override suspend fun importSpace(source: android.net.Uri): SpaceArchiveImportResult =
+        override suspend fun createSpaceFromBackup(source: android.net.Uri): CreateSpaceFromBackupResult =
             error("unused")
         override suspend fun addAppToGroup(groupId: String, packageName: String): Group {
             addedApps += groupId to packageName
@@ -1234,24 +1178,7 @@ class MainViewModelLifecycleTest {
                 productStates = gmsStartupProductStates,
             )
         }
-        override suspend fun grantGmsConsent(groupId: String) {
-            gmsConsentGroups += groupId
-        }
-        override suspend fun enableGms(groupId: String): GmsLifecycleResult {
-            gmsEnableGroups += groupId
-            gmsEnableGate?.await()
-            return GmsLifecycleResult.TrustedReleaseUnavailable
-        }
-        override suspend fun disableGms(groupId: String): GmsLifecycleResult =
-            GmsLifecycleResult.AlreadySatisfied(
-                org.apptwin.gms.model.GmsProfile.disabled(
-                    org.apptwin.gms.model.GmsGroupId(groupId),
-                ),
-            )
-        override suspend fun resetGms(
-            groupId: String,
-            reenable: Boolean,
-        ): GmsLifecycleResult = GmsLifecycleResult.TrustedReleaseUnavailable
+
     }
 
     private class FakeOnboardingStore : OnboardingStore {

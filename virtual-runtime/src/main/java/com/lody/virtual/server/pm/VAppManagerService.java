@@ -1000,6 +1000,9 @@ public class VAppManagerService extends IAppManager.Stub {
                     VLog.e(TAG, "UNINSTALL_PERMISSION_RETRYABLE");
                     return false;
                 }
+                try {
+                    VActivityManagerService.get().clearSelectedUriGrantsInternal(userId, packageName);
+                } catch (IOException uriCleanupFailure) { return false; }
                 if (!GuestKeystoreState.clearPackageState(packageName, userId)) {
                     VLog.e(TAG, "UNINSTALL_KEYSTORE_RETRYABLE");
                     return false;
@@ -1120,6 +1123,9 @@ public class VAppManagerService extends IAppManager.Stub {
                 // Never leave a durable grant that could be inherited if this binding is re-added.
                 return false;
             }
+            try {
+                VActivityManagerService.get().clearSelectedUriGrantsInternal(userId, packageName);
+            } catch (IOException uriCleanupFailure) { return false; }
             if (!GuestKeystoreState.clearPackageState(packageName, userId)) {
                 VLog.e(TAG, "UNINSTALL_KEYSTORE_RETRYABLE");
                 return false;

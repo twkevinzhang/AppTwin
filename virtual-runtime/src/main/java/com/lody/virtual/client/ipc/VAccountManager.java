@@ -48,6 +48,26 @@ public class VAccountManager {
                 .asInterface(ServiceManagerNative.getService(ServiceManagerNative.ACCOUNT));
     }
 
+    public AuthenticatorDescription[] getAuthenticatorTypes(int userId) {
+        try { return getRemote().getAuthenticatorTypes(userId); }
+        catch (RemoteException e) { return VirtualRuntime.crash(e); }
+    }
+
+    public byte[] exportAccountsForBackup(int userId) {
+        try { return getRemote().exportAccountsForBackup(userId); }
+        catch (RemoteException e) { return VirtualRuntime.crash(e); }
+    }
+
+    public void importAccountsFromBackup(int destinationUserId, byte[] archive) {
+        try { getRemote().importAccountsFromBackup(destinationUserId, archive); }
+        catch (RemoteException e) { VirtualRuntime.crash(e); }
+    }
+
+    public boolean removeAccountExplicitly(int userId, Account account) {
+        try { return getRemote().removeAccountExplicitly(userId, account); }
+        catch (RemoteException e) { return VirtualRuntime.crash(e); }
+    }
+
     public AuthenticatorDescription[] getAuthenticatorTypes() {
         try {
             return getRemote().getAuthenticatorTypes(VUserHandle.myUserId());
@@ -267,6 +287,18 @@ public class VAccountManager {
      * <p>
      *
      */
+    public AccountManagerFuture<Bundle> removeAccount(final int userId, final Account account,
+                                                     final Activity activity) {
+        if (account == null) throw new IllegalArgumentException("account is null");
+        return new AmsTask(activity, null, null) {
+            @Override public void doWork() throws RemoteException {
+                // Product launches any returned guest confirmation Intent itself. Retain the
+                // server session until that authenticator returns its terminal approval.
+                getRemote().removeAccount(userId, mResponse, account, true);
+            }
+        }.start();
+    }
+
     public AccountManagerFuture<Bundle> addAccount(final int userId, final String accountType,
                                                    final String authTokenType, final String[] requiredFeatures,
                                                    final Bundle addAccountOptions,

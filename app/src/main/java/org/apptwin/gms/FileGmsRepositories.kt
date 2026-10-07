@@ -84,7 +84,12 @@ class FileGmsProfileRepository internal constructor(
 
     @Synchronized
     override fun save(profile: GmsProfile) {
-        DaemonAuthorizationGeneration.invalidateBeforeMutation(filesRoot)
+        val previous = find(profile.groupId)
+        // Runtime observations do not change which exact user is authorized. Invalidate only
+        // durable scope/consent changes, before publishing them.
+        if (previous == null || previous.desiredState != profile.desiredState || previous.networkConsent != profile.networkConsent) {
+            DaemonAuthorizationGeneration.invalidateBeforeMutation(filesRoot)
+        }
         files.write(profile.groupId, files.profileFile(profile.groupId), ProfileCodec.encode(profile))
     }
 
@@ -256,7 +261,7 @@ private class DurableGmsFiles(
 
     private fun gmsDirectory(groupId: GmsGroupId): File {
         validateGroup(groupId)
-        return File(File(File(groupsRoot, groupId.value), "data"), "gms")
+        return File(File(groupDirectory(groupId), "data"), "gms")
     }
 
     private fun validateGroup(groupId: GmsGroupId) {
@@ -265,9 +270,15 @@ private class DurableGmsFiles(
         }
     }
 
+    private fun groupDirectory(groupId: GmsGroupId): File {
+        val committed = File(groupsRoot, groupId.value)
+        if (committed.isDirectory) return committed
+        return File(groupsRoot, ".staging-${groupId.value}")
+    }
+
     private fun validateExistingGroup(groupId: GmsGroupId) {
         validateGroup(groupId)
-        val directory = File(groupsRoot, groupId.value)
+        val directory = groupDirectory(groupId)
         val metadata = File(directory, "group.properties")
         require(directory.isDirectory && metadata.isFile) {
             "group does not exist or has no canonical metadata"

@@ -64,6 +64,7 @@ public class ProviderHook implements InvocationHandler {
     }
 
     protected final Object mBase;
+    private String permissionAuthority;
 
     public ProviderHook(Object base) {
         this.mBase = base;
@@ -101,12 +102,74 @@ public class ProviderHook implements InvocationHandler {
         ProviderHook.HookFetcher fetcher = ProviderHook.fetchHook(authority);
         if (fetcher != null) {
             ProviderHook hook = fetcher.fetch(external, provider);
+            hook.permissionAuthority = authority;
             IInterface proxyProvider = ProviderHook.createProxy(provider, hook);
             if (proxyProvider != null) {
                 provider = proxyProvider;
             }
         }
         return provider;
+    }
+
+    private void enforceSpaceAccess(String method, Object[] args) {
+        if ("asBinder".equals(method)) return;
+        String authority = ProviderAuthorityPolicy.normalize(permissionAuthority);
+        if (authority == null) return;
+        // Never compare ProviderInfo.authority as a single string: ContactsProvider commonly
+        // publishes com.android.contacts;contacts. Gate aliases and URI-scoped acquisition.
+        String operationAuthority = null;
+        if (args != null) for (Object arg : args) if (arg instanceof Uri) {
+            operationAuthority = ProviderAuthorityPolicy.normalize(((Uri) arg).getAuthority());
+            break;
+        }
+        if (ProviderAuthorityPolicy.contacts(authority) || ProviderAuthorityPolicy.contacts(operationAuthority)) {
+            boolean write = "insert".equals(method) || "bulkInsert".equals(method)
+                    || "delete".equals(method) || "update".equals(method);
+            if ("openFile".equals(method) || "openAssetFile".equals(method)) {
+                boolean afterUri = false;
+                if (args != null) for (Object arg : args) {
+                    if (arg instanceof Uri) { afterUri = true; continue; }
+                    if (afterUri && arg instanceof String) {
+                        write = ((String) arg).contains("w");
+                        break;
+                    }
+                }
+            }
+            com.lody.virtual.client.hook.GuestPermissionPolicy.require(write
+                    ? "android.permission.WRITE_CONTACTS" : "android.permission.READ_CONTACTS");
+            // Unknown call/batch operations can perform both reads and writes.
+            if ("call".equals(method) || "applyBatch".equals(method)) {
+                com.lody.virtual.client.hook.GuestPermissionPolicy.require("android.permission.WRITE_CONTACTS");
+            }
+        }
+        if (authority.endsWith(".documents") || authority.contains("photopicker")) {
+            Uri selected = null;
+            if (args != null) for (Object arg : args) if (arg instanceof Uri) { selected = (Uri) arg; break; }
+            if (!com.lody.virtual.client.hook.GuestSelectedUriGrants.hasRead(selected)) {
+                throw new SecurityException("URI was not selected for this space");
+            }
+        }
+        if (ProviderAuthorityPolicy.contains(authority, "media") || "media".equals(operationAuthority)) {
+            Uri uri = null;
+            if (args != null) for (Object arg : args) if (arg instanceof Uri) { uri = (Uri) arg; break; }
+            if (com.lody.virtual.client.hook.GuestSelectedUriGrants.hasRead(uri) && VirtualCore.get().getContext().checkUriPermission(uri,
+                    android.os.Process.myPid(), android.os.Process.myUid(),
+                    android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                    == android.content.pm.PackageManager.PERMISSION_GRANTED) return;
+            String path = uri == null ? "" : uri.getPath();
+            if (path != null && path.contains("/audio")) return;
+            String permission = path != null && path.contains("/video")
+                    ? "android.permission.READ_MEDIA_VIDEO" : "android.permission.READ_MEDIA_IMAGES";
+            boolean granted = com.lody.virtual.client.hook.GuestPermissionPolicy.isGranted(permission)
+                    || com.lody.virtual.client.hook.GuestPermissionPolicy.isGranted("android.permission.READ_EXTERNAL_STORAGE");
+            // A files query or provider call can expose either kind of media.
+            if (uri == null || path == null || !path.contains("/images") && !path.contains("/video")) {
+                granted = com.lody.virtual.client.hook.GuestPermissionPolicy.isGranted("android.permission.READ_EXTERNAL_STORAGE")
+                        || com.lody.virtual.client.hook.GuestPermissionPolicy.isGranted("android.permission.READ_MEDIA_IMAGES")
+                        && com.lody.virtual.client.hook.GuestPermissionPolicy.isGranted("android.permission.READ_MEDIA_VIDEO");
+            }
+            if (!granted) throw new SecurityException("Space media permission denied");
+        }
     }
 
     public Bundle call(MethodBox methodBox, String method, String arg, Bundle extras) throws InvocationTargetException {
@@ -150,6 +213,7 @@ public class ProviderHook implements InvocationHandler {
 
     @Override
     public Object invoke(Object proxy, Method method, Object... args) throws Throwable {
+        enforceSpaceAccess(method.getName(), args);
         try {
             processArgs(method, args);
         } catch (Throwable e) {

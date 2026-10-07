@@ -12,7 +12,6 @@ import androidx.compose.ui.test.longClick
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import org.apptwin.GroupAppItem
 import org.apptwin.GroupItem
-import org.apptwin.GmsBusyAction
 import org.apptwin.MainUiState
 import org.apptwin.gms.GmsGroupProductState
 import org.apptwin.gms.model.GmsDesiredState
@@ -119,7 +118,7 @@ class SpaceProductUiTest {
     fun homeBusyPopulatedSpaceDoesNotAddApp() {
         var addAppGroupId: String? = null
         setHome(
-            state = multiSpaceState.copy(gmsBusyGroupId = spaceId),
+            state = multiSpaceState.copy(busyGroupId = spaceId),
             onAddApp = { addAppGroupId = it },
         )
 
@@ -129,137 +128,6 @@ class SpaceProductUiTest {
             .performClick()
 
         composeRule.runOnIdle { assertEquals(null, addAppGroupId) }
-    }
-
-    @Test
-    fun homeManageMenuShowsSpaceActionsAndDoesNotNavigate() {
-        var clearAllGroupId: String? = null
-        setHome(state = multiSpaceState, onClearAllAppData = { clearAllGroupId = it })
-
-        composeRule.onNodeWithTag("space-manage-$secondSpaceId").performClick()
-
-        composeRule.onNodeWithText("重新命名空間").assertIsDisplayed()
-        composeRule.onNodeWithText("啟用 Google 服務").assertIsDisplayed()
-        composeRule.onNodeWithText("清除空間所有 App 資料").performClick()
-        composeRule.onNodeWithTag("clear-all-space-data-dialog").assertIsDisplayed()
-        composeRule.onNodeWithTag("confirm-clear-all-space-data").performClick()
-
-        composeRule.runOnIdle { assertEquals(secondSpaceId, clearAllGroupId) }
-    }
-
-    @Test
-    fun homeGmsBusyShowsExactSpaceFeedbackAndLocksOnlyThatSpace() {
-        setHome(
-            state = multiSpaceState.copy(
-                gmsBusyGroupId = spaceId,
-                gmsBusyAction = GmsBusyAction.ENABLE,
-            ),
-        )
-
-        composeRule.onNodeWithTag("gms-busy-space-$spaceId").assertIsDisplayed()
-        composeRule.onNodeWithText("正在啟用 Google 服務…").assertIsDisplayed()
-        composeRule.onNodeWithTag("space-manage-$spaceId").assertIsNotEnabled()
-        composeRule.onNodeWithTag("group-app-tile-${app.launchKey}").assertIsNotEnabled()
-        composeRule.onNodeWithTag("space-manage-$secondSpaceId").assertIsEnabled()
-        composeRule.onNodeWithTag("home-app-tile-${secondApp.launchKey}").assertIsEnabled()
-    }
-
-    @Test
-    fun homeDisabledGmsRequiresConsentAndEnablesTheExactSpace() {
-        var enabled: Pair<String, Boolean>? = null
-        setHome(
-            state = defaultState.copy(groups = listOf(space.copy(gmsCompatibility = disabledGms))),
-            onEnableGms = { groupId, consent -> enabled = groupId to consent },
-        )
-
-        composeRule.onNodeWithTag("space-manage-$spaceId").performClick()
-        composeRule.onNodeWithTag("gms-toggle-space-$spaceId").performClick()
-        composeRule.onNodeWithTag("gms-consent-dialog").assertIsDisplayed()
-        composeRule.onNodeWithTag("confirm-gms-consent").performClick()
-
-        composeRule.runOnIdle { assertEquals(spaceId to true, enabled) }
-    }
-
-    @Test
-    fun homeEnabledGmsRequiresConfirmationAndDisablesTheExactSpace() {
-        var disabledGroupId: String? = null
-        setHome(
-            state = defaultState.copy(groups = listOf(space.copy(gmsCompatibility = enabledGms))),
-            onDisableGms = { disabledGroupId = it },
-        )
-
-        composeRule.onNodeWithTag("space-manage-$spaceId").performClick()
-        composeRule.onNodeWithTag("gms-toggle-space-$spaceId").performClick()
-        composeRule.onNodeWithTag("gms-disable-dialog").assertIsDisplayed()
-        composeRule.onNodeWithTag("confirm-gms-disable").performClick()
-
-        composeRule.runOnIdle { assertEquals(spaceId, disabledGroupId) }
-    }
-
-    @Test
-    fun homeDeleteSpaceRequiresConfirmationAndTargetsExactSpace() {
-        var deletedGroupId: String? = null
-        setHome(
-            state = multiSpaceState,
-            onDeleteSpace = { deletedGroupId = it },
-        )
-
-        composeRule.onNodeWithTag("space-manage-$secondSpaceId").performClick()
-        composeRule.onNodeWithTag("delete-space-$secondSpaceId").performClick()
-        composeRule.onNodeWithTag("delete-space-dialog").assertIsDisplayed()
-        composeRule.onNodeWithText("刪除「私人」？").assertIsDisplayed()
-        composeRule.onNodeWithTag("cancel-delete-space").performClick()
-        composeRule.runOnIdle { assertEquals(null, deletedGroupId) }
-
-        composeRule.onNodeWithTag("space-manage-$secondSpaceId").performClick()
-        composeRule.onNodeWithTag("delete-space-$secondSpaceId").performClick()
-        composeRule.onNodeWithTag("confirm-delete-space").performClick()
-
-        composeRule.runOnIdle { assertEquals(secondSpaceId, deletedGroupId) }
-    }
-
-    @Test
-    fun homeExportRequiresOverwriteConfirmationAndCancellationDoesNotExport() {
-        var exportedGroup: GroupItem? = null
-        setHome(
-            state = multiSpaceState,
-            onExportSpace = { exportedGroup = it },
-        )
-
-        composeRule.onNodeWithTag("space-manage-$secondSpaceId").performClick()
-        composeRule.onNodeWithTag("export-space-$secondSpaceId").performClick()
-        composeRule.onNodeWithTag("export-space-archive-dialog").assertIsDisplayed()
-        composeRule.onNodeWithTag("confirm-export-space").performClick()
-
-        composeRule.runOnIdle { assertEquals(null, exportedGroup) }
-        composeRule.onNodeWithTag("export-space-overwrite-dialog").assertIsDisplayed()
-        composeRule.onNodeWithText(
-            "新存檔成功後，先前由此 Space 匯出的存檔將立即失效且無法匯入。" +
-                "若選擇與舊檔相同的位置，檔案可能在匯出過程中被覆寫；" +
-                "建議另存新檔並確認成功後，再處理舊檔。",
-        ).assertIsDisplayed()
-        composeRule.onNodeWithTag("cancel-export-space-overwrite").performClick()
-
-        composeRule.onNodeWithTag("export-space-overwrite-dialog").assertDoesNotExist()
-        composeRule.runOnIdle { assertEquals(null, exportedGroup) }
-    }
-
-    @Test
-    fun homeExportSecondConfirmationTargetsExactSpace() {
-        var exportedGroup: GroupItem? = null
-        setHome(
-            state = multiSpaceState,
-            onExportSpace = { exportedGroup = it },
-        )
-
-        composeRule.onNodeWithTag("space-manage-$secondSpaceId").performClick()
-        composeRule.onNodeWithTag("export-space-$secondSpaceId").performClick()
-        composeRule.onNodeWithTag("confirm-export-space").performClick()
-        composeRule.runOnIdle { assertEquals(null, exportedGroup) }
-
-        composeRule.onNodeWithTag("confirm-export-space-overwrite").performClick()
-
-        composeRule.runOnIdle { assertEquals(secondSpace, exportedGroup) }
     }
 
     @Test
@@ -294,20 +162,6 @@ class SpaceProductUiTest {
     }
 
     @Test
-    fun deleteSpaceSummarizesAppsAndUnaffectedData() {
-        setHome(state = defaultState)
-
-        composeRule.onNodeWithTag("space-manage-$spaceId").performClick()
-        composeRule.onNodeWithText("刪除空間").performClick()
-
-        composeRule.onNodeWithTag("delete-space-dialog").assertIsDisplayed()
-        composeRule.onNodeWithText(
-            "將永久刪除此空間、1 個分身 App，以及它們的登入、App 資料與 Google 服務相容資料；" +
-                "對應桌面捷徑會停用。手機上的原始 App 和其他分身空間不受影響，此操作無法復原。",
-        ).assertIsDisplayed()
-    }
-
-    @Test
     fun sourceMissingAppExplainsWhyItCannotLaunch() {
         setHome(
             state = defaultState.copy(
@@ -324,19 +178,13 @@ class SpaceProductUiTest {
     }
 
     @Test
-    fun clonePermissionDialogExplainsPerSpaceScope() {
-        setHome(state = defaultState)
-
-        composeRule.onNodeWithTag("group-app-tile-${app.launchKey}")
-            .performTouchInput { longClick() }
-        composeRule.onNodeWithText("空間權限").performClick()
-
-        composeRule.onNodeWithTag("clone-permission-dialog").assertIsDisplayed()
-        composeRule.onNodeWithText(
-            "App 所見的權限決策只套用於「工作」。手機上的原始 App 和其他分身空間不受影響；實際相機／麥克風能力仍可能因 App 與裝置而異。",
-        ).assertIsDisplayed()
-        composeRule.onNodeWithText("相機").assertIsDisplayed()
-        composeRule.onNodeWithText("麥克風").assertIsDisplayed()
+    fun homeMenuNavigatesToExactSpaceWithoutGoogleToggle() {
+        var selected: String? = null
+        setHome(multiSpaceState, onOpenSpaceDetails = { selected = it })
+        composeRule.onNodeWithTag("space-manage-$secondSpaceId").performClick()
+        composeRule.runOnIdle { assertEquals(secondSpaceId, selected) }
+        composeRule.onNodeWithText("啟用 Google 服務").assertDoesNotExist()
+        composeRule.onNodeWithText("停用 Google 服務").assertDoesNotExist()
     }
 
     private fun setHome(
@@ -345,9 +193,7 @@ class SpaceProductUiTest {
         onAddApp: (String) -> Unit = {},
         onClearAllAppData: (String) -> Unit = {},
         onDeleteSpace: (String) -> Unit = {},
-        onExportSpace: (GroupItem) -> Unit = {},
-        onEnableGms: (String, Boolean) -> Unit = { _, _ -> },
-        onDisableGms: (String) -> Unit = {},
+        onOpenSpaceDetails: (String) -> Unit = {},
     ) {
         composeRule.setContent {
             AppTwinTheme {
@@ -358,9 +204,7 @@ class SpaceProductUiTest {
                     onAddApp = onAddApp,
                     onClearAllAppData = onClearAllAppData,
                     onDeleteSpace = onDeleteSpace,
-                    onExportSpace = onExportSpace,
-                    onEnableGms = onEnableGms,
-                    onDisableGms = onDisableGms,
+                    onOpenSpaceDetails = onOpenSpaceDetails,
                 )
             }
         }

@@ -40,7 +40,7 @@ class ClonePermissionAggregationE2eTest {
             assertEquals(ClonePermissionCategory.RUNTIME, denied.category)
             assertEquals(ClonePermissionAction.REQUEST_RUNTIME, denied.action)
             assertEquals(
-                ClonePermissionVirtualScope.CAMERA_MIC_PER_SPACE,
+                ClonePermissionVirtualScope.SPACE_SCOPED,
                 denied.virtualScope,
             )
             assertTrue(denied.affectedClones.any { it.groupId == group.id })

@@ -24,7 +24,7 @@ class ClonePermissionPolicyTest {
         assertEquals(CAMERA, summaries.single().permission)
         assertEquals("CAMERA", summaries.single().label)
         assertEquals(listOf(firstClone, secondClone), summaries.single().affectedClones)
-        assertEquals(ClonePermissionVirtualScope.CAMERA_MIC_PER_SPACE, summaries.single().virtualScope)
+        assertEquals(ClonePermissionVirtualScope.SPACE_SCOPED, summaries.single().virtualScope)
     }
 
     @Test
@@ -157,7 +157,7 @@ class ClonePermissionPolicyTest {
         category: ClonePermissionCategory = ClonePermissionCategory.RUNTIME,
         virtualScope: ClonePermissionVirtualScope =
             if (permission == CAMERA) {
-                ClonePermissionVirtualScope.CAMERA_MIC_PER_SPACE
+                ClonePermissionVirtualScope.SPACE_SCOPED
             } else {
                 ClonePermissionVirtualScope.HOST_SHARED
             },

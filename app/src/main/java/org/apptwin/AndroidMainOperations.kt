@@ -1,5 +1,13 @@
 package org.apptwin
 
+import com.lody.virtual.client.ipc.VAccountManager
+import com.lody.virtual.client.ipc.VActivityManager
+import com.lody.virtual.os.VEnvironment
+import android.accounts.Account
+import org.apptwin.accounts.SpaceAccountSync
+import android.accounts.AccountManager
+import java.util.concurrent.TimeUnit
+
 import android.app.Application
 import android.app.AlarmManager
 import android.app.AppOpsManager
@@ -142,10 +150,19 @@ internal class AndroidMainOperations(private val application: Application) : Mai
             },
         ),
     )
+    private val provisioningBindings = java.util.concurrent.ConcurrentHashMap<String, Int>()
     private val lifecycle = GroupLifecycleCoordinator(
         store = groupStore,
         runtime = runtimeController,
         journal = FileGroupOperationJournal(application),
+        initialize = { group ->
+            provisioningBindings[group.id] = requireNotNull(group.environmentBinding).internalId
+            try {
+                gms.grantNetworkConsent(group.id)
+                val result = gms.initializeForSpace(group.id)
+                check(result is GmsLifecycleResult.Completed || result is GmsLifecycleResult.AlreadySatisfied) { "Google 服務初始化失敗：$result" }
+            } finally { provisioningBindings.remove(group.id) }
+        },
     )
     private val appRemoval = GroupAppRemovalCoordinator(
         store = groupStore,
@@ -157,6 +174,7 @@ internal class AndroidMainOperations(private val application: Application) : Mai
         application,
         groupStore,
         gmsOperationReceipts,
+        provisionalBinding = provisioningBindings::get,
     )
     private val archives = AndroidSpaceArchiveOperations(
         application = application,
@@ -164,12 +182,97 @@ internal class AndroidMainOperations(private val application: Application) : Mai
         lifecycle = lifecycle,
         runtime = runtimeController,
         revisions = importer,
-        gms = gms,
     )
     private val deletedGroupCleanup = DeletedGroupCleanup(
         receipts = gmsOperationReceipts,
         disableShortcuts = shortcutPublisher::disable,
     )
+
+    override suspend fun globalBackupLocation(): String? = archives.globalBackupLocation()
+    override suspend fun loadSpaceDetails(groupId: String): SpaceDetails? {
+        val group = groupStore.find(groupId) ?: return null
+        if (group.health == GroupHealth.HEALTHY) prepareAccountApps(groupId)
+        val userId = group.environmentBinding?.internalId ?: return null
+        val roots = listOf(VEnvironment.getUserSystemDirectory(userId), VEnvironment.getDeUserSystemDirectory(userId))
+        fun bytes(file: java.io.File): Long = if (!file.exists() || java.nio.file.Files.isSymbolicLink(file.toPath())) 0 else if (file.isFile) file.length() else file.listFiles().orEmpty().sumOf(::bytes)
+        var data = 0L; var cache = 0L; var google = 0L
+        roots.forEach { root -> root.listFiles().orEmpty().forEach { directory ->
+            val size = bytes(directory)
+            if (directory.name in setOf("com.google.android.gms", "com.android.vending", "com.google.android.gsf")) google += size
+            else { val cached = bytes(java.io.File(directory,"cache")) + bytes(java.io.File(directory,"code_cache")); cache += cached; data += size - cached }
+        } }
+        val permissions = ClonePermissionPolicy.aggregate(readClonePermissionRequirements(listOf(group), emptyList(), mutableListOf())).map { summary ->
+            SpacePermissionEntry(summary.permission, summary.label, summary.granted, summary.permission in SUPPORTED_RUNTIME_PERMISSIONS,
+                summary.affectedClones.map { SpacePermissionApp(it.packageName, it.appLabel, virtualPermissionGranted(summary.permission, it.packageName, userId)) })
+        }
+        val manager = VAccountManager.get()
+        return SpaceDetails(groupId, SpaceStorageBreakdown(data,cache,(VEnvironment.getVirtualStorageDir("",userId)?.let(::bytes) ?: 0),google), permissions,
+            manager.getAccounts(userId,null).map { account ->
+                val authorities = SpaceAccountSync.adapters(userId, account.type).map { it.authority }
+                SpaceAccountEntry(account.name,account.type,authorities,authorities.isNotEmpty(),if(authorities.isEmpty()) "此帳號沒有可用的同步服務" else "可手動同步")
+            },
+            manager.getAuthenticatorTypes(userId).map { SpaceAccountType(it.type,it.type) }, archives.backups(groupId), archives.globalBackupLocation())
+    }
+    override suspend fun addSpaceAccount(groupId: String, type: String) {
+        val userId = requireNotNull(prepareAccountApps(groupId).environmentBinding).internalId
+        awaitVisibleAccountSession()
+        require(VAccountManager.get().getAuthenticatorTypes(userId).any { it.type == type }) { "此空間不支援這個帳號類型" }
+        val future = VAccountManager.get().addAccount(userId,type,null,null,null,null,null,null)
+        try {
+            val result = future.getResult(30, TimeUnit.SECONDS)
+            val intent = result.getParcelable<Intent>(AccountManager.KEY_INTENT)
+            if (intent != null) check(VActivityManager.get().startActivity(intent, userId) >= 0) { "無法開啟空間帳號登入" }
+        } finally { if (!future.isDone) future.cancel(true) }
+    }
+    override suspend fun synchronizeSpaceAccount(groupId: String, account: SpaceAccountEntry, authority: String): String {
+        val userId = requireNotNull(prepareAccountApps(groupId).environmentBinding).internalId
+        awaitVisibleAccountSession()
+        require(VAccountManager.get().getAccounts(userId,account.type).any { it.name == account.name }) { "此空間帳號已不存在" }
+        return SpaceAccountSync.synchronize(userId, Account(account.name,account.type),authority).status
+    }
+    override suspend fun removeSpaceAccount(groupId: String, account: SpaceAccountEntry): AccountRemovalResult {
+        val userId = requireNotNull(prepareAccountApps(groupId).environmentBinding).internalId
+        awaitVisibleAccountSession()
+        val future = VAccountManager.get().removeAccount(userId, Account(account.name,account.type), null)
+        try {
+            val result = future.getResult(35, TimeUnit.SECONDS)
+            val intent = result.getParcelable<Intent>(AccountManager.KEY_INTENT)
+            if (intent != null) {
+                check(VActivityManager.get().startActivity(intent, userId) >= 0) { "無法開啟空間帳號移除確認" }
+                return AccountRemovalResult.CONFIRMATION_OPENED
+            }
+            return if (result.getBoolean(AccountManager.KEY_BOOLEAN_RESULT, false)) AccountRemovalResult.REMOVED else AccountRemovalResult.REJECTED
+        } finally { if (!future.isDone) future.cancel(true) }
+    }
+
+    private fun prepareAccountApps(groupId: String): Group {
+        val group = requireNotNull(groupStore.find(groupId)) { "空間已不存在" }
+        check(group.health == GroupHealth.HEALTHY) { "空間目前無法管理帳號" }
+        group.apps.forEach { runtimeController.preparePackageForAccounts(group, it) }
+        val current = requireNotNull(groupStore.find(groupId)) { "空間已不存在" }
+        check(current.health == GroupHealth.HEALTHY && current.environmentBinding == group.environmentBinding) { "空間狀態已變更" }
+        return current
+    }
+
+    private suspend fun awaitVisibleAccountSession() {
+        val host = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
+            val visibleHost = checkNotNull(org.apptwin.runtime.mainActivityLaunchHosts.current()) {
+                "請在 AppTwin 畫面管理空間帳號"
+            }
+            org.apptwin.runtime.DaemonWorkloadAuthorization.startFromVisibleHost(visibleHost)
+            visibleHost
+        }
+        val ready = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+            org.apptwin.runtime.DaemonWorkloadAuthorization.awaitVisibleSessionReady(application, 5_000L)
+        }
+        check(ready) { "AppTwin 背景服務尚未就緒，請確認背景服務設定" }
+        kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
+            check(org.apptwin.runtime.mainActivityLaunchHosts.current() === host) { "AppTwin 畫面已離開" }
+        }
+    }
+    override suspend fun deleteBackup(id: String) = archives.deleteBackup(id)
+    override suspend fun setGlobalBackupLocation(uri: Uri) = archives.setGlobalBackupLocation(uri)
+    override suspend fun exportToGlobalLocation(groupId: String, compression: SpaceArchiveCompression) = archives.exportToGlobalLocation(groupId,compression)
 
     override suspend fun loadGroupSnapshot(): MainGroupSnapshot {
         val groupSnapshot = groupStore.loadSnapshot()
@@ -283,8 +386,8 @@ internal class AndroidMainOperations(private val application: Application) : Mai
         compression: SpaceArchiveCompression,
     ): SpaceArchiveExportResult = archives.exportSpace(groupId, destination, compression)
 
-    override suspend fun importSpace(source: Uri): SpaceArchiveImportResult =
-        archives.importSpace(source)
+    override suspend fun createSpaceFromBackup(source: Uri): CreateSpaceFromBackupResult =
+        archives.createSpaceFromBackup(source)
 
     override suspend fun addAppToGroup(groupId: String, packageName: String): Group {
         return when (val result = addClone.execute(groupId, packageName)) {
@@ -541,13 +644,22 @@ internal class AndroidMainOperations(private val application: Application) : Mai
     ): Boolean {
         if (permission !in SUPPORTED_RUNTIME_PERMISSIONS) return false
         val group = groupStore.find(item.groupId) ?: return false
+        if (group.health != GroupHealth.HEALTHY) return false
+        val member = group.apps.firstOrNull { it.packageName == item.app.packageName } ?: return false
         val userId = group.environmentBinding?.internalId ?: return false
-        return VPackageManager.get().setRuntimePermissionGranted(
+        runtimeController.preparePackageForPermissions(group, member)
+        val changed = VPackageManager.get().setRuntimePermissionGranted(
             permission,
             item.app.packageName,
             userId,
             granted,
         )
+        // Native media path grants are installed at guest process setup. Restart on either
+        // media transition so provider and direct-path access reflect the same decision.
+        if (changed && (!granted || permission in MEDIA_PROCESS_PERMISSIONS)) {
+            VActivityManager.get().killAppByPkg(item.app.packageName, userId)
+        }
+        return changed
     }
 
     override suspend fun resolveDeepLink(uri: String): List<Pair<String, String>> {
@@ -595,7 +707,7 @@ internal class AndroidMainOperations(private val application: Application) : Mai
                 PackageManager.PERMISSION_GRANTED
         }.getOrDefault(false)
 
-    override suspend fun reconcileGroups(): GroupReconciliationResult = lifecycle.reconcile()
+    override suspend fun reconcileGroups(): GroupReconciliationResult = lifecycle.reconcile().also { archives.reconcileBackupKeyspaceClaims() }
 
     override suspend fun reconcileAppRemovals() {
         appRemoval.reconcile()
@@ -610,16 +722,6 @@ internal class AndroidMainOperations(private val application: Application) : Mai
         return gms.startupReconcile(groupIds)
     }
 
-    override suspend fun grantGmsConsent(groupId: String) = gms.grantNetworkConsent(groupId)
-
-    override suspend fun enableGms(groupId: String): GmsLifecycleResult = gms.enable(groupId)
-
-    override suspend fun disableGms(groupId: String): GmsLifecycleResult = gms.disable(groupId)
-
-    override suspend fun resetGms(
-        groupId: String,
-        reenable: Boolean,
-    ): GmsLifecycleResult = gms.reset(groupId, reenable)
 
     private fun prepareCloneSource(packageName: String): CloneSourcePreparationResult {
         val sourceInstalled = runCatching { importer.findCloneableApp(packageName) }
@@ -750,9 +852,8 @@ internal class AndroidMainOperations(private val application: Application) : Mai
         val virtualScope = when {
             category == ClonePermissionCategory.UNSUPPORTED ->
                 ClonePermissionVirtualScope.NOT_SUPPORTED
-            permission == Manifest.permission.CAMERA ||
-                permission == Manifest.permission.RECORD_AUDIO ->
-                ClonePermissionVirtualScope.CAMERA_MIC_PER_SPACE
+            permission in SUPPORTED_RUNTIME_PERMISSIONS ->
+                ClonePermissionVirtualScope.SPACE_SCOPED
             else -> ClonePermissionVirtualScope.HOST_SHARED
         }
         return ClonePermissionRequirement(
@@ -762,7 +863,8 @@ internal class AndroidMainOperations(private val application: Application) : Mai
             category = category,
             virtualScope = virtualScope,
             hostGranted = effectiveGranted,
-            canRequestRuntime = category == ClonePermissionCategory.RUNTIME && hostDeclared,
+            canRequestRuntime = category == ClonePermissionCategory.RUNTIME && hostDeclared &&
+                !(permission == Manifest.permission.ACCESS_BACKGROUND_LOCATION && Build.VERSION.SDK_INT >= Build.VERSION_CODES.R),
         )
     }
 
@@ -842,9 +944,18 @@ internal class AndroidMainOperations(private val application: Application) : Mai
 
     @SuppressLint("InlinedApi")
     private companion object {
+        val MEDIA_PROCESS_PERMISSIONS = setOf(
+            Manifest.permission.READ_EXTERNAL_STORAGE, Manifest.permission.WRITE_EXTERNAL_STORAGE,
+            "android.permission.READ_MEDIA_IMAGES", "android.permission.READ_MEDIA_VIDEO",
+            "android.permission.READ_MEDIA_AUDIO", "android.permission.READ_MEDIA_VISUAL_USER_SELECTED",
+        )
         val SUPPORTED_RUNTIME_PERMISSIONS = setOf(
             Manifest.permission.CAMERA,
             Manifest.permission.RECORD_AUDIO,
+            Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION, Manifest.permission.ACCESS_BACKGROUND_LOCATION,
+            Manifest.permission.READ_CONTACTS, Manifest.permission.WRITE_CONTACTS,
+            Manifest.permission.READ_EXTERNAL_STORAGE, Manifest.permission.WRITE_EXTERNAL_STORAGE,
+            "android.permission.READ_MEDIA_IMAGES", "android.permission.READ_MEDIA_VIDEO",
         )
         val SPECIAL_PERMISSIONS = setOf(
             Manifest.permission.MANAGE_EXTERNAL_STORAGE,

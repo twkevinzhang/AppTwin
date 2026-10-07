@@ -11,6 +11,8 @@ import android.os.Bundle;
  * @hide
  */
 interface IAccountManager {
+    byte[] exportAccountsForBackup(int userId);
+    void importAccountsFromBackup(int destinationUserId, in byte[] archive);
     AuthenticatorDescription[] getAuthenticatorTypes(int userId);
     void getAccountsByFeatures(int userId, in IAccountManagerResponse response, in String type, in String[] features);
     String getPreviousName(int userId, in Account account);

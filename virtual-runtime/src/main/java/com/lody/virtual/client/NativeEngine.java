@@ -170,7 +170,7 @@ public class NativeEngine {
         try {
             nativeLaunchEngine(methods, VirtualCore.get().getHostPkg(), VirtualRuntime.isArt(), Build.VERSION.SDK_INT, NativeMethods.gCameraMethodType);
         } catch (Throwable e) {
-            VLog.e(TAG, VLog.getStackTraceString(e));
+            throw new IllegalStateException("Unable to establish guest native permission boundary", e);
         }
         sFlag = true;
     }
@@ -180,6 +180,11 @@ public class NativeEngine {
         if (pid == android.os.Process.myPid()) {
             VLog.e(TAG, VLog.getStackTraceString(new Throwable()));
         }
+    }
+
+    /** Called before native camera/audio identity is rewritten to the host. */
+    public static boolean onCheckGuestPermission(String permission) {
+        return com.lody.virtual.client.hook.GuestPermissionPolicy.isGranted(permission);
     }
 
     public static int onGetCallingUid(int originUid) {

@@ -105,10 +105,17 @@ class AndroidGmsRuntimeAdapter private constructor(
         throw GmsRuntimeObservationException()
     }
 
-    override fun ensureEnabled(
+    override fun ensureSpaceInitialized(groupId: GmsGroupId, release: TrustedGmsManifest, operationId: String): GmsRuntimeMutationResult =
+        ensureEnabledBound(groupId, release, operationId, provisionMessaging = false)
+
+    override fun ensureEnabled(groupId: GmsGroupId, release: TrustedGmsManifest, operationId: String): GmsRuntimeMutationResult =
+        ensureEnabledBound(groupId, release, operationId, provisionMessaging = true)
+
+    private fun ensureEnabledBound(
         groupId: GmsGroupId,
         release: TrustedGmsManifest,
         operationId: String,
+        provisionMessaging: Boolean,
     ): GmsRuntimeMutationResult {
         val binding = when (val resolved = resolveBinding(groupId)) {
             is BindingResolution.Valid -> resolved.userId
@@ -120,13 +127,13 @@ class AndroidGmsRuntimeAdapter private constructor(
         val before = observeForMutation(groupId, binding)
             ?: return GmsRuntimeMutationResult.RetryableFailure("RUNTIME_OBSERVE_RETRYABLE")
         if (before.satisfies(GmsDesiredState.ENABLED, release.release.releaseId)) {
-            provisionCloudMessaging(binding)?.let { return it }
+            if (provisionMessaging) provisionCloudMessaging(binding)?.let { return it }
             if (!receipts.contains(receipt)) receipts.record(receipt)
             val refreshed = observeForMutation(groupId, binding)
                 ?: return GmsRuntimeMutationResult.RetryableFailure("RUNTIME_OBSERVE_RETRYABLE")
             return GmsRuntimeMutationResult.AlreadySatisfied(refreshed)
         }
-        return enableBound(groupId, binding, release, receipt)
+        return enableBound(groupId, binding, release, receipt, provisionMessaging)
     }
 
     override fun ensureDisabled(
@@ -233,6 +240,7 @@ class AndroidGmsRuntimeAdapter private constructor(
         userId: Int,
         release: TrustedGmsManifest,
         receipt: GmsOperationReceipt,
+        provisionMessaging: Boolean = true,
     ): GmsRuntimeMutationResult {
         val staged = try {
             artifacts.stageAll()
@@ -263,7 +271,7 @@ class AndroidGmsRuntimeAdapter private constructor(
             is RuntimeEngineResult.Retryable ->
                 return GmsRuntimeMutationResult.RetryableFailure(prepared.code)
         }
-        provisionCloudMessaging(userId)?.let { return it }
+        if (provisionMessaging) provisionCloudMessaging(userId)?.let { return it }
         return terminal(groupId, userId, receipt, release.release.releaseId)
     }
 

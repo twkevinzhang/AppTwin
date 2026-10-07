@@ -117,12 +117,18 @@ class GroupStoreLoadException(
 )
 
 interface GroupStore {
+    fun prepareCreation(group: Group) = Unit
+    fun discardCreation(groupId: String) = Unit
     fun create(
         id: String,
         name: String,
         environmentBinding: EnvironmentBinding,
         createdAtEpochMillis: Long,
     ): Group
+    fun createWithApps(id: String, name: String, environmentBinding: EnvironmentBinding, createdAtEpochMillis: Long, apps: List<GroupApp>): Group {
+        require(apps.isEmpty()) { "Store does not support atomic app membership" }
+        return create(id, name, environmentBinding, createdAtEpochMillis)
+    }
     fun listAll(): List<Group>
     fun find(groupId: String): Group?
     fun loadSnapshot(): GroupStoreSnapshot = GroupStoreSnapshot(listAll(), emptyList())
@@ -162,6 +168,13 @@ class InMemoryGroupStore : GroupStore {
         check(groups.values.none { it.environmentBinding == environmentBinding }) {
             "Environment binding already belongs to another Group"
         }
+        groups[group.id] = group
+        return group
+    }
+
+    @Synchronized
+    override fun createWithApps(id: String, name: String, environmentBinding: EnvironmentBinding, createdAtEpochMillis: Long, apps: List<GroupApp>): Group {
+        val group = create(id,name,environmentBinding,createdAtEpochMillis).copy(apps = apps)
         groups[group.id] = group
         return group
     }

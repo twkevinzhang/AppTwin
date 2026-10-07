@@ -59,7 +59,9 @@ fun SettingsScreen(
     onArchiveCompressionChange: (SpaceArchiveCompression) -> Unit = {},
     onOpenStorageSettings: () -> Unit,
     onExportDiagnostics: () -> Unit,
-    onImportSpace: () -> Unit = {},
+    onCreateSpaceFromBackup: () -> Unit = {},
+    globalBackupLocation: String? = null,
+    onChooseGlobalBackupLocation: () -> Unit = {},
     notificationsGranted: Boolean,
     onRequestNotifications: () -> Unit,
     onPermissionAction: (ClonePermissionSummary) -> Unit,
@@ -69,7 +71,7 @@ fun SettingsScreen(
     onAddBackgroundServiceTile: () -> Unit = {},
 ) {
     LazyColumn(
-        modifier = Modifier.fillMaxSize(),
+        modifier = Modifier.fillMaxSize().testTag("settings-list"),
         contentPadding = PaddingValues(20.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
@@ -85,32 +87,34 @@ fun SettingsScreen(
             ArchiveExportSettingsCard(
                 archiveCompression = state.archiveCompression,
                 onArchiveCompressionChange = onArchiveCompressionChange,
+                globalBackupLocation = globalBackupLocation,
+                onChooseGlobalBackupLocation = onChooseGlobalBackupLocation,
             )
         }
         item {
             SettingsCard(
                 icon = { Icon(Icons.Default.Unarchive, contentDescription = null) },
-                title = "匯入空間存檔",
+                title = "從備份建立",
             ) {
                 Text(
-                    "只會建立新的空間，不會覆寫現有空間。匯入前會驗證格式、檔案大小與 SHA-256。",
+                    "只會建立新的空間，不會覆寫現有空間。建立前會驗證格式、檔案大小與 SHA-256。",
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
                 Text(
-                    "存檔未加密，且 LINE 登入金鑰僅能在原裝置與目前 AppTwin 主程式資料仍存在時使用。",
+                    "備份未加密，請只使用可信任的備份來源。含 LINE 的備份另有裝置與身分限制，會在建立時驗證。",
                     modifier = Modifier.padding(top = 8.dp),
                     color = MaterialTheme.colorScheme.error,
                 )
                 FilledTonalButton(
                     modifier = Modifier
                         .padding(top = 16.dp)
-                        .testTag("import-space-archive"),
-                    enabled = !state.isImportingArchive && state.archiveBusyGroupId == null,
-                    onClick = onImportSpace,
+                        .testTag("create-space-from-backup"),
+                    enabled = !state.isCreatingSpaceFromBackup && state.archiveBusyGroupId == null,
+                    onClick = onCreateSpaceFromBackup,
                 ) {
                     Icon(Icons.Default.Unarchive, contentDescription = null)
                     Text(
-                        if (state.isImportingArchive) "匯入中…" else "選擇存檔",
+                        if (state.isCreatingSpaceFromBackup) "從備份建立中…" else "選擇備份",
                         modifier = Modifier.padding(start = 8.dp),
                     )
                 }
@@ -270,12 +274,30 @@ internal fun BackgroundServiceSettingsCard(
 private fun ArchiveExportSettingsCard(
     archiveCompression: SpaceArchiveCompression,
     onArchiveCompressionChange: (SpaceArchiveCompression) -> Unit,
+    globalBackupLocation: String?,
+    onChooseGlobalBackupLocation: () -> Unit,
 ) {
     SettingsCard(
         modifier = Modifier.testTag("archive-export-settings-card"),
         icon = { Icon(Icons.Default.Folder, contentDescription = null) },
-        title = "匯出空間設定",
+        title = "備份設定（Global）",
     ) {
+        Text("所有空間共用備份位置", fontWeight = FontWeight.SemiBold)
+        Text(
+            backupLocationLabel(globalBackupLocation) ?: "尚未設定，請選擇備份資料夾",
+            modifier = Modifier.padding(top = 8.dp).testTag("global-backup-location"),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        TextButton(
+            modifier = Modifier.testTag("choose-global-backup-location"),
+            onClick = onChooseGlobalBackupLocation,
+        ) { Text("選擇備份資料夾") }
+        Text(
+            "變更位置後，新備份使用新位置；既有備份保留原位置。",
+            style = MaterialTheme.typography.bodySmall,
+            modifier = Modifier.padding(bottom = 16.dp),
+        )
         Text(
             "壓縮比率",
             fontWeight = FontWeight.SemiBold,
@@ -477,7 +499,7 @@ private fun permissionStatus(permission: ClonePermissionSummary): String = when 
 }
 
 private fun permissionScopeLabel(scope: ClonePermissionVirtualScope): String = when (scope) {
-    ClonePermissionVirtualScope.CAMERA_MIC_PER_SPACE -> "宿主授權；各分身可另行調整"
+    ClonePermissionVirtualScope.SPACE_SCOPED -> "宿主授權；各分身可另行調整"
     ClonePermissionVirtualScope.HOST_SHARED -> "所有分身共用宿主系統授權"
     ClonePermissionVirtualScope.NOT_SUPPORTED -> "AppTwin 尚未支援此宿主授權"
 }

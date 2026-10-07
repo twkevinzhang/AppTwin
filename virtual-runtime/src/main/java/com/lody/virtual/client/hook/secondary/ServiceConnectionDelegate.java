@@ -129,6 +129,7 @@ public class ServiceConnectionDelegate implements IServiceConnection {
             service = delegateService.getService();
         }
 
+        service = GuestGmsLocationGate.wrap(name, service);
         ServiceConnectionCompat.connected(mConn, name, service, dead);
     }
 }

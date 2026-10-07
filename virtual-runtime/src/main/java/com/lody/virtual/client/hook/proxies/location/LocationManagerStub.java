@@ -69,6 +69,10 @@ public class LocationManagerStub extends BinderInvocationProxy {
 
         @Override
         public Object call(Object who, Method method, Object... args) throws Throwable {
+            if (getMethodName().startsWith("add") || getMethodName().startsWith("request")) {
+                com.lody.virtual.client.hook.GuestPermissionPolicy.require("android.permission.ACCESS_FINE_LOCATION");
+                LocationAccessPolicy.requireLocationAccess(args);
+            }
             if (isFakeLocationEnable()) {
                 return mDefValue;
             }

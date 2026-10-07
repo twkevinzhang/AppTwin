@@ -90,7 +90,6 @@ fun AppTwinApp(
     var pendingPermissionAppKey by rememberSaveable { mutableStateOf<String?>(null) }
     var pendingPermissionName by rememberSaveable { mutableStateOf<String?>(null) }
     var pendingSettingsPermission by rememberSaveable { mutableStateOf<String?>(null) }
-    var pendingArchiveExportGroupId by rememberSaveable { mutableStateOf<String?>(null) }
     var settingsPermissionsDeniedPermanently by rememberSaveable {
         mutableStateOf(emptySet<String>())
     }
@@ -114,7 +113,28 @@ fun AppTwinApp(
             .flatMap { it.apps.asSequence() }
             .firstOrNull { it.launchKey == appKey }
         if (app != null && permission != null) {
-            viewModel.setClonePermission(app, permission, granted)
+            if (state.destination == MainDestination.SPACE_DETAILS) viewModel.setSpacePermission(app.app.packageName, permission, granted)
+            else viewModel.setClonePermission(app, permission, granted)
+        }
+        pendingPermissionAppKey = null
+        pendingPermissionName = null
+    }
+    val locationPermissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestMultiplePermissions(),
+    ) { grants ->
+        val appKey = pendingPermissionAppKey
+        val permission = pendingPermissionName
+        val app = state.groups.asSequence().flatMap { it.apps.asSequence() }.firstOrNull { it.launchKey == appKey }
+        if (app != null && permission != null) {
+            if (permission == Manifest.permission.ACCESS_BACKGROUND_LOCATION) {
+                if (grants[Manifest.permission.ACCESS_COARSE_LOCATION] == true || grants[Manifest.permission.ACCESS_FINE_LOCATION] == true) {
+                    onOpenPermissionSettings(permission)
+                }
+            } else {
+                val granted = grants[permission] == true
+                if (state.destination == MainDestination.SPACE_DETAILS) viewModel.setSpacePermission(app.app.packageName, permission, granted)
+                else viewModel.setClonePermission(app, permission, granted)
+            }
         }
         pendingPermissionAppKey = null
         pendingPermissionName = null
@@ -132,39 +152,49 @@ fun AppTwinApp(
         pendingSettingsPermission = null
         viewModel.refresh()
     }
-    val archiveExportLauncher = rememberLauncherForActivityResult(
-        ActivityResultContracts.CreateDocument("application/zip"),
-    ) { destination ->
-        val groupId = pendingArchiveExportGroupId
-        pendingArchiveExportGroupId = null
-        if (destination != null && groupId != null) {
-            viewModel.exportSpace(groupId, destination)
-        }
-    }
-    val archiveImportLauncher = rememberLauncherForActivityResult(
+    val settingsLocationPermissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestMultiplePermissions(),
+    ) { _ -> pendingSettingsPermission = null; viewModel.refresh() }
+    val backupLocationLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.OpenDocumentTree(),
+    ) { location -> if (location != null) viewModel.setGlobalBackupLocation(location) }
+    val createFromBackupLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.OpenDocument(),
     ) { source ->
-        if (source != null) viewModel.importSpace(source)
+        if (source != null) viewModel.createSpaceFromBackup(source)
     }
     val onSetClonePermission: (org.apptwin.GroupAppItem, String, Boolean) -> Unit =
         { app, permission, granted ->
             if (!granted || context.checkSelfPermission(permission) == PackageManager.PERMISSION_GRANTED) {
                 viewModel.setClonePermission(app, permission, granted)
+            } else if (permission == Manifest.permission.ACCESS_BACKGROUND_LOCATION && Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                if (context.checkSelfPermission(Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED || context.checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED) {
+                    onOpenPermissionSettings(permission)
+                } else {
+                    pendingPermissionAppKey = app.launchKey
+                    pendingPermissionName = permission
+                    locationPermissionLauncher.launch(arrayOf(Manifest.permission.ACCESS_COARSE_LOCATION, Manifest.permission.ACCESS_FINE_LOCATION))
+                }
             } else {
                 pendingPermissionAppKey = app.launchKey
                 pendingPermissionName = permission
-                permissionLauncher.launch(permission)
+                if (permission == Manifest.permission.ACCESS_FINE_LOCATION || permission == Manifest.permission.ACCESS_COARSE_LOCATION) {
+                    locationPermissionLauncher.launch(arrayOf(Manifest.permission.ACCESS_COARSE_LOCATION, Manifest.permission.ACCESS_FINE_LOCATION))
+                } else permissionLauncher.launch(permission)
             }
         }
     val pickerGroup = state.appPickerGroupId?.let { selectedId ->
         state.groups.firstOrNull { it.groupId == selectedId }
     }
+    val detailsGroup = state.groups.firstOrNull { it.groupId == state.selectedSpaceId }
+        .takeIf { state.destination == MainDestination.SPACE_DETAILS }
     BackHandler(
-        enabled = state.pendingDeepLink != null || pickerGroup != null,
+        enabled = state.pendingDeepLink != null || pickerGroup != null || detailsGroup != null,
     ) {
         when {
             state.pendingDeepLink != null -> viewModel.closeDeepLink()
             pickerGroup != null -> viewModel.closeAppPicker()
+            detailsGroup != null -> viewModel.closeSpaceDetails()
             else -> Unit
         }
     }
@@ -192,7 +222,7 @@ fun AppTwinApp(
             BoxWithConstraints {
                 val useNavigationRail = maxWidth >= 720.dp
                 Row(modifier = Modifier.fillMaxSize()) {
-                    if (useNavigationRail && pickerGroup == null) {
+                    if (useNavigationRail && pickerGroup == null && detailsGroup == null) {
                         AppNavigationRail(
                             selected = state.destination,
                             onSelect = viewModel::navigate,
@@ -203,9 +233,10 @@ fun AppTwinApp(
                         topBar = {
                             CenterAlignedTopAppBar(
                                 navigationIcon = {
-                                    if (pickerGroup != null) {
+                                    if (pickerGroup != null || detailsGroup != null) {
                                         IconButton(
-                                            onClick = viewModel::closeAppPicker,
+                                            onClick = { if (pickerGroup != null) viewModel.closeAppPicker() else viewModel.closeSpaceDetails() },
+                                            modifier = Modifier.testTag("space-details-back"),
                                         ) {
                                             Icon(
                                                 Icons.AutoMirrored.Filled.ArrowBack,
@@ -218,6 +249,7 @@ fun AppTwinApp(
                                     Text(
                                         when {
                                             pickerGroup != null -> "加入 App"
+                                            detailsGroup != null -> "空間詳細資訊"
                                             state.destination == MainDestination.HOME -> "AppTwin"
                                             else -> "設定"
                                         },
@@ -226,7 +258,7 @@ fun AppTwinApp(
                             )
                         },
                         bottomBar = {
-                            if (!useNavigationRail && pickerGroup == null) {
+                            if (!useNavigationRail && pickerGroup == null && detailsGroup == null) {
                                 AppNavigationBar(
                                     selected = state.destination,
                                     onSelect = viewModel::navigate,
@@ -239,9 +271,9 @@ fun AppTwinApp(
                                 pickerGroup == null
                             ) {
                                 ExtendedFloatingActionButton(
-                                    onClick = { showCreateGroup = true },
+                                    onClick = { if (!state.isCreatingGroup) showCreateGroup = true },
                                     icon = { Icon(Icons.Default.Add, contentDescription = null) },
-                                    text = { Text("建立空間") },
+                                    text = { Text(if (state.isCreatingGroup) "建立中…" else "建立空間") },
                                 )
                             }
                         },
@@ -253,14 +285,14 @@ fun AppTwinApp(
                                 .padding(innerPadding),
                         ) {
                             if (
+                                state.isCreatingGroup || state.isSpaceActionBusy ||
                                 state.busyPackageName != null ||
                                 state.busyGroupId != null ||
-                                state.gmsBusyGroupId != null ||
                                 state.launchingAppKey != null ||
                                 state.uninstallingAppKey != null ||
                                 state.clearingStorageGroupId != null ||
                                 state.archiveBusyGroupId != null ||
-                                state.isImportingArchive
+                                state.isCreatingSpaceFromBackup
                             ) {
                                 LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
                             }
@@ -270,6 +302,40 @@ fun AppTwinApp(
                                     group = pickerGroup,
                                     onSelect = viewModel::selectApp,
                                 )
+                                detailsGroup != null -> {
+                                    val details = state.spaceDetails?.takeIf { it.groupId == detailsGroup.groupId }
+                                    SpaceDetailsScreen(
+                                        group = detailsGroup,
+                                        storage = details?.storage?.let { listOf("App 資料" to it.appDataBytes, "快取" to it.cacheBytes, "共用檔案" to it.sharedFilesBytes, "Google 服務資料" to it.googleDataBytes) }.orEmpty(),
+                                        permissions = details?.permissions.orEmpty().filter { it.controllable }.flatMap { permission ->
+                                            permission.apps.mapNotNull { target -> detailsGroup.apps.firstOrNull { it.app.packageName == target.packageName }?.let { app ->
+                                                SpacePermissionRow(permission.permission, permission.label, app, target.granted, permission.hostGranted)
+                                            } }
+                                        },
+                                        accounts = details?.accounts.orEmpty().map { SpaceAccountRow(it.name, it.type, it.syncAuthorities, it.syncStatus) },
+                                        authenticators = details?.accountTypes.orEmpty().map { SpaceAuthenticatorRow(it.type, it.label) },
+                                        backups = details?.backups.orEmpty(),
+                                        loading = state.isLoadingSpaceDetails,
+                                        busy = state.isSpaceActionBusy || state.busyGroupId != null || state.clearingStorageGroupId != null || state.archiveBusyGroupId != null || state.isCreatingSpaceFromBackup,
+                                        error = state.spaceDetailsError,
+                                        globalBackupLocation = state.globalBackupLocation ?: details?.backupLocation,
+                                        onRefresh = viewModel::refreshSpaceDetails,
+                                        onSetPermission = { app, permission, granted ->
+                                            if (granted && context.checkSelfPermission(permission) != PackageManager.PERMISSION_GRANTED) onSetClonePermission(app, permission, true)
+                                            else viewModel.setSpacePermission(app.app.packageName, permission, granted)
+                                        },
+                                        onAddAccount = viewModel::addSpaceAccount,
+                                        onRemoveAccount = { viewModel.removeSpaceAccount(org.apptwin.SpaceAccountEntry(it.name, it.type)) },
+                                        onSynchronizeAccount = { account, authority -> viewModel.synchronizeSpaceAccount(org.apptwin.SpaceAccountEntry(account.name, account.type, account.syncAuthorities), authority) },
+                                        onCreateFromBackup = { viewModel.createSpaceFromBackup(Uri.parse(it.uri)) },
+                                        onDeleteBackup = { viewModel.deleteBackup(it.id) },
+                                        onExport = { viewModel.exportToGlobalLocation(detailsGroup.groupId) },
+                                        onOpenGlobalSettings = { viewModel.navigate(MainDestination.SETTINGS) },
+                                        onRename = { viewModel.renameGroup(detailsGroup.groupId, it) },
+                                        onClearAllAppData = { viewModel.clearAllGroupAppData(detailsGroup.groupId) },
+                                        onDeleteSpace = { viewModel.deleteGroup(detailsGroup.groupId); viewModel.closeSpaceDetails() },
+                                    )
+                                }
                                 state.destination == MainDestination.HOME -> HomeScreen(
                                     state = state,
                                     onCreateGroup = { showCreateGroup = true },
@@ -277,14 +343,7 @@ fun AppTwinApp(
                                     onAddApp = viewModel::openAppPicker,
                                     onRenameSpace = viewModel::renameGroup,
                                     onDeleteSpace = viewModel::deleteGroup,
-                                    onExportSpace = { group ->
-                                        pendingArchiveExportGroupId = group.groupId
-                                        archiveExportLauncher.launch(
-                                            archiveFileName(group.name),
-                                        )
-                                    },
-                                    onEnableGms = viewModel::enableGms,
-                                    onDisableGms = viewModel::disableGms,
+                                    onOpenSpaceDetails = viewModel::openSpaceDetails,
                                     onClearAllAppData = viewModel::clearAllGroupAppData,
                                     onUninstallApp = viewModel::uninstallGroupApp,
                                     onCreateShortcut = viewModel::createShortcut,
@@ -307,8 +366,10 @@ fun AppTwinApp(
                                     onArchiveCompressionChange = viewModel::setArchiveCompression,
                                     onOpenStorageSettings = onOpenStorageSettings,
                                     onExportDiagnostics = viewModel::exportDiagnostics,
-                                    onImportSpace = {
-                                        archiveImportLauncher.launch(
+                                    globalBackupLocation = state.globalBackupLocation,
+                                    onChooseGlobalBackupLocation = { backupLocationLauncher.launch(null) },
+                                    onCreateSpaceFromBackup = {
+                                        createFromBackupLauncher.launch(
                                             arrayOf(
                                                 "application/zip",
                                                 "application/octet-stream",
@@ -333,9 +394,9 @@ fun AppTwinApp(
                                                     onOpenPermissionSettings(permission.permission)
                                                 } else {
                                                     pendingSettingsPermission = permission.permission
-                                                    settingsPermissionLauncher.launch(
-                                                        permission.permission,
-                                                    )
+                                                    if (permission.permission == Manifest.permission.ACCESS_FINE_LOCATION || permission.permission == Manifest.permission.ACCESS_COARSE_LOCATION) {
+                                                        settingsLocationPermissionLauncher.launch(arrayOf(Manifest.permission.ACCESS_COARSE_LOCATION, Manifest.permission.ACCESS_FINE_LOCATION))
+                                                    } else settingsPermissionLauncher.launch(permission.permission)
                                                 }
                                             }
                                             ClonePermissionAction.OPEN_APP_DETAILS,
@@ -359,6 +420,15 @@ fun AppTwinApp(
                     },
                 )
             }
+            state.createSpaceError?.let { error ->
+                AlertDialog(
+                    modifier = Modifier.testTag("create-space-error-dialog"),
+                    onDismissRequest = viewModel::dismissCreateSpaceError,
+                    title = { Text("建立空間失敗") },
+                    text = { Text(error) },
+                    confirmButton = { TextButton(onClick = viewModel::dismissCreateSpaceError, modifier = Modifier.testTag("dismiss-create-space-error")) { Text("確定") } },
+                )
+            }
             if (state.showOnboarding) {
                 OnboardingDialog(onContinue = viewModel::completeOnboarding)
             }
@@ -372,15 +442,6 @@ fun AppTwinApp(
             }
         }
     }
-}
-
-private fun archiveFileName(spaceName: String): String {
-    val safeName = spaceName.trim()
-        .replace(Regex("[^A-Za-z0-9._-]+"), "-")
-        .trim('-')
-        .take(48)
-        .ifEmpty { "space" }
-    return "AppTwin-$safeName.apptwin-space"
 }
 
 private tailrec fun Context.findActivity(): Activity? = when (this) {
@@ -476,18 +537,20 @@ internal fun CreateGroupDialog(
         else -> null
     }
     AlertDialog(
+        modifier = Modifier.testTag("create-space-dialog"),
         onDismissRequest = onDismiss,
         title = { Text("建立分身空間") },
         text = {
             Column {
                 Text(
-                    "每個空間都有獨立的登入狀態與 App 資料，原始 App 和其他空間不受影響。",
+                    "每個空間都有獨立的登入狀態、App 資料與 Google 服務。Google 服務由 microG 提供，會連線至 Google 的裝置註冊、帳號及推播端點；只有初始化完成才會建立空間。",
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
                 OutlinedTextField(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(top = 16.dp),
+                        .padding(top = 16.dp)
+                        .testTag("create-space-name"),
                     value = name,
                     onValueChange = { name = it },
                     singleLine = true,
@@ -500,6 +563,7 @@ internal fun CreateGroupDialog(
         },
         confirmButton = {
             TextButton(
+                modifier = Modifier.testTag("confirm-create-space"),
                 enabled = trimmedName.isNotEmpty() && trimmedName.length <= 40,
                 onClick = { onConfirm(trimmedName) },
             ) {

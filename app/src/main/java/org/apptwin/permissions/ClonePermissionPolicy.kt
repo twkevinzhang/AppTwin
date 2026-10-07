@@ -18,7 +18,7 @@ enum class ClonePermissionAction {
 
 /** How a host permission is exposed to cloned apps. */
 enum class ClonePermissionVirtualScope {
-    CAMERA_MIC_PER_SPACE,
+    SPACE_SCOPED,
     HOST_SHARED,
     NOT_SUPPORTED,
 }

@@ -14,6 +14,33 @@ class FileGroupStoreTest {
     val temporaryFolder = TemporaryFolder()
 
     @Test
+    fun `provisioning data stays hidden until atomic metadata and membership commit`() {
+        val root = temporaryFolder.newFolder("provision")
+        val store = FileGroupStore(root)
+        val pending = Group(ID,"工作",100,EnvironmentBinding(8),GroupHealth.PROVISIONING)
+        store.prepareCreation(pending)
+        val google = File(root,"groups/.staging-$ID/data/gms/proof").apply { parentFile.mkdirs(); writeText("initialized") }
+        assertTrue(store.loadSnapshot().groups.isEmpty())
+        assertTrue(store.loadSnapshot().issues.isEmpty())
+        val app = GroupApp(LINE,300,GroupAppState.ADDED)
+        val committed = store.createWithApps(ID,"工作",EnvironmentBinding(8),100,listOf(app))
+        assertEquals(listOf(app),committed.apps)
+        assertEquals(listOf(app),FileGroupStore(root).find(ID)!!.apps)
+        assertEquals("initialized",File(root,"groups/$ID/data/gms/proof").readText())
+        assertTrue(!google.exists())
+    }
+
+    @Test
+    fun `discard failed provisioning removes only hidden pending directory`() {
+        val root = temporaryFolder.newFolder("discard")
+        val store = FileGroupStore(root)
+        store.prepareCreation(Group(ID,"工作",100,EnvironmentBinding(8),GroupHealth.PROVISIONING))
+        store.discardCreation(ID)
+        assertTrue(!File(root,"groups/.staging-$ID").exists())
+        assertTrue(store.listAll().isEmpty())
+    }
+
+    @Test
     fun `group and app state survive store restart`() {
         val filesRoot = temporaryFolder.newFolder("restart")
         val store = FileGroupStore(filesRoot)

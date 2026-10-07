@@ -1,20 +1,22 @@
-# Space 存檔與還原驗收
+# Space 備份與從備份建立驗收
 
 ## 支援範圍
 
-第一版存檔使用 Android 系統文件選擇器，將一個 Space 的 CE／DE 私有資料、虛擬 external storage、App membership、active revision identity、GMS 狀態、virtual device identity及 runtime permission 決策寫入 `.apptwin-space` ZIP。
+schema v2 備份使用 Global 指定的 Android SAF 資料夾，將一個 Space 的 CE／DE 私有資料、虛擬 external storage、App membership、active revision identity、固定 Google 環境、virtual device identity、單一空間 AccountManager 資料及 runtime permission 決策寫入 `.apptwin-space` ZIP。
 
-匯入永遠建立新的 Space UUID 與 virtual environment，不覆寫既有 Space。匯入在任何 mutation 前驗證 schema、entry path、大小、每檔 SHA-256，以及 Custodian 保存的整包 archive SHA-256。
+從備份建立永遠產生新的 Space UUID 與 virtual environment，不覆寫既有 Space。建立在任何 mutation 前驗證 schema、entry path、大小、每檔 SHA-256；含 LINE 的備份另驗證 Custodian 保存的整包 archive SHA-256。舊 schema 不相容。
 
 ## 安全限制
 
 - 存檔目前不加密，可能包含帳號、聊天資料與 token，必須視為高度敏感資料。
 - LINE 的 Android Keystore 私鑰不可匯出。登入延續只支援同一台裝置，且 `org.apptwin` 的 Android app data 未被系統清除或完整解除安裝。
 - Space 刪除只在 exact retained keyspace marker 與 Custodian mapping 一致時保留 LINE aliases；一般刪除仍清除所有 guest-owned aliases。
-- 每個 Custodian keyspace 只接受最新一份 archive reservation。新的存檔成功 seal 後會原子取代舊 reservation，舊存檔即使仍存在也無法再匯入。
-- SAF 若選擇與舊存檔相同的位置，文件 provider 可能在 seal 前覆寫實體檔案；UI 必須二次確認並建議另存新檔，成功後再處理舊檔。
-- 同一 archive 的 keyspace 同時間只能由一個現有 Space 擁有。原 owner 仍存在時，匯入必須在建立新 Space 前拒絕。
-- v1 要求 archive 內每個 App 的 exact active revision 仍存在於 AppTwin；revision 不符時不得建立 Space。
+- 含 LINE 的備份：每個 Custodian keyspace 只接受最新一份 archive reservation。新的存檔成功 seal 後會原子取代舊 reservation，舊存檔即使仍存在也無法再從備份建立。
+- Global 位置變更不搬移既有備份。新備份使用新檔名；列表保留原 URI、大小、時間與存取狀態。永久刪除成功後才移除紀錄。
+- 含 LINE 的 archive keyspace 同時間只能由一個現有 Space 擁有。原 owner 仍存在時，從備份建立必須在建立新 Space 前拒絕。
+- v2 要求 archive 內每個 App 的 exact active revision 仍存在於 AppTwin；revision 不符時不得建立 Space。
+
+以下 LINE 流程是驗收規格；本次 schema v2 的實機結果記錄於 `space-dashboard-acceptance.md`，不沿用舊版備份的驗收結果。
 
 ## Pixel 7 destructive E2E
 
@@ -26,15 +28,15 @@ Given：
 
 When：
 
-1. 從 Space 選單透過 SAF 匯出存檔至 Download。
+1. 在 Global 選定專用備份資料夾，從 Space 詳細頁建立備份。
 2. 冷啟動來源 LINE，確認匯出沒有破壞現有登入。
 3. 從 AppTwin UI 刪除來源 Space。
 4. 確認 archive 仍存在、來源 virtual user 與資料目錄已刪除、exact Custodian aliases 仍保留。
-5. 從設定頁選擇該 archive 匯入。
+5. 從設定頁選擇該 archive 從備份建立。
 6. 確認建立不同 UUID 的新 Space。
-7. 啟動還原後的 LINE，開啟聊天清單但不傳送訊息。
+7. 啟動從備份建立的 LINE，開啟聊天清單但不傳送訊息。
 8. 強制停止 AppTwin，冷啟動後再次啟動 LINE。
-9. 在還原 Space 尚存在時再次匯入同一 archive。
+9. 在從備份建立的 Space 尚存在時再次從備份建立同一 archive。
 
 Then：
 
@@ -45,13 +47,13 @@ Then：
 
 ## Latest archive replacement E2E
 
-Given：已由 archive A 還原且 LINE 仍登入的 Space。
+Given：已從 archive A 建立且 LINE 仍登入的 Space。
 
 When：
 
-1. 從 Space 選單開始匯出，通過敏感資料警告後，必須再看到舊存檔作廢警告。
+1. 從含 LINE 的 Space 詳細頁建立備份，確認敏感資料及先前 LINE 備份失效的警告。
 2. 另存 archive B，避免覆寫 archive A 的實體檔案。
-3. 分別從設定頁嘗試匯入 A 與 B，不刪除目前 owner Space。
+3. 分別從設定頁嘗試從備份建立 A 與 B，不刪除目前 owner Space。
 
 Then：
 
@@ -73,5 +75,7 @@ Then：
 
 - 設定在重啟後保持；高／中／低分別使用 DEFLATE 9／6／1。
 - 高表示通常較小但較慢，中表示大小與速度平衡，低表示通常較大但較快；UI 不宣稱固定壓縮百分比。
-- 各等級的 archive 均可被相同 reader 還原，archive schema 與 Custodian protocol 不變。
+- 各等級的 archive 均可由 v2 reader 驗證，壓縮設定不改變 schema 或 Custodian protocol。
 - 後匯出的 archive 依 latest-only 規則取代前一份 reservation；原 Space 與 LINE 登入狀態不受影響。
+
+一般空間不使用 Custodian reservation，可在來源存在時從備份建立。新版本的完整驗收與實機執行紀錄見 [空間儀錶板驗收](space-dashboard-acceptance.md)。

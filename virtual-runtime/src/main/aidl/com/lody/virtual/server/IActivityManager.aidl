@@ -9,6 +9,8 @@ import com.lody.virtual.remote.BadgerInfo;
 import com.lody.virtual.remote.PreparedActivityLaunch;
 import com.lody.virtual.remote.TrustedGmsCloudMessagingState;
 import android.content.Intent;
+import android.accounts.Account;
+import android.content.ComponentName;
 import android.content.pm.ActivityInfo;
 import android.app.Notification;
 import android.app.IServiceConnection;
@@ -17,6 +19,13 @@ import com.lody.virtual.server.interfaces.IProcessObserver;
 
 
 interface IActivityManager {
+    boolean startScopedAccountSync(int userId, in ComponentName component, in Account account, String authority, in IBinder syncContext);
+    void cancelScopedAccountSync(int userId, in ComponentName component, in IBinder syncContext);
+    String prepareUriPicker(in Intent request, in IBinder resultTo);
+    Intent takeUriPickerRequest(String session);
+    boolean completeUriPicker(String session, int resultCode, in Intent result);
+    boolean hasSelectedUriGrant(String uri);
+
     const int PROCESS_RESTART_REJECTED = 0;
     const int PROCESS_RESTART_OWNER_READY = 1;
     const int PROCESS_RESTART_EXACT_BOOTSTRAP_PENDING = 2;
@@ -26,6 +35,8 @@ interface IActivityManager {
     int getFreeStubCount();
 
     int getSystemPid();
+
+    int getScopedSyncManagerPid();
 
     int getUidByPid(int pid);
 
