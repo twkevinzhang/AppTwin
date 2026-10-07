@@ -267,6 +267,7 @@ class MainViewModel internal constructor(
     private var pendingLaunch: PendingLaunch? = null
     private var resolvingDeepLinkUri: String? = null
     private var resolvedDeepLinkIdentities: Set<Pair<String, String>>? = null
+    private var spaceDetailsGeneration = 0L
     private var refreshGeneration = 0L
     private var pickerRequestGeneration = 0L
     private var launchBlockedByRecovery = true
@@ -303,9 +304,12 @@ class MainViewModel internal constructor(
     }
     fun refreshSpaceDetails() {
         val id = uiState.selectedSpaceId ?: return
+        val generation = ++spaceDetailsGeneration
         uiState = uiState.copy(isLoadingSpaceDetails = true, spaceDetailsError = null)
         viewModelScope.launch {
             val result = runCatching { withContext(ioDispatcher) { operations.loadSpaceDetails(id) } }
+            if (result.exceptionOrNull() is kotlinx.coroutines.CancellationException) throw result.exceptionOrNull()!!
+            if (generation != spaceDetailsGeneration || uiState.selectedSpaceId != id || uiState.destination != MainDestination.SPACE_DETAILS) return@launch
             if (uiState.selectedSpaceId == id) {
                 if (result.isSuccess && result.getOrNull() == null) {
                     savedStateHandle.remove<String>(SELECTED_SPACE_KEY)
@@ -346,6 +350,7 @@ class MainViewModel internal constructor(
     }
 
     fun navigate(destination: MainDestination) {
+        spaceDetailsGeneration += 1
         if (destination == MainDestination.SETTINGS) viewModelScope.launch {
             val location = withContext(ioDispatcher) { operations.globalBackupLocation() }
             uiState = uiState.copy(globalBackupLocation = location)
@@ -403,6 +408,7 @@ class MainViewModel internal constructor(
     }
 
     fun refresh() {
+        if (uiState.destination == MainDestination.SPACE_DETAILS && uiState.selectedSpaceId != null) refreshSpaceDetails()
         if (launchBlockedByRecovery) {
             reconcileAndRefresh()
             return

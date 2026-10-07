@@ -1,0 +1,28 @@
+ASUS API 31 / pre-fix APK 65d8dc7
+KEY_INTENT login; cancel then complete; same MainActivity/task returned.
+Account backend assertion succeeds, but original account row fails to appear within 20 seconds.
+This is selected business-flow evidence, not a clean full test-suite result; that run also had an ActivityScenario teardown failure from the setup Intent. Final test setup removes that Intent.
+
+10-08 07:30:20.122 13547 13581 I FixtureAccount: refresh setup-ready
+10-08 07:30:20.453 13547 13581 I FixtureAccount: refresh account-page-ready
+10-08 07:30:20.462 13547 13581 I FixtureAccount: refresh add-clicked
+10-08 07:30:20.663 13547 13581 I FixtureAccount: refresh menu-ready
+10-08 07:30:27.326 13887 13887 I FixtureAccount: service-bound
+10-08 07:30:27.333 13887 13898 I FixtureAccount: add-request interactive=true type=org.apptwin.fixture.interactive
+10-08 07:30:27.333 13887 13898 I FixtureAccount: add-intent-returned
+10-08 07:30:27.440 13887 13887 I FixtureAccount: login-create-entered
+10-08 07:30:27.574 13887 13887 I FixtureAccount: login-content-visible
+10-08 07:30:27.634 13547 13581 I FixtureAccount: refresh guest-button-ready
+10-08 07:30:27.701 13887 13887 I FixtureAccount: login-terminal canceled=true
+10-08 07:30:28.004 13547 13581 I FixtureAccount: refresh account-page-ready
+10-08 07:30:28.045 13547 13581 I FixtureAccount: refresh add-clicked
+10-08 07:30:28.252 13547 13581 I FixtureAccount: refresh menu-ready
+10-08 07:30:29.072 13887 13887 I FixtureAccount: service-bound
+10-08 07:30:29.074 13887 13896 I FixtureAccount: add-request interactive=true type=org.apptwin.fixture.interactive
+10-08 07:30:29.074 13887 13896 I FixtureAccount: add-intent-returned
+10-08 07:30:29.144 13887 13887 I FixtureAccount: login-create-entered
+10-08 07:30:29.203 13887 13887 I FixtureAccount: login-content-visible
+10-08 07:30:29.268 13547 13581 I FixtureAccount: refresh guest-button-ready
+10-08 07:30:29.283 13887 13887 I FixtureAccount: login-terminal added=true
+10-08 07:30:29.448 13547 13581 I FixtureAccount: interactive backend-created; awaiting original account page row
+10-08 07:30:49.462 13547 13581 E FixtureAccount: androidx.compose.ui.test.ComposeTimeoutException: Condition still not satisfied after 20000 ms

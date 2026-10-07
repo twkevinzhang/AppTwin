@@ -108,3 +108,20 @@ ASUS 解鎖且亮屏前置條件成立後，完整 27 項 instrumentation 於 10
 ## 帳號類型中文名稱修正
 
 2026-10-08：新增帳號選單與既有帳號列將 `com.google` 顯示為「Google 帳號」，`com.google.work` 顯示為「企業管理帳號」。內部 type、操作 callback 與 test tag 保持原值。APK 建置及 158 項 App unit tests 通過；ASUS 實際開啟選單確認兩個中文名稱、原始代碼不再顯示，既有 Google 帳號列亦確認顯示中文。本次僅檢查顯示，未新增、移除或同步使用者帳號。
+
+
+## AccountManager 新增後返回頁面更新
+
+2026-10-08：新增帳號回傳 `KEY_INTENT` 時，原流程會在登入完成前刷新一次；MainActivity 返回的 `onResume` 只更新 groups，未重新讀取 spaceDetails。因此帳號已寫入仍顯示舊清單，重啟後才出現。現在 `refresh()` 在空間詳細頁重新載入資料，並以 generation、space ID、destination 防止較舊的結果或錯誤覆蓋目前頁面；Coroutine cancellation 維持取消語意。
+
+實際流程：空間 A 的新增帳號選單 → 虛擬 authenticator 的登入 Activity → 使用者完成／取消 → 從 Recents 切回原 AppTwin task → 原帳號頁。fixture 只有在點擊完成時才寫入 AccountManager。測試驗證同一 MainActivity instance，不手動刷新、不重新進入帳號頁、不重啟 App；取消不新增，A 的新增不影響 B。既有虛擬 user-scoped 帳號廣播隔離不變。
+
+舊版 ASUS 對照已確認 backend 寫入成功，但原帳號列 20 秒未出現。該輪另有測試 setup Intent 改變造成 ActivityScenario 清理逾時；後續 setup 改為原 task 的 moveToFront，移除新的 Intent，且未採用手工 lifecycle 訊號。最終修正版七項 ASUS instrumentation 於 68.689 秒全部通過，0 失敗／0 略過：互動登入返回 1、帳號新增／同步／移除／隔離完整流程 1、詳細頁 UI 5。fixture 登入是合成帳號；未再次執行使用者真實 Google 登入或改動其帳號。
+
+本輪 App runtimeProbeDebug unit tests 共 163 項，0 失敗／0 錯誤／0 略過；新增五項涵蓋延遲登入、取消、跨空間及晚到結果／錯誤。APK、instrumentation APK、fixture 建置成功。測試建立的空間、備份與合成帳號已清理，宿主 test／fixture 套件已解除安裝，ASUS 保留修正版 AppTwin APK、使用者既有空間與帳號，stay-awake 恢復 0。沒有新增雲端或持續計費資源。
+
+觀察事實：舊版 backend 已建立而 UI 未更新；修正版保留同一 Activity 的原頁更新與相關回歸通過。推論：原問題由返回時未重新讀取詳細資料造成。結論：已修復本輪 ASUS 的 AccountManager 返回頁面更新路徑。可靠度分數：98%。驗證方式：以目標第三方 authenticator 完成登入後從 Recents 返回原頁，確認帳號自動出現；若出現 provider 特有返回行為，追加相同路徑回歸。
+
+證據：[舊版業務 checkpoints](evidence/space-dashboard-asus/account-refresh-before-checkpoints.txt)、[修正版七項實機結果](evidence/space-dashboard-asus/account-refresh-fixed-instrumentation.txt)、[修正版登入／清理 checkpoints](evidence/space-dashboard-asus/account-refresh-fixed-checkpoints.txt)。
+
+重跑：建置並安裝 runtimeProbeDebug、AndroidTest 與 revisionOne fixture，在實機解鎖、亮屏時使用 `-e spaceAccountRefreshE2e 1 -e spaceAccountE2e 1`，class 為 `org.apptwin.runtime.SpaceAccountRefreshE2eTest,org.apptwin.runtime.SpaceAccountManagementE2eTest,org.apptwin.ui.SpaceDetailsUiTest`。

@@ -1,0 +1,36 @@
+10-08 07:38:59.586 17495 17523 I FixtureAccount: refresh setup-ready
+10-08 07:39:00.131 17495 17523 I FixtureAccount: refresh account-page-ready
+10-08 07:39:00.145 17495 17523 I FixtureAccount: refresh add-clicked
+10-08 07:39:00.336 17495 17523 I FixtureAccount: refresh menu-ready
+10-08 07:39:07.131 17769 17769 I FixtureAccount: service-bound
+10-08 07:39:07.137 17769 17781 I FixtureAccount: add-request interactive=true type=org.apptwin.fixture.interactive
+10-08 07:39:07.137 17769 17781 I FixtureAccount: add-intent-returned
+10-08 07:39:07.290 17769 17769 I FixtureAccount: login-create-entered
+10-08 07:39:07.405 17769 17769 I FixtureAccount: login-content-visible
+10-08 07:39:07.443 17495 17523 I FixtureAccount: refresh guest-button-ready
+10-08 07:39:07.488 17769 17769 I FixtureAccount: login-terminal canceled=true
+10-08 07:39:07.848 17495 17523 I FixtureAccount: refresh account-page-ready
+10-08 07:39:07.857 17495 17523 I FixtureAccount: refresh add-clicked
+10-08 07:39:08.089 17495 17523 I FixtureAccount: refresh menu-ready
+10-08 07:39:08.842 17769 17769 I FixtureAccount: service-bound
+10-08 07:39:08.844 17769 17781 I FixtureAccount: add-request interactive=true type=org.apptwin.fixture.interactive
+10-08 07:39:08.844 17769 17781 I FixtureAccount: add-intent-returned
+10-08 07:39:08.905 17769 17769 I FixtureAccount: login-create-entered
+10-08 07:39:08.940 17769 17769 I FixtureAccount: login-content-visible
+10-08 07:39:09.028 17495 17523 I FixtureAccount: refresh guest-button-ready
+10-08 07:39:09.039 17769 17769 I FixtureAccount: login-terminal added=true
+10-08 07:39:09.336 17495 17523 I FixtureAccount: interactive backend-created; awaiting original account page row
+10-08 07:39:09.957 17495 17523 I FixtureAccount: cleanup actual-destroyed
+10-08 07:39:09.971 17495 17523 I TestRunner: finished: delayedLoginReturnRefreshesAccountsAndCancelLeavesSpaceEmpty(org.apptwin.runtime.SpaceAccountRefreshE2eTest)
+10-08 07:39:31.541 17979 17979 I FixtureAccount: service-bound
+10-08 07:39:31.546 17979 17990 I FixtureAccount: add-request interactive=false type=org.apptwin.fixture
+10-08 07:39:44.488 18122 18122 I FixtureAccount: service-bound
+10-08 07:39:44.494 18122 18133 I FixtureAccount: removal-enter
+10-08 07:39:44.501 18122 18133 I FixtureAccount: removal-approved
+10-08 07:39:45.619 17495 17523 I TestRunner: finished: addSyncRemoveRemainsInSelectedSpace(org.apptwin.runtime.SpaceAccountManagementE2eTest)
+10-08 07:39:47.092 17495 17523 I TestRunner: finished: permanentBackupDeleteRequiresConfirmationAndCancelKeepsFile(org.apptwin.ui.SpaceDetailsUiTest)
+10-08 07:39:48.080 17495 17523 I TestRunner: finished: createFromBackupDispatchesSourceAndLocationHasNoPerSpaceOverride(org.apptwin.ui.SpaceDetailsUiTest)
+10-08 07:39:48.800 17495 17523 I TestRunner: finished: generalBackupDoesNotShowLineIdentityRestrictions(org.apptwin.ui.SpaceDetailsUiTest)
+10-08 07:39:49.642 17495 17523 I TestRunner: finished: permissionPageShowsHostGateAndDispatchesExactAppDecision(org.apptwin.ui.SpaceDetailsUiTest)
+10-08 07:39:50.516 17495 17523 I TestRunner: finished: lineBackupShowsItsDeviceAndSingleOwnerRestrictions(org.apptwin.ui.SpaceDetailsUiTest)
+10-08 07:39:50.522 17495 17523 I TestRunner: run finished: 7 tests, 0 failed, 0 ignored
