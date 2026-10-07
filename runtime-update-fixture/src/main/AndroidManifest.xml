@@ -19,6 +19,11 @@
             <intent-filter><action android:name="android.accounts.AccountAuthenticator" /></intent-filter>
             <meta-data android:name="android.accounts.AccountAuthenticator" android:resource="@xml/fixture_authenticator" />
         </service>
+        <service android:name=".FixtureInteractiveAccountService" android:exported="true">
+            <intent-filter><action android:name="android.accounts.AccountAuthenticator" /></intent-filter>
+            <meta-data android:name="android.accounts.AccountAuthenticator" android:resource="@xml/fixture_interactive_authenticator" />
+        </service>
+        <activity android:name=".FixtureAccountLoginActivity" android:exported="false" />
         <service android:name=".FixtureSyncService" android:exported="true">
             <intent-filter><action android:name="android.content.SyncAdapter" /></intent-filter>
             <meta-data android:name="android.content.SyncAdapter" android:resource="@xml/fixture_sync_adapter" />

@@ -9,13 +9,20 @@ import android.content.Intent
 import android.os.Bundle
 
 /** Synthetic account authenticator. Never authenticates to an external service. */
-class FixtureAccountService : Service() {
+open class FixtureAccountService : Service() {
+    protected open val interactive = false
     override fun onBind(intent: Intent?): android.os.IBinder {
         android.util.Log.i("FixtureAccount", "service-bound")
         return object : AbstractAccountAuthenticator(this) {
         override fun editProperties(r: AccountAuthenticatorResponse?, type: String?) = Bundle()
         override fun addAccount(r: AccountAuthenticatorResponse?, type: String?, token: String?,
             features: Array<out String>?, options: Bundle?): Bundle {
+            android.util.Log.i("FixtureAccount", "add-request interactive=$interactive type=$type")
+            if (interactive) return Bundle().apply {
+                putParcelable(AccountManager.KEY_INTENT, Intent(this@FixtureAccountService, FixtureAccountLoginActivity::class.java)
+                    .putExtra(AccountManager.KEY_ACCOUNT_AUTHENTICATOR_RESPONSE, r))
+                android.util.Log.i("FixtureAccount", "add-intent-returned")
+            }
             val account = Account("fixture-account", "org.apptwin.fixture")
             AccountManager.get(this@FixtureAccountService).addAccountExplicitly(account, null, null)
             return Bundle().apply {
@@ -39,4 +46,8 @@ class FixtureAccountService : Service() {
         }
     }.iBinder
     }
+}
+
+class FixtureInteractiveAccountService : FixtureAccountService() {
+    override val interactive = true
 }

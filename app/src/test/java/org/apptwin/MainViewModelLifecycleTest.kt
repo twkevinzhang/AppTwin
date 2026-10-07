@@ -997,6 +997,132 @@ class MainViewModelLifecycleTest {
             assertTrue(viewModel.uiState.message.orEmpty().contains("請在 AppTwin 中修復"))
         }
 
+    @Test
+    fun `resume refresh sees account after external authenticator completes without restart`() = runTest {
+        val dispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(dispatcher)
+        var accounts = emptyList<SpaceAccountEntry>()
+        var externalLoginOpened = false
+        val operations = FakeOperations(groups = listOf(group())).apply {
+            detailsLoader = { id -> details(id, accounts) }
+            // KEY_INTENT returns before the external login has added the account.
+            accountAdder = { _, _ -> externalLoginOpened = true }
+        }
+        val model = viewModel(SavedStateHandle(), operations, dispatcher)
+        advanceUntilIdle()
+        model.openSpaceDetails(GROUP_ID)
+        advanceUntilIdle()
+        model.addSpaceAccount("com.google")
+        advanceUntilIdle()
+        assertTrue(externalLoginOpened)
+        assertTrue(model.uiState.spaceDetails!!.accounts.isEmpty())
+        accounts = listOf(SpaceAccountEntry("test@example.com", "com.google"))
+        model.refresh()
+        advanceUntilIdle()
+        assertEquals(accounts, model.uiState.spaceDetails!!.accounts)
+        assertEquals(MainDestination.SPACE_DETAILS, model.uiState.destination)
+        assertTrue(operations.refreshCalls >= 2)
+    }
+
+    @Test
+    fun `cancelled external login remains empty and accounts stay scoped when switching spaces`() = runTest {
+        val dispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(dispatcher)
+        val secondId = "22222222-2222-2222-2222-222222222222"
+        val otherAccount = SpaceAccountEntry("other@example.com", "com.google")
+        val operations = FakeOperations(groups = listOf(group())).apply {
+            detailsLoader = { id -> details(id, if (id == secondId) listOf(otherAccount) else emptyList()) }
+        }
+        val model = viewModel(SavedStateHandle(), operations, dispatcher)
+        advanceUntilIdle()
+        model.openSpaceDetails(GROUP_ID)
+        model.addSpaceAccount("com.google")
+        advanceUntilIdle()
+        model.refresh() // External login cancelled without creating an account.
+        advanceUntilIdle()
+        assertTrue(model.uiState.spaceDetails!!.accounts.isEmpty())
+        model.openSpaceDetails(secondId)
+        advanceUntilIdle()
+        assertEquals(listOf(otherAccount), model.uiState.spaceDetails!!.accounts)
+        model.openSpaceDetails(GROUP_ID)
+        advanceUntilIdle()
+        assertTrue(model.uiState.spaceDetails!!.accounts.isEmpty())
+    }
+
+    @Test
+    fun `older same space read cannot replace latest details or publish stale failure`() = runTest {
+        val dispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(dispatcher)
+        val pending = CompletableDeferred<SpaceDetails?>()
+        val latest = details(GROUP_ID, listOf(SpaceAccountEntry("latest@example.com", "com.google")))
+        var calls = 0
+        val operations = FakeOperations(groups = listOf(group())).apply {
+            detailsLoader = { if (++calls == 1) pending.await() else latest }
+        }
+        val model = viewModel(SavedStateHandle(), operations, dispatcher)
+        advanceUntilIdle()
+        model.openSpaceDetails(GROUP_ID)
+        runCurrent()
+        model.refreshSpaceDetails()
+        runCurrent()
+        assertEquals(latest, model.uiState.spaceDetails)
+        val messageId = model.uiState.messageId
+        pending.completeExceptionally(IllegalStateException("obsolete failure"))
+        advanceUntilIdle()
+        assertEquals(latest, model.uiState.spaceDetails)
+        assertEquals(null, model.uiState.spaceDetailsError)
+        assertEquals(messageId, model.uiState.messageId)
+        assertFalse(model.uiState.isLoadingSpaceDetails)
+    }
+
+    @Test
+    fun `older successful same space read cannot replace newer accounts`() = runTest {
+        val dispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(dispatcher)
+        val pending = CompletableDeferred<SpaceDetails?>()
+        val latest = details(GROUP_ID, listOf(SpaceAccountEntry("latest@example.com", "com.google")))
+        var calls = 0
+        val operations = FakeOperations(groups = listOf(group())).apply {
+            detailsLoader = { if (++calls == 1) pending.await() else latest }
+        }
+        val model = viewModel(SavedStateHandle(), operations, dispatcher)
+        advanceUntilIdle()
+        model.openSpaceDetails(GROUP_ID)
+        runCurrent()
+        model.refreshSpaceDetails()
+        runCurrent()
+        pending.complete(details(GROUP_ID, emptyList()))
+        advanceUntilIdle()
+        assertEquals(latest, model.uiState.spaceDetails)
+    }
+
+    @Test
+    fun `cancelled or other space read cannot override current details`() = runTest {
+        val dispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(dispatcher)
+        val pending = CompletableDeferred<SpaceDetails?>()
+        val secondId = "22222222-2222-2222-2222-222222222222"
+        val latest = details(secondId, emptyList())
+        val operations = FakeOperations(groups = listOf(group())).apply {
+            detailsLoader = { id -> if (id == GROUP_ID) pending.await() else latest }
+        }
+        val model = viewModel(SavedStateHandle(), operations, dispatcher)
+        advanceUntilIdle()
+        model.openSpaceDetails(GROUP_ID)
+        runCurrent()
+        model.openSpaceDetails(secondId)
+        runCurrent()
+        pending.cancel()
+        advanceUntilIdle()
+        assertEquals(latest, model.uiState.spaceDetails)
+        assertEquals(secondId, model.uiState.selectedSpaceId)
+        assertEquals(null, model.uiState.spaceDetailsError)
+    }
+
+    private fun details(id: String, accounts: List<SpaceAccountEntry>) = SpaceDetails(
+        id, SpaceStorageBreakdown(), emptyList(), accounts, emptyList(), emptyList(), null,
+    )
+
     private fun viewModel(
         savedState: SavedStateHandle,
         operations: MainOperations,
@@ -1039,6 +1165,10 @@ class MainViewModelLifecycleTest {
         private val deepLinkLaunchResult: RuntimeLaunchResult = RuntimeLaunchResult.Failed("unused"),
         private val expectedLaunchDispatcher: CoroutineDispatcher? = null,
     ) : MainOperations {
+        var detailsLoader: suspend (String) -> SpaceDetails? = { null }
+        var accountAdder: suspend (String, String) -> Unit = { _, _ -> }
+        override suspend fun loadSpaceDetails(groupId: String): SpaceDetails? = detailsLoader(groupId)
+        override suspend fun addSpaceAccount(groupId: String, type: String) = accountAdder(groupId, type)
         private var currentGroups = groups
         var reconcileStarted = false
         var loadGroupCalls = 0
