@@ -125,3 +125,16 @@ ASUS 解鎖且亮屏前置條件成立後，完整 27 項 instrumentation 於 10
 證據：[舊版業務 checkpoints](evidence/space-dashboard-asus/account-refresh-before-checkpoints.txt)、[修正版七項實機結果](evidence/space-dashboard-asus/account-refresh-fixed-instrumentation.txt)、[修正版登入／清理 checkpoints](evidence/space-dashboard-asus/account-refresh-fixed-checkpoints.txt)。
 
 重跑：建置並安裝 runtimeProbeDebug、AndroidTest 與 revisionOne fixture，在實機解鎖、亮屏時使用 `-e spaceAccountRefreshE2e 1 -e spaceAccountE2e 1`，class 為 `org.apptwin.runtime.SpaceAccountRefreshE2eTest,org.apptwin.runtime.SpaceAccountManagementE2eTest,org.apptwin.ui.SpaceDetailsUiTest`。
+
+
+## 通知欄快速工具持續讀取中
+
+2026-10-08：BackgroundServiceTile 原宣告 ACTIVE_TILE=true，但其狀態只在 onStartListening 期間觀察 Flow；初次更新送出 loaded=false 的「讀取中」，非同步 refresh 完成後不主動要求重新監聽。Android active 模式只在點擊或 requestListeningState 時綁定，不符合此工具隨面板讀取並持續顯示的設計。移除 ACTIVE_TILE，使快速設定面板可見期間維持監聽，原 collector 可以發送 loaded=true 的終態。僅修改 Manifest，保留設定讀寫、切換及失敗重試語意。
+
+依據：[Android TileService active 模式與監聽契約](https://developer.android.com/reference/android/service/quicksettings/TileService)、[官方快速設定工具指南](https://developer.android.com/develop/ui/views/quicksettings-tiles)。
+
+ASUS 原始驗收：當時 AppTwin 工具未列在快速面板配置中，重新加入指定工具後，舊 APK 點擊首次讀取（未切換設定），1 秒及後續 5 秒仍維持「讀取中」、state=0；durable 設定為 1。修正版安裝後，首次讀取完成顯示「已開啟」、state=2，隨後連續三次收合／展開皆維持正確狀態，durable 設定每次皆為 1。實際讀取面板未切換背景服務，保留 AppTwin 工具供使用。App 163 項 unit tests 全通過，APK 建置成功。未新建測試空間、帳號、雲端或持續計費資源。
+
+觀察事實：舊版快取狀態不符durable設定；新版初次載入完成、三次面板重開與durable設定一致。推論：active 模式與僅在監聽時收集 Flow 的更新方式不匹配，令初始狀態長期保留。結論：已修復 ASUS 已驗證的快速工具持續讀取中路徑。可靠度分數：98%。驗證方式：其他實體Android版本執行相同首次載入、反覆收合／展開流程；切換行為本輪未另測，原控制邏輯未修改。
+
+證據：[舊版狀態](evidence/space-dashboard-asus/tile-before-state.txt)、[修正版首次讀取](evidence/space-dashboard-asus/tile-fixed-state.txt)、[三次面板重開](evidence/space-dashboard-asus/tile-reopen-state.txt)。
