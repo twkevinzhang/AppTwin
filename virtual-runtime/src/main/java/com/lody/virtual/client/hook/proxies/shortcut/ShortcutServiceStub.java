@@ -382,27 +382,51 @@ public class ShortcutServiceStub extends BinderInvocationProxy {
             if (replacement == null) {
                 return null;
             }
-            List shortcutList;
-            if (replacement instanceof List) {
-                shortcutList = (List) replacement;
-            } else {
-                shortcutList = ParceledListSliceCompat.getList(replacement);
-            }
+            // Capture the caller identity before the asynchronous Binder result completes.
             String hostPkg = getHostPkg();
-            List guestShortcuts = filterAndTransformGuestShortcuts(
-                    shortcutList,
-                    item -> item instanceof ShortcutInfo
-                            && isHostNativeShortcut((ShortcutInfo) item, hostPkg),
-                    item -> {
-                        if (item instanceof ShortcutInfo) {
-                            repairShortcutInfoForGuest((ShortcutInfo) item);
-                        }
-                    });
-            if (replacement instanceof List) {
-                return guestShortcuts;
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S
+                    && ShortcutFutureResult.isAndroidFuture(replacement, method.getReturnType())) {
+                return ShortcutFutureResult.transform(
+                        replacement, method.getReturnType(),
+                        payload -> repairShortcutListResult(payload, hostPkg));
             }
-            return ParceledListSliceCompat.createForReturnType(method, guestShortcuts);
+            return repairShortcutListResult(replacement, hostPkg, method);
         }
+    }
+
+    private static Object repairShortcutListResult(Object result, String hostPkg) {
+        return repairShortcutListResult(result, hostPkg, null);
+    }
+
+    private static Object repairShortcutListResult(Object result, String hostPkg,
+                                                   Method synchronousMethod) {
+        if (result == null) {
+            return null;
+        }
+        boolean isList = result instanceof List;
+        if (synchronousMethod == null && !isList && (ParceledListSlice.TYPE == null
+                || !ParceledListSlice.TYPE.isInstance(result))) {
+            throw new IllegalArgumentException("Unsupported shortcut result: "
+                    + result.getClass().getName());
+        }
+        List shortcutList = isList ? (List) result : ParceledListSliceCompat.getList(result);
+        List guestShortcuts = filterAndTransformGuestShortcuts(
+                shortcutList,
+                item -> item instanceof ShortcutInfo
+                        && isHostNativeShortcut((ShortcutInfo) item, hostPkg),
+                item -> {
+                    if (item instanceof ShortcutInfo) {
+                        repairShortcutInfoForGuest((ShortcutInfo) item);
+                    }
+                });
+        // The asynchronous payload has its own container contract, independent of the
+        // method's AndroidFuture return type. Preserve that payload shape.
+        if (isList) {
+            return guestShortcuts;
+        }
+        return synchronousMethod != null
+                ? ParceledListSliceCompat.createForReturnType(synchronousMethod, guestShortcuts)
+                : ParceledListSliceCompat.create(guestShortcuts);
     }
 
     private static class ReplacePkgAndShortcutMethodProxy extends ReplaceCallingPkgMethodProxy {
