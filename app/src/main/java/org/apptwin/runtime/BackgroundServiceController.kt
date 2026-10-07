@@ -23,6 +23,32 @@ data class BackgroundServiceState(
     val error: String? = null,
     val failedRequestedEnabled: Boolean? = null,
 ) {
+    fun withLoadedSetting(enabled: Boolean): BackgroundServiceState = copy(
+        enabled = enabled,
+        loaded = true,
+        // A successful read recovers a read error, but cannot prove a failed toggle recovered.
+        error = if (failedRequestedEnabled != null) error else null,
+    )
+
+    val tileInteractive: Boolean get() = !busy && (loaded || error != null)
+    val tileDescription: String get() = when {
+        busy -> "切換中…"
+        error != null && failedRequestedEnabled != null -> "切換失敗，點擊重試"
+        error != null -> "讀取失敗，點擊重試"
+        !loaded -> "讀取中…"
+        enabled -> "已開啟"
+        else -> "已關閉"
+    }
+
+    fun performTileClick(requestChange: (Boolean) -> Unit, refresh: () -> Unit) {
+        when {
+            busy -> Unit
+            error != null -> retry(requestChange, refresh)
+            loaded -> requestChange(!enabled)
+            else -> refresh()
+        }
+    }
+
     fun retry(requestChange: (Boolean) -> Unit, refresh: () -> Unit) {
         val requested = failedRequestedEnabled
         if (requested == null) refresh() else requestChange(requested)
@@ -42,13 +68,7 @@ internal object BackgroundServiceController {
                 runCatching { withContext(Dispatchers.IO) { BackgroundExecutionSettings.isEnabled(app) } }
                     .onSuccess { enabled ->
                         val previous = mutableState.value
-                        mutableState.value = previous.copy(
-                            enabled = enabled,
-                            loaded = true,
-                            // A read is not evidence that a failed FGS start recovered. Keep that
-                            // failure visible across tile re-listening and activity resume.
-                            error = if (previous.loaded || previous.failedRequestedEnabled != null) previous.error else null,
-                        )
+                        mutableState.value = previous.withLoadedSetting(enabled)
                     }
                     .onFailure {
                         mutableState.value = mutableState.value.copy(error = "無法讀取背景服務設定，請重試。")
