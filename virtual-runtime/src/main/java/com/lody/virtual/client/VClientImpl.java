@@ -717,8 +717,7 @@ public final class VClientImpl extends IVClient.Stub {
         File vsDir = VEnvironment.getVirtualStorageDir(info.packageName, userId);
         File privateDir = VEnvironment.getVirtualPrivateStorageDir(userId);
         if (privateDir == null || !privateDir.exists() || !privateDir.isDirectory()) {
-            VLog.e(TAG, "Unable to prepare guest private external storage user=" + userId);
-            return;
+            throw new SecurityException("Unable to prepare guest private external storage user=" + userId);
         }
         boolean sharedStorageAvailable = vsDir != null && vsDir.exists() && vsDir.isDirectory();
         if (!sharedStorageAvailable) {
@@ -772,7 +771,12 @@ public final class VClientImpl extends IVClient.Stub {
                 for (String whiteDir : whiteList) {
                     // white list, do not redirect
                     String whitePath = new File(storageRoot, whiteDir).getAbsolutePath();
-                    NativeEngine.whitelist(whitePath, true);
+                    // Broad shared-media paths must not bypass the per-space decision.
+                    boolean mediaGranted = com.lody.virtual.client.hook.GuestPermissionPolicy.isGranted(
+                            "android.permission.READ_EXTERNAL_STORAGE")
+                            || (com.lody.virtual.client.hook.GuestPermissionPolicy.isGranted("android.permission.READ_MEDIA_IMAGES")
+                            && com.lody.virtual.client.hook.GuestPermissionPolicy.isGranted("android.permission.READ_MEDIA_VIDEO"));
+                    if (mediaGranted) NativeEngine.whitelist(whitePath, true);
                 }
             }
 
@@ -786,6 +790,9 @@ public final class VClientImpl extends IVClient.Stub {
             // redirect /sdcard/ -> vsdcard
             if (vsPath != null) {
                 NativeEngine.redirectDirectory(storageRoot, vsPath);
+            } else {
+                // Never fall through to host shared storage if the isolated root is unavailable.
+                NativeEngine.forbid(storageRoot);
             }
         }
     }
@@ -1115,10 +1122,26 @@ public final class VClientImpl extends IVClient.Stub {
     }
 
     @Override
-    public IBinder createProxyService(ComponentName component, IBinder binder) {
+    public IBinder createProxyService(ComponentName component, IBinder binder, ServiceInfo registration) throws RemoteException {
         // This call executes in the guest service process, before the Binder crosses into the
         // virtual activity-manager process and becomes a BinderProxy. Account authenticator
         // permission mediation therefore has to be installed here rather than server-side.
+        if (binder instanceof Binder && "android.content.ISyncAdapter".equals(binder.getInterfaceDescriptor())) {
+            int managerPid = Binder.getCallingPid();
+            int expectedPid = VActivityManager.get().getScopedSyncManagerPid();
+            boolean exactPackage = component != null && component.getPackageName().equals(getCurrentPackage());
+            boolean declared = getCurrentApplication() != null
+                    && com.lody.virtual.helper.compat.SyncAdapterRegistration.declaredLocally(getCurrentApplication().getResources(), registration, component);
+            android.util.Log.i("VirtualSyncBridge", "registration user=" + VUserHandle.myUserId() + " manager=" + managerPid
+                    + " expected=" + expectedPid + " exactPackage=" + exactPackage + " declared=" + declared);
+            if (managerPid != expectedPid || !exactPackage || !declared) {
+                android.util.Log.w("VirtualSyncBridge", "registration-rejected reason="
+                        + (managerPid != expectedPid ? "manager-pid" : !exactPackage ? "component-package" : "registered-metadata"));
+                throw new SecurityException("Unregistered virtual sync adapter");
+            }
+            return new com.lody.virtual.server.secondary.VirtualSyncAdapterBinder((Binder) binder, managerPid,
+                    VActivityManager.get().getService().asBinder());
+        }
         return BinderDelegateService.createProxyService(binder);
     }
 

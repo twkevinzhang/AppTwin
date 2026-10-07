@@ -57,9 +57,19 @@ public class AppOpsManagerStub extends BinderInvocationProxy {
 
             @Override
             public Object call(Object who, Method method, Object... args) throws Throwable {
-                return 0;
+                if (args != null && args.length > 0 && args[0] instanceof Integer) {
+                    enforceOperation((Integer) args[0]);
+                }
+                return method.invoke(who, args);
             }
         });
+    }
+
+    private static void enforceOperation(int operation) {
+        String permission = SpaceAppOpPermission.permissionFor(operation);
+        if (com.lody.virtual.client.hook.GuestPermissionPolicy.isControlled(permission)) {
+            com.lody.virtual.client.hook.GuestPermissionPolicy.require(permission);
+        }
     }
 
     private class BaseMethodProxy extends StaticMethodProxy {
@@ -70,6 +80,23 @@ public class AppOpsManagerStub extends BinderInvocationProxy {
             super(name);
             this.pkgIndex = pkgIndex;
             this.uidIndex = uidIndex;
+        }
+
+        @Override
+        public Object call(Object who, Method method, Object... args) throws Throwable {
+            String name = method.getName();
+            if (name.startsWith("checkOperation") || name.startsWith("noteOperation")
+                    || name.startsWith("startOperation") || "checkAudioOperation".equals(name)) {
+                int opIndex = name.startsWith("startOperation") ? 1 : 0;
+                if (args != null && args.length > opIndex && args[opIndex] instanceof Integer) {
+                    try { enforceOperation((Integer) args[opIndex]); }
+                    catch (SecurityException denied) {
+                        if (method.getReturnType() == int.class) return android.app.AppOpsManager.MODE_IGNORED;
+                        throw denied;
+                    }
+                }
+            }
+            return super.call(who, method, args);
         }
 
         @Override

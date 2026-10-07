@@ -61,8 +61,8 @@ class CrossUserBinderIsolationE2eTest {
             val userB = groupBWithFixture.environmentId()
             assertTrue("target and attacker must be distinct virtual users", userA > 0 && userB > 0 && userA != userB)
 
-            operations.grantGmsConsent(groupA.id)
-            assertLifecycleCompleted(operations.enableGms(groupA.id), "enable target A")
+            internalGmsLifecycleFixture().grantNetworkConsent(groupA.id)
+            assertLifecycleCompleted(internalGmsLifecycleFixture().enable(groupA.id), "enable target A")
 
             // Install the debug fixture and its provider in both virtual users before the attack.
             assertStarted(operations.launchGroupApp(groupAWithFixture.fixtureItem()))

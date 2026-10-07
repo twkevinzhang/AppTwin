@@ -73,6 +73,10 @@ enum class GmsResetMode {
 interface GmsRuntimePort {
     fun observe(groupId: GmsGroupId): GmsRuntimeObservation
 
+    /** Offline space provisioning: trusted packages and private binding only. */
+    fun ensureSpaceInitialized(groupId: GmsGroupId, release: TrustedGmsManifest, operationId: String): GmsRuntimeMutationResult =
+        GmsRuntimeMutationResult.Rejected("OFFLINE_SPACE_INITIALIZATION_UNSUPPORTED")
+
     fun ensureEnabled(
         groupId: GmsGroupId,
         release: TrustedGmsManifest,

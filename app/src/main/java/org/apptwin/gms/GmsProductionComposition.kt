@@ -175,13 +175,16 @@ internal fun AndroidGmsOperations.Companion.production(
     application: Application,
     groups: FileGroupStore,
     receipts: GmsOperationReceiptStore = SharedPreferencesGmsOperationReceiptStore(application),
+    provisionalBinding: (String) -> Int? = { null },
 ): AndroidGmsOperations {
     val artifactProvider = PinnedMicrogArtifactProvider(
         source = AssetMicrogArtifactSource(application),
         stagingRoot = File(application.filesDir, "microg-artifact-staging").toPath(),
     )
     val runtime = AndroidGmsRuntimeAdapter(
-        bindings = fileGroupBindingResolver(groups),
+        bindings = GmsGroupBindingResolver { id ->
+            fileGroupBindingResolver(groups).virtualUserId(id) ?: provisionalBinding(id)?.takeIf { it > 0 }
+        },
         artifacts = GmsArtifactStageProvider.pinned(artifactProvider),
         engine = VirtualCoreGmsRuntimeGateway(),
         receipts = receipts,

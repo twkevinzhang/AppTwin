@@ -128,7 +128,7 @@ class SpaceArchiveCodecTest {
     @Test
     fun `manifest rejects unsupported schema invalid UUID package and state`() {
         val mutations = listOf<(String) -> String>(
-            { it.replace("\"schemaVersion\":1", "\"schemaVersion\":2") },
+            { it.replace("\"schemaVersion\":2", "\"schemaVersion\":1") },
             { it.replace(ARCHIVE_ID, "not-a-uuid") },
             { it.replace("jp.naver.line.android", "invalid-package") },
             { it.replace("\"state\":\"ENABLED\"", "\"state\":\"UNKNOWN\"") },
@@ -229,6 +229,18 @@ class SpaceArchiveCodecTest {
         assertEquals(listOf("payload/user/state.txt"), restored.files.map(SpaceArchiveFile::path))
     }
 
+    @Test
+    fun `general space backup does not claim LINE keyspace`() {
+        val empty = manifest().copy(apps = listOf(manifest().apps.single().copy(
+            packageName = "org.apptwin.permissionprobe")), custodianKeyspaceId = "")
+        val bytes = ByteArrayOutputStream().also { SpaceArchiveWriter.write(it, empty, emptyList()) }.toByteArray()
+        val root = Files.createTempDirectory("general-backup").toFile()
+        assertEquals(empty, SpaceArchiveReader().readAndExtract(ByteArrayInputStream(bytes), root.resolve("stage")).manifest)
+        assertThrows(SpaceArchiveException::class.java) {
+            SpaceArchiveWriter.write(ByteArrayOutputStream(), empty.copy(custodianKeyspaceId = KEYSPACE_ID), emptyList())
+        }
+    }
+
     private fun validArchive(payload: ByteArray): ByteArray {
         val workspace = Files.createTempDirectory("space-archive-fixture").toFile()
         val root = workspace.resolve("user").apply { mkdirs() }
@@ -255,7 +267,6 @@ class SpaceArchiveCodecTest {
                 revisionId = "26.13.0-123-deadbeef",
             ),
         ),
-        gmsEnabled = true,
         custodianKeyspaceId = KEYSPACE_ID,
     )
 

@@ -27,7 +27,6 @@ import org.apptwin.groups.GroupHealth
 import org.apptwin.groups.GroupReconciliationResult
 import org.apptwin.gms.GmsGroupProductState
 import org.apptwin.gms.GmsStartupResult
-import org.apptwin.gms.usecases.GmsLifecycleResult
 import org.apptwin.operations.OperationRecord
 import org.apptwin.permissions.ClonePermissionSummary
 import org.apptwin.repair.RepairExecutionResult
@@ -42,9 +41,8 @@ import org.apptwin.spaces.SpaceStatePolicy
 import org.apptwin.usecases.ClearCloneStorageResult
 import org.apptwin.usecases.ClearSpaceStorageResult
 
-enum class MainDestination { HOME, SETTINGS }
+enum class MainDestination { HOME, SETTINGS, SPACE_DETAILS }
 
-enum class GmsBusyAction { ENABLE, DISABLE, RESET }
 
 private const val SOURCE_SYNC_PENDING = "正在同步"
 
@@ -87,6 +85,12 @@ data class GroupItem(
 
 data class MainUiState(
     val destination: MainDestination = MainDestination.HOME,
+    val selectedSpaceId: String? = null,
+    val spaceDetails: SpaceDetails? = null,
+    val spaceDetailsError: String? = null,
+    val isLoadingSpaceDetails: Boolean = false,
+    val createSpaceError: String? = null,
+    val isSpaceActionBusy: Boolean = false,
     val apps: List<AppItem> = emptyList(),
     val groups: List<GroupItem> = emptyList(),
     val appPickerGroupId: String? = null,
@@ -95,15 +99,14 @@ data class MainUiState(
     val isCreatingGroup: Boolean = false,
     val busyPackageName: String? = null,
     val busyGroupId: String? = null,
-    val gmsBusyGroupId: String? = null,
-    val gmsBusyAction: GmsBusyAction? = null,
     val launchingAppKey: String? = null,
     val uninstallingAppKey: String? = null,
     val clearingStorageAppKey: String? = null,
     val clearingStorageGroupId: String? = null,
     val archiveBusyGroupId: String? = null,
-    val isImportingArchive: Boolean = false,
+    val isCreatingSpaceFromBackup: Boolean = false,
     val archiveCompression: SpaceArchiveCompression = SpaceArchiveCompression.MEDIUM,
+    val globalBackupLocation: String? = null,
     val shortcutAppKey: String? = null,
     val repairingAppKey: String? = null,
     val allFilesGranted: Boolean = false,
@@ -158,7 +161,7 @@ internal data class SpaceArchiveExportResult(
     val bytesWritten: Long,
 )
 
-internal data class SpaceArchiveImportResult(
+internal data class CreateSpaceFromBackupResult(
     val group: Group,
 )
 
@@ -166,6 +169,14 @@ internal data class SpaceArchiveImportResult(
 internal interface MainOperations {
     suspend fun loadGroupSnapshot(): MainGroupSnapshot
     suspend fun refreshSnapshot(groups: MainGroupSnapshot): MainRefreshSnapshot
+    suspend fun globalBackupLocation(): String? = null
+    suspend fun loadSpaceDetails(groupId: String): SpaceDetails? = null
+    suspend fun addSpaceAccount(groupId: String, type: String) = Unit
+    suspend fun synchronizeSpaceAccount(groupId: String, account: SpaceAccountEntry, authority: String): String = "同步未支援"
+    suspend fun removeSpaceAccount(groupId: String, account: SpaceAccountEntry): AccountRemovalResult = AccountRemovalResult.REJECTED
+    suspend fun deleteBackup(id: String) = Unit
+    suspend fun setGlobalBackupLocation(uri: Uri) = Unit
+    suspend fun exportToGlobalLocation(groupId: String, compression: SpaceArchiveCompression): SpaceArchiveExportResult = error("尚未設定備份位置")
     suspend fun findGroup(groupId: String): Group?
     suspend fun createGroup(name: String): Group
     suspend fun renameGroup(groupId: String, name: String): Group?
@@ -175,7 +186,7 @@ internal interface MainOperations {
         destination: Uri,
         compression: SpaceArchiveCompression,
     ): SpaceArchiveExportResult
-    suspend fun importSpace(source: Uri): SpaceArchiveImportResult
+    suspend fun createSpaceFromBackup(source: Uri): CreateSpaceFromBackupResult
     suspend fun addAppToGroup(groupId: String, packageName: String): Group
     suspend fun launchGroupApp(item: GroupAppItem): RuntimeLaunchResult
     suspend fun uninstallGroupApp(item: GroupAppItem): GroupAppRemovalResult
@@ -195,10 +206,6 @@ internal interface MainOperations {
     suspend fun reconcileAppRemovals()
     suspend fun reconcileApplicationOperations()
     suspend fun reconcileGms(): GmsStartupResult
-    suspend fun grantGmsConsent(groupId: String)
-    suspend fun enableGms(groupId: String): GmsLifecycleResult
-    suspend fun disableGms(groupId: String): GmsLifecycleResult
-    suspend fun resetGms(groupId: String, reenable: Boolean): GmsLifecycleResult
 }
 
 internal interface OnboardingStore {
@@ -271,6 +278,7 @@ class MainViewModel internal constructor(
             destination = savedStateHandle.get<String>(DESTINATION_KEY)
                 ?.let(::destinationFromSavedState)
                 ?: MainDestination.HOME,
+            selectedSpaceId = savedStateHandle.get<String>(SELECTED_SPACE_KEY),
             appPickerGroupId = savedStateHandle.get<String>(APP_PICKER_GROUP_KEY),
             showOnboarding = !onboardingStore.isCompleted(),
             archiveCompression = archiveExportSettingsStore.load(),
@@ -279,10 +287,69 @@ class MainViewModel internal constructor(
         private set
 
     init {
+        if (uiState.destination == MainDestination.SPACE_DETAILS) {
+            if (uiState.selectedSpaceId == null) navigate(MainDestination.HOME) else refreshSpaceDetails()
+        }
         reconcileAndRefresh()
     }
 
+    fun closeSpaceDetails() { navigate(MainDestination.HOME) }
+    fun dismissCreateSpaceError() { uiState = uiState.copy(createSpaceError = null) }
+    fun openSpaceDetails(groupId: String) {
+        savedStateHandle[SELECTED_SPACE_KEY] = groupId
+        savedStateHandle[DESTINATION_KEY] = MainDestination.SPACE_DETAILS.name
+        uiState = uiState.copy(selectedSpaceId = groupId, destination = MainDestination.SPACE_DETAILS, spaceDetails = null, spaceDetailsError = null)
+        refreshSpaceDetails()
+    }
+    fun refreshSpaceDetails() {
+        val id = uiState.selectedSpaceId ?: return
+        uiState = uiState.copy(isLoadingSpaceDetails = true, spaceDetailsError = null)
+        viewModelScope.launch {
+            val result = runCatching { withContext(ioDispatcher) { operations.loadSpaceDetails(id) } }
+            if (uiState.selectedSpaceId == id) {
+                if (result.isSuccess && result.getOrNull() == null) {
+                    savedStateHandle.remove<String>(SELECTED_SPACE_KEY)
+                    uiState = uiState.copy(selectedSpaceId = null, spaceDetails = null, isLoadingSpaceDetails = false)
+                    navigate(MainDestination.HOME)
+                } else uiState = uiState.copy(spaceDetails = result.getOrNull(), isLoadingSpaceDetails = false, spaceDetailsError = result.exceptionOrNull()?.userMessage())
+            }
+            result.onFailure { showMessage(it.userMessage()) }
+        }
+    }
+    fun addSpaceAccount(type: String) = spaceAction { id -> operations.addSpaceAccount(id, type) }
+    fun synchronizeSpaceAccount(account: SpaceAccountEntry, authority: String) = spaceAction { id -> showMessage(operations.synchronizeSpaceAccount(id, account, authority)) }
+    fun removeSpaceAccount(account: SpaceAccountEntry) = spaceAction { id ->
+        when (operations.removeSpaceAccount(id, account)) {
+            AccountRemovalResult.REMOVED -> showMessage("帳號已移除")
+            AccountRemovalResult.CONFIRMATION_OPENED -> showMessage("已開啟帳號移除確認")
+            AccountRemovalResult.REJECTED -> showMessage("帳號服務未允許移除")
+        }
+    }
+    fun deleteBackup(id: String) = spaceAction { operations.deleteBackup(id) }
+    fun setGlobalBackupLocation(uri: Uri) {
+        viewModelScope.launch { runCatching { withContext(ioDispatcher) { operations.setGlobalBackupLocation(uri); operations.globalBackupLocation() } }.onSuccess { uiState = uiState.copy(globalBackupLocation = it) }.onFailure { showMessage(it.userMessage()) }; refreshSpaceDetails() }
+    }
+    fun exportToGlobalLocation(groupId: String) {
+        if (uiState.isSpaceActionBusy) return
+        uiState = uiState.copy(isSpaceActionBusy = true)
+        viewModelScope.launch { runCatching { withContext(ioDispatcher) { operations.exportToGlobalLocation(groupId, uiState.archiveCompression) } }.onSuccess { showMessage("已建立備份"); refreshSpaceDetails() }.onFailure { showMessage(it.userMessage()) }; uiState = uiState.copy(isSpaceActionBusy = false) }
+    }
+    fun setSpacePermission(packageName: String, permission: String, granted: Boolean) {
+        val item = uiState.groups.firstOrNull { it.groupId == uiState.selectedSpaceId }?.apps?.firstOrNull { it.app.packageName == packageName } ?: return
+        spaceAction { check(operations.setClonePermission(item, permission, granted)) { "權限設定失敗" } }
+    }
+    private fun spaceAction(action: suspend (String) -> Unit) {
+        val id = uiState.selectedSpaceId ?: return
+        if (uiState.isSpaceActionBusy) return
+        uiState = uiState.copy(isSpaceActionBusy = true)
+        viewModelScope.launch { try { runCatching { withContext(ioDispatcher) { action(id) } }.onFailure { showMessage(it.userMessage()) }; refreshSpaceDetails() } finally { uiState = uiState.copy(isSpaceActionBusy = false) } }
+    }
+
     fun navigate(destination: MainDestination) {
+        if (destination == MainDestination.SETTINGS) viewModelScope.launch {
+            val location = withContext(ioDispatcher) { operations.globalBackupLocation() }
+            uiState = uiState.copy(globalBackupLocation = location)
+        }
         pickerRequestGeneration += 1
         savedStateHandle[DESTINATION_KEY] = destination.name
         savedStateHandle[APP_PICKER_GROUP_KEY] = null
@@ -511,10 +578,20 @@ class MainViewModel internal constructor(
         )
     }
 
+    private fun reconcileGoogleAfterCommit() {
+        viewModelScope.launch {
+            // Messaging is separate from verified local space initialization. Its supervisor
+            // reports connection evidence and bounded failures; it never rolls back committed data.
+            runCatching { withContext(ioDispatcher) { operations.reconcileGms() } }
+            refresh()
+        }
+    }
+
     fun createGroup(name: String) {
         if (
             uiState.isCreatingGroup ||
-            uiState.isImportingArchive ||
+            uiState.isSpaceActionBusy ||
+            uiState.isCreatingSpaceFromBackup ||
             uiState.archiveBusyGroupId != null
         ) return
         uiState = uiState.copy(isCreatingGroup = true)
@@ -526,12 +603,12 @@ class MainViewModel internal constructor(
             result.onSuccess { group ->
                 showMessage("已建立「${group.name}」")
                 refresh()
-            }.onFailure { error -> showMessage("建立群組失敗：${error.userMessage()}") }
+                reconcileGoogleAfterCommit()
+            }.onFailure { error -> uiState = uiState.copy(createSpaceError = "建立空間失敗：${error.userMessage()}") }
         }
     }
 
     fun renameGroup(groupId: String, name: String) {
-        if (uiState.gmsBusyGroupId == groupId) return
         viewModelScope.launch {
             val result = runCatching {
                 withContext(ioDispatcher) { operations.renameGroup(groupId, name) }
@@ -550,8 +627,8 @@ class MainViewModel internal constructor(
         if (
             uiState.busyGroupId != null ||
             uiState.archiveBusyGroupId != null ||
-            uiState.isImportingArchive ||
-            uiState.gmsBusyGroupId == groupId ||
+            uiState.isCreatingSpaceFromBackup ||
+
             uiState.uninstallingAppKey != null ||
             uiState.clearingStorageAppKey != null ||
             uiState.clearingStorageGroupId != null
@@ -575,6 +652,11 @@ class MainViewModel internal constructor(
                     }
                 }
                 if (deletion is DeleteGroupResult.Deleted) {
+                    if (uiState.selectedSpaceId == groupId) {
+                        savedStateHandle.remove<String>(SELECTED_SPACE_KEY)
+                        uiState = uiState.copy(selectedSpaceId = null, spaceDetails = null, spaceDetailsError = null)
+                        navigate(MainDestination.HOME)
+                    }
                     if (uiState.appPickerGroupId == groupId) closeAppPicker()
                 }
                 refresh()
@@ -588,7 +670,7 @@ class MainViewModel internal constructor(
     fun exportSpace(groupId: String, destination: Uri) {
         if (
             uiState.archiveBusyGroupId != null ||
-            uiState.isImportingArchive ||
+            uiState.isCreatingSpaceFromBackup ||
             uiState.busyGroupId != null
         ) return
         val compression = uiState.archiveCompression
@@ -616,44 +698,28 @@ class MainViewModel internal constructor(
         uiState = uiState.copy(archiveCompression = compression)
     }
 
-    fun importSpace(source: Uri) {
+    fun createSpaceFromBackup(source: Uri) {
         if (
+            uiState.isCreatingGroup ||
+            uiState.isSpaceActionBusy ||
             uiState.archiveBusyGroupId != null ||
-            uiState.isImportingArchive ||
+            uiState.isCreatingSpaceFromBackup ||
             uiState.busyGroupId != null
         ) return
-        uiState = uiState.copy(isImportingArchive = true)
+        uiState = uiState.copy(isCreatingSpaceFromBackup = true)
         viewModelScope.launch {
             val result = runCatching {
-                withContext(ioDispatcher) { operations.importSpace(source) }
+                withContext(ioDispatcher) { operations.createSpaceFromBackup(source) }
             }
-            uiState = uiState.copy(isImportingArchive = false)
-            result.onSuccess { imported ->
+            uiState = uiState.copy(isCreatingSpaceFromBackup = false)
+            result.onSuccess { created ->
                 navigate(MainDestination.HOME)
-                showMessage("已從存檔建立新的「${imported.group.name}」")
+                showMessage("已從備份建立新的「${created.group.name}」")
+                reconcileGoogleAfterCommit()
             }.onFailure { error ->
-                showMessage("匯入存檔失敗：${error.userMessage()}")
+                uiState = uiState.copy(createSpaceError = "從備份建立空間失敗：${error.userMessage()}")
             }
             refresh()
-        }
-    }
-
-    fun enableGms(groupId: String, grantConsent: Boolean = false) {
-        runGmsAction(groupId, GmsBusyAction.ENABLE, "啟用") {
-            if (grantConsent) operations.grantGmsConsent(groupId)
-            operations.enableGms(groupId)
-        }
-    }
-
-    fun disableGms(groupId: String) {
-        runGmsAction(groupId, GmsBusyAction.DISABLE, "停用") {
-            operations.disableGms(groupId)
-        }
-    }
-
-    fun resetGms(groupId: String, reenable: Boolean) {
-        runGmsAction(groupId, GmsBusyAction.RESET, "重設") {
-            operations.resetGms(groupId, reenable)
         }
     }
 
@@ -665,7 +731,6 @@ class MainViewModel internal constructor(
             uiState.launchingAppKey != null
         ) return
         val groupId = uiState.appPickerGroupId ?: return
-        if (uiState.gmsBusyGroupId == groupId) return
         if (!appLaunchMutex.tryLock()) return
         uiState = uiState.copy(busyPackageName = app.entry.packageName)
         viewModelScope.launch {
@@ -787,8 +852,7 @@ class MainViewModel internal constructor(
             uiState.launchingAppKey != null ||
             uiState.clearingStorageGroupId != null ||
             uiState.busyGroupId != null ||
-            uiState.busyPackageName != null ||
-            uiState.gmsBusyGroupId == item.groupId
+            uiState.busyPackageName != null
         ) return
         uiState = uiState.copy(uninstallingAppKey = item.launchKey)
         viewModelScope.launch {
@@ -817,8 +881,7 @@ class MainViewModel internal constructor(
             uiState.uninstallingAppKey != null ||
             uiState.launchingAppKey != null ||
             uiState.busyGroupId != null ||
-            uiState.busyPackageName != null ||
-            uiState.gmsBusyGroupId == item.groupId
+            uiState.busyPackageName != null
         ) return
         uiState = uiState.copy(clearingStorageAppKey = item.launchKey)
         viewModelScope.launch {
@@ -852,8 +915,7 @@ class MainViewModel internal constructor(
             uiState.uninstallingAppKey != null ||
             uiState.launchingAppKey != null ||
             uiState.busyGroupId != null ||
-            uiState.busyPackageName != null ||
-            uiState.gmsBusyGroupId != null
+            uiState.busyPackageName != null
         ) return
         uiState = uiState.copy(clearingStorageGroupId = groupId)
         viewModelScope.launch {
@@ -1183,46 +1245,7 @@ class MainViewModel internal constructor(
             uiState.clearingStorageAppKey != null ||
             uiState.clearingStorageGroupId != null ||
             uiState.busyGroupId != null ||
-            uiState.busyPackageName != null ||
-            uiState.gmsBusyGroupId == groupId
-
-    private fun runGmsAction(
-        groupId: String,
-        busyAction: GmsBusyAction,
-        actionLabel: String,
-        action: suspend () -> GmsLifecycleResult,
-    ) {
-        if (
-            uiState.gmsBusyGroupId != null ||
-            uiState.busyGroupId != null ||
-            uiState.clearingStorageGroupId != null
-        ) return
-        uiState = uiState.copy(gmsBusyGroupId = groupId, gmsBusyAction = busyAction)
-        viewModelScope.launch {
-            val result = runCatching { withContext(ioDispatcher) { action() } }
-            uiState = uiState.copy(gmsBusyGroupId = null, gmsBusyAction = null)
-            result.onSuccess { lifecycle ->
-                showMessage(gmsResultMessage(actionLabel, lifecycle))
-                refresh()
-            }.onFailure { error ->
-                showMessage("$actionLabel Google 服務相容功能失敗：${error.userMessage()}")
-                refresh()
-            }
-        }
-    }
-
-    private fun gmsResultMessage(actionLabel: String, result: GmsLifecycleResult): String =
-        when (result) {
-            is GmsLifecycleResult.Completed -> "已${actionLabel} Google 服務相容功能"
-            is GmsLifecycleResult.AlreadySatisfied -> "Google 服務相容功能已是要求的狀態"
-            GmsLifecycleResult.ConsentRequired -> "啟用前必須同意 Google 網路連線說明"
-            GmsLifecycleResult.TrustedReleaseUnavailable ->
-                "目前沒有可用且受信任的 microG 版本"
-            GmsLifecycleResult.DestructiveConfirmationRequired -> "重設前必須確認清除資料"
-            is GmsLifecycleResult.RetryScheduled ->
-                "作業暫未完成，稍後會重試（${result.failureCode}）"
-            is GmsLifecycleResult.Rejected -> "作業遭拒（${result.failureCode}）"
-        }
+            uiState.busyPackageName != null
 
     private fun launchStatus(versionCode: Long?): String = when {
         versionCode == null -> "來源 App 已移除"
@@ -1270,6 +1293,7 @@ class MainViewModel internal constructor(
     }
 
     private companion object {
+        const val SELECTED_SPACE_KEY = "main.selectedSpace"
         const val DESTINATION_KEY = "main.destination"
         const val APP_PICKER_GROUP_KEY = "main.appPickerGroupId"
 

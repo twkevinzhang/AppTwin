@@ -78,8 +78,8 @@ class MicrogGroupCompatibilityE2eTest {
         val userB = groupBWithFixture.environmentId()
         assertTrue("Group bindings must be positive and isolated", userA > 0 && userB > 0 && userA != userB)
 
-        initialOperations.grantGmsConsent(groupA.id)
-        assertLifecycleCompleted(initialOperations.enableGms(groupA.id), "enable A")
+        internalGmsLifecycleFixture().grantNetworkConsent(groupA.id)
+        assertLifecycleCompleted(internalGmsLifecycleFixture().enable(groupA.id), "enable A")
         assertTrue(VirtualCore.get().isAppInstalledAsUser(userA, GMS_PACKAGE))
         assertTrue(VirtualCore.get().isAppInstalledAsUser(userA, COMPANION_PACKAGE))
         assertFalse(VirtualCore.get().isAppInstalledAsUser(userB, GMS_PACKAGE))
@@ -133,13 +133,13 @@ class MicrogGroupCompatibilityE2eTest {
         )
         assertTrue(VirtualCore.get().hasTrustedGmsBackgroundStateForUser(userA))
 
-        assertLifecycleCompleted(initialOperations.disableGms(groupA.id), "disable A")
+        assertLifecycleCompleted(internalGmsLifecycleFixture().disable(groupA.id), "disable A")
         assertFalse(VirtualCore.get().isAppInstalledAsUser(userA, GMS_PACKAGE))
         assertFalse(VirtualCore.get().isAppInstalledAsUser(userA, COMPANION_PACKAGE))
         assertTrue("disable must preserve GmsCore private state", gmsSentinel.isFile)
         assertFalse("disable must clear jobs, notifications and pending ownership",
             VirtualCore.get().hasTrustedGmsBackgroundStateForUser(userA))
-        assertLifecycleCompleted(initialOperations.enableGms(groupA.id), "re-enable A")
+        assertLifecycleCompleted(internalGmsLifecycleFixture().enable(groupA.id), "re-enable A")
         assertTrue("re-enable must retain the existing private state", gmsSentinel.isFile)
         assertEquals(
             1,
@@ -154,9 +154,9 @@ class MicrogGroupCompatibilityE2eTest {
         )
 
         assertLifecycleEventuallyCompleted(
-            initial = initialOperations.resetGms(groupA.id, reenable = false),
+            initial = internalGmsLifecycleFixture().reset(groupA.id, reenable = false),
             action = "reset A",
-            retry = { initialOperations.resetGms(groupA.id, reenable = false) },
+            retry = { internalGmsLifecycleFixture().reset(groupA.id, reenable = false) },
             diagnostic = { resetDiagnostic(userA, accountFixture.account.type) },
         )
         assertFalse(VirtualCore.get().isAppInstalledAsUser(userA, GMS_PACKAGE))
@@ -180,7 +180,7 @@ class MicrogGroupCompatibilityE2eTest {
         assertEquals(bProbe.sentinel, awaitProbeResults(userB).sentinel)
 
         // Recreate sensitive package-owned state so Group deletion, not reset, owns the next gate.
-        assertLifecycleCompleted(initialOperations.enableGms(groupA.id), "enable A before delete")
+        assertLifecycleCompleted(internalGmsLifecycleFixture().enable(groupA.id), "enable A before delete")
         val deleteAccount = addOwnedAccountAndToken(userA, "before-delete")
         writePrivateSentinel(gmsSentinelFile(userA))
         VNotificationManager.get().addNotification(
@@ -327,7 +327,7 @@ class MicrogGroupCompatibilityE2eTest {
         operations: AndroidMainOperations,
         groupId: String,
     ) {
-        operations.grantGmsConsent(groupId)
+        internalGmsLifecycleFixture().grantNetworkConsent(groupId)
         val source = materializedMicrogSource()
         RandomAccessFile(source, "rw").use { file ->
             val offset = file.length() - 1
@@ -337,7 +337,7 @@ class MicrogGroupCompatibilityE2eTest {
                 file.seek(offset)
                 file.writeByte(original.toInt() xor 0x01)
                 file.fd.sync()
-                val result = operations.enableGms(groupId)
+                val result = internalGmsLifecycleFixture().enable(groupId)
                 assertTrue("tampered pinned artifact must fail terminally", result is GmsLifecycleResult.Rejected)
                 assertEquals(
                     "ARTIFACT_APK_DIGEST_MISMATCH",

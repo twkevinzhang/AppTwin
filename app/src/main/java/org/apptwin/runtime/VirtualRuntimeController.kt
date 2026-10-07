@@ -96,11 +96,8 @@ class VirtualRuntimeController internal constructor(
             DaemonWorkloadAuthorization.isVisibleSessionReady(appContext)
         },
         refreshDaemonFromVisibleHost = DaemonWorkloadAuthorization::startFromVisibleHost,
-        awaitDaemonReady = { observedReopenEpoch, timeoutMs ->
-            VActivityManager.get().awaitDaemonWorkloadGateOpenAfter(
-                observedReopenEpoch,
-                timeoutMs,
-            )
+        awaitDaemonReady = { _, timeoutMs ->
+            DaemonWorkloadAuthorization.awaitVisibleSessionReady(appContext, timeoutMs)
         },
         dispatchToMain = { runnable -> mainHandler.post(runnable) },
         isMainThread = { Looper.myLooper() == Looper.getMainLooper() },
@@ -165,19 +162,27 @@ class VirtualRuntimeController internal constructor(
         return VDeviceManager.get().getDeviceInfo(binding.internalId)
     }
 
-    fun restoreDeviceInfo(binding: EnvironmentBinding, deviceInfo: VDeviceInfo) {
-        require(binding.internalId > 0) { "預設引擎環境不可還原" }
+    fun hydrateDeviceInfo(binding: EnvironmentBinding, deviceInfo: VDeviceInfo) {
+        require(binding.internalId > 0) { "預設引擎環境不可載入備份" }
         VirtualCore.get().waitForEngine()
         VDeviceManager.get().remote.updateDeviceInfo(binding.internalId, deviceInfo)
     }
 
-    /** Installs the archived package binding without starting guest code before data restore. */
-    fun preparePackageForRestore(group: Group, app: GroupApp) {
+    /** Installs the archived package binding without starting guest code before backup data hydration. */
+    fun preparePackageFromBackup(group: Group, app: GroupApp) = preparePackageBinding(group, app)
+
+    /** Binds an already authorized member revision; never starts guest code or opens workload gates. */
+    fun preparePackageForPermissions(group: Group, app: GroupApp) = preparePackageBinding(group, app)
+
+    /** Account authenticators and sync adapters must resolve this space's current authorized code. */
+    fun preparePackageForAccounts(group: Group, app: GroupApp) = preparePackageBinding(group, app)
+
+    private fun preparePackageBinding(group: Group, app: GroupApp) {
         require(group.contains(app.packageName)) { "GroupApp does not belong to this Group" }
         val binding = requireHealthyEnvironment(group)
         custodianKeyspaces.prepare(group, app)
         val revision = requireNotNull(revisionProvider.activeRuntimeRevision(app.packageName)) {
-            "沒有可還原的 active revision：${app.packageName}"
+            "沒有可綁定的 active revision：${app.packageName}"
         }
         val core = VirtualCore.get()
         core.waitForEngine()
@@ -186,7 +191,7 @@ class VirtualRuntimeController internal constructor(
             .synchronize(revision, binding.internalId)
         markGuestCodeReadOnly(core, app.packageName)
         check(core.isAppInstalledAsUser(binding.internalId, app.packageName)) {
-            "無法建立 ${app.packageName} 的還原套件綁定"
+            "無法建立 ${app.packageName} 的套件綁定"
         }
     }
 

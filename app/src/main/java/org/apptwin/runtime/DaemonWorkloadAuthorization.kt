@@ -9,6 +9,7 @@ import java.util.UUID
 import org.apptwin.gms.FileGmsProfileRepository
 import org.apptwin.gms.model.GmsDesiredState
 import org.apptwin.groups.FileGroupStore
+import org.apptwin.groups.GroupHealth
 
 /** Exact durable GMS workload that the virtual-runtime daemon may recover. */
 internal object DaemonWorkloadAuthorization {
@@ -31,13 +32,15 @@ internal object DaemonWorkloadAuthorization {
 
         val groups = FileGroupStore(appContext).loadSnapshot()
         if (groups.issues.isNotEmpty()) return null
-        val bindingsByGroupId = groups.groups.associate { group ->
+        val healthyGroups = groups.groups.filter { it.health == GroupHealth.HEALTHY }
+        val healthByGroupId = groups.groups.associate { it.id to it.health }
+        val bindingsByGroupId = healthyGroups.associate { group ->
             group.id to group.environmentBinding?.internalId
         }
         resolveEnabledVirtualUserIds(
             durableProfiles
                 .asSequence()
-                .filter { profile -> profile.desiredState == GmsDesiredState.ENABLED }
+                .filter { profile -> profile.desiredState == GmsDesiredState.ENABLED && allowsGroupWorkload(profile.groupId.value, healthByGroupId) }
                 .map { profile -> profile.groupId.value }
                 .toSet(),
             bindingsByGroupId,
@@ -53,6 +56,9 @@ internal object DaemonWorkloadAuthorization {
      * A missing or host-user binding makes the whole observation unreliable. Returning null keeps
      * callers from accidentally replacing a known-good runtime allowlist with partial state.
      */
+    internal fun allowsGroupWorkload(groupId: String, healthByGroupId: Map<String, GroupHealth>): Boolean =
+        healthByGroupId[groupId]?.let { it == GroupHealth.HEALTHY } ?: true
+
     internal fun resolveEnabledVirtualUserIds(
         enabledGroupIds: Set<String>,
         bindingsByGroupId: Map<String, Int?>,
@@ -72,6 +78,7 @@ internal object DaemonWorkloadAuthorization {
             visibleAuthorization = null
             return
         }
+        android.util.Log.i("AppTwinEngine", "daemon-visible-start enabled=true")
         val generationBefore = DaemonAuthorizationGeneration.current(appContext.filesDir)
         val enabledUsers = loadEnabledVirtualUserIds(context)
         val generationAfter = DaemonAuthorizationGeneration.current(appContext.filesDir)
@@ -102,6 +109,21 @@ internal object DaemonWorkloadAuthorization {
      * Any repository mutation, engine restart, closed gate, in-flight reconciliation, or changed
      * desired-user set makes the runtime reject the token and falls back to the full handshake.
      */
+    /** Wait for the exact new token rather than requiring an already-open gate to reopen. */
+    fun awaitVisibleSessionReady(context: Context, timeoutMillis: Long): Boolean {
+        require(timeoutMillis in 0..5_000L)
+        val expected = visibleAuthorization ?: return false
+        val deadline = android.os.SystemClock.elapsedRealtime() + timeoutMillis
+        while (visibleAuthorization === expected) {
+            if (isVisibleSessionReady(context)) return visibleAuthorization === expected
+            val remaining = deadline - android.os.SystemClock.elapsedRealtime()
+            if (remaining <= 0L) return false
+            try { Thread.sleep(minOf(25L, remaining)) }
+            catch (_: InterruptedException) { Thread.currentThread().interrupt(); return false }
+        }
+        return false
+    }
+
     fun isVisibleSessionReady(context: Context): Boolean {
         if (!BackgroundExecutionSettings.isEnabled(context)) return false
         val authorization = visibleAuthorization ?: return false

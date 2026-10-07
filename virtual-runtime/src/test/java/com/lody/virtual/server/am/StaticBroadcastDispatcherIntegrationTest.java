@@ -11,6 +11,25 @@ import static org.junit.Assert.assertTrue;
 
 public class StaticBroadcastDispatcherIntegrationTest {
     @Test
+    public void lateUserRemovalBroadcastCannotStartOrDispatchToDeletedUser() throws Exception {
+        String source = read("src/main/java/com/lody/virtual/server/am/VActivityManagerService.java");
+        int start = source.indexOf("private ProcessRecord startProcessWithGateHeld(");
+        int firstCheck = source.indexOf("isRuntimeAvailable(userId)", start);
+        int query = source.indexOf("getApplicationInfo(packageName, 0, userId)", start);
+        int catchRace = source.indexOf("catch (SecurityException staleUser)", query);
+        assertTrue(firstCheck > start && firstCheck < query);
+        assertTrue(catchRace > query);
+        assertTrue(source.indexOf("isRuntimeAvailable(userId)", catchRace) > catchRace);
+        int dispatch = source.indexOf("boolean dispatchStaticBroadcastWithAcquiredGate(");
+        assertTrue(source.indexOf("isRuntimeAvailable(userId)", dispatch)
+                < source.indexOf("startProcessIfNeedLocked(info.processName", dispatch));
+        int enqueue = source.indexOf("mStaticBroadcastDispatcher.enqueue(", dispatch);
+        assertTrue(source.indexOf("isRuntimeAvailable(userId)", enqueue) > enqueue);
+        String users = read("src/main/java/com/lody/virtual/server/pm/VUserManagerService.java");
+        assertTrue(users.contains("user != null && !user.partial && !mRemovingUserIds.contains(userId)"));
+    }
+
+    @Test
     public void guestDispatchAndAckAreOnewayAndGenerationBound() throws Exception {
         String clientAidl = read("src/main/aidl/com/lody/virtual/client/IVClient.aidl");
         String managerAidl = read("src/main/aidl/com/lody/virtual/server/IActivityManager.aidl");

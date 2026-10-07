@@ -24,6 +24,19 @@ import org.junit.Test
 
 class FileGmsRepositoriesTest {
     @Test
+    fun `online observation preserves authorization but desired state change invalidates it`() {
+        val root = rootWithGroup()
+        val store = FileGmsProfileRepository(root, {})
+        val initial = GmsProfile.disabled(groupId)
+        store.save(initial)
+        val authorization = org.apptwin.runtime.DaemonAuthorizationGeneration.current(root)
+        store.save(initial.copy(observedState = GmsObservedState.ENABLING, generation = initial.generation + 1))
+        assertEquals(authorization,org.apptwin.runtime.DaemonAuthorizationGeneration.current(root))
+        store.save(initial.copy(desiredState = GmsDesiredState.ENABLED))
+        assertFalse(authorization == org.apptwin.runtime.DaemonAuthorizationGeneration.current(root))
+    }
+
+    @Test
     fun `profile survives recreation under group private data root`() {
         val root = rootWithGroup()
         val syncs = mutableListOf<String>()

@@ -30,6 +30,30 @@ class AndroidGmsRuntimeAdapterTest {
     private val operationB = "00000000-0000-0000-0000-000000000002"
 
     @Test
+    fun `offline space initialization proves local state without starting messaging`() {
+        val fixture = Fixture()
+        fixture.engine.cloudMessagingResults += RuntimeEngineResult.Retryable("CLOUD_MESSAGING_PROVISION_RETRYABLE")
+        val result = fixture.adapter.ensureSpaceInitialized(groupA,release(),operationA)
+        assertTrue(result is GmsRuntimeMutationResult.Applied)
+        assertTrue(fixture.engine.state(11).installed)
+        assertTrue(fixture.engine.state(11).privateState)
+        assertTrue(fixture.engine.cloudMessagingUsers.isEmpty())
+        assertFalse(fixture.adapter.observe(groupA).cloudMessaging.state == CloudMessagingState.CONNECTED)
+        val messaging = fixture.adapter.ensureEnabled(groupA,release(),operationB)
+        assertEquals(GmsRuntimeMutationResult.RetryableFailure("CLOUD_MESSAGING_PROVISION_RETRYABLE"),messaging)
+        assertEquals(listOf(11),fixture.engine.cloudMessagingUsers)
+    }
+
+    @Test
+    fun `offline space initialization does not ignore trusted package installation failure`() {
+        val fixture = Fixture()
+        fixture.engine.installResults += RuntimeEngineResult.Retryable("ENGINE_INSTALL_RETRYABLE")
+        assertEquals(GmsRuntimeMutationResult.RetryableFailure("ENGINE_INSTALL_RETRYABLE"),fixture.adapter.ensureSpaceInitialized(groupA,release(),operationA))
+        assertEquals(0,fixture.receipts.recordedCount)
+        assertTrue(fixture.engine.cloudMessagingUsers.isEmpty())
+    }
+
+    @Test
     fun `enabling A installs only A with exact runtime provenance`() {
         val fixture = Fixture()
 

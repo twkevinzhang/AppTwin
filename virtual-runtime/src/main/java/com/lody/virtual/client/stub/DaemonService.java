@@ -96,6 +96,7 @@ public class DaemonService extends Service {
     private boolean foreground;
     private volatile boolean destroyed;
     private final LatestRuntimeTaskExecutor reconciliationExecutor = new LatestRuntimeTaskExecutor();
+    private final LatestRuntimeTaskExecutor onlineRecoveryExecutor = new LatestRuntimeTaskExecutor();
     private final java.util.concurrent.atomic.AtomicLong reconciliationEpoch =
             new java.util.concurrent.atomic.AtomicLong();
     private boolean preexistingForegroundSessionOnCreate;
@@ -682,13 +683,22 @@ public class DaemonService extends Service {
                 if (users == null) {
                     VActivityManager.get().reconcileTrustedGmsCloudMessaging();
                 } else {
-                    accepted = VActivityManager.get().reconcileTrustedGmsCloudMessagingForUsers(users);
+                    accepted = activityManager != null && activityManager.reconcileDaemonLaunchLocally(users);
                 }
                 // A slow cold stub may finish after OFF, a newer visible start, or destruction.
                 // Only the current exact request may publish the launch fast-path token.
                 if (accepted && activityManager != null && launchToken != null
                         && isReconciliationCurrent(epoch)) {
                     activityManager.recordDaemonLaunchAuthorization(launchToken, users);
+                }
+                // Online recovery is separate from local launch authorization. Its existing
+                // supervisor owns bounded retries and truthful connection state.
+                if (accepted && activityManager != null && isReconciliationCurrent(epoch)) {
+                    onlineRecoveryExecutor.submit(() -> {
+                        if (isReconciliationCurrent(epoch)) {
+                            activityManager.recoverDaemonMessagingAfterLocalAuthorization(users);
+                        }
+                    });
                 }
                 android.util.Log.i("AppTwinEngine", "daemon-reconcile-complete durationMs="
                         + (SystemClock.elapsedRealtime() - startedAt)
@@ -790,6 +800,7 @@ public class DaemonService extends Service {
         destroyed = true;
         reconciliationEpoch.incrementAndGet();
         reconciliationExecutor.close();
+        onlineRecoveryExecutor.close();
         if (handler != null) {
             handler.removeCallbacks(workloadMonitor);
         }

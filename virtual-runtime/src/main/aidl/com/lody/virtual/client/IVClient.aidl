@@ -16,7 +16,7 @@ interface IVClient {
     oneway void scheduleNewIntent(in String creator, in IBinder token, in Intent intent,
             long processGeneration);
     oneway void finishActivity(in IBinder token, long processGeneration);
-    IBinder createProxyService(in ComponentName component, in IBinder binder);
+    IBinder createProxyService(in ComponentName component, in IBinder binder, in ServiceInfo registration);
     IBinder acquireProviderClient(in ProviderInfo info);
     IBinder getAppThread();
     IBinder getToken();

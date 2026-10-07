@@ -281,7 +281,7 @@ final class IsolatedGuestClient extends IVClient.Stub
     @Override public void scheduleNewIntent(String creator, IBinder token, Intent intent,
             long processGeneration) {}
     @Override public void finishActivity(IBinder token, long processGeneration) {}
-    @Override public IBinder createProxyService(ComponentName component, IBinder binder) {
+    @Override public IBinder createProxyService(ComponentName component, IBinder binder, ServiceInfo registration) {
         return binder;
     }
     @Override public IBinder acquireProviderClient(ProviderInfo info) { return null; }

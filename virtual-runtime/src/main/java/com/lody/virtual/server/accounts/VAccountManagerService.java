@@ -6,6 +6,7 @@ import android.accounts.AuthenticatorDescription;
 import android.accounts.IAccountAuthenticator;
 import android.accounts.IAccountAuthenticatorResponse;
 import android.accounts.IAccountManagerResponse;
+import android.app.IServiceConnection;
 import android.content.ComponentName;
 import android.content.Context;
 import android.content.Intent;
@@ -29,7 +30,9 @@ import android.util.SparseArray;
 import android.util.Xml;
 
 import com.lody.virtual.client.core.VirtualCore;
+import com.lody.virtual.client.hook.secondary.ServiceConnectionDelegate;
 import com.lody.virtual.helper.compat.AccountManagerCompat;
+import com.lody.virtual.helper.compat.CompatServiceConnection;
 import com.lody.virtual.helper.utils.AtomicFile;
 import com.lody.virtual.helper.utils.VLog;
 import com.lody.virtual.os.VBinder;
@@ -58,6 +61,10 @@ import java.util.HashSet;
 import java.util.Set;
 import java.util.Collections;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.ScheduledFuture;
+import java.util.concurrent.TimeUnit;
 
 import mirror.com.android.internal.R_Hide;
 
@@ -82,6 +89,12 @@ public class VAccountManagerService extends IAccountManager.Stub {
     private final LinkedList<AuthTokenRecord> authTokenRecords = new LinkedList<>();
     private final LinkedHashMap<String, Session> mSessions = new LinkedHashMap<>();
     private final SparseArray<AuthenticatorCache> authenticatorCachesByUserId = new SparseArray<>();
+    private final CacheGenerationFence authenticatorCacheGeneration = new CacheGenerationFence();
+    private final ScheduledExecutorService authenticatorBindRetries = Executors.newSingleThreadScheduledExecutor(r -> {
+        Thread thread = new Thread(r, "VA-auth-bind-retry");
+        thread.setDaemon(true);
+        return thread;
+    });
     private Context mContext = VirtualCore.get().getContext();
     private final AccountChangeRateState accountChangeRateState = new AccountChangeRateState();
 
@@ -700,17 +713,22 @@ public class VAccountManagerService extends IAccountManager.Stub {
 
             @Override
             public void run() throws RemoteException {
+                Log.i(TAG, "account-removal-request user=" + userId);
                 mAuthenticator.getAccountRemovalAllowed(this, account);
+                Log.i(TAG, "account-removal-request-returned user=" + userId);
             }
 
             @Override
             public void onResult(Bundle result) throws RemoteException {
+                Log.i(TAG, "account-removal-result user=" + userId + " active=" + isActiveIncarnation()
+                        + " boolean=" + (result != null && result.containsKey(AccountManager.KEY_BOOLEAN_RESULT))
+                        + " intent=" + (result != null && result.containsKey(AccountManager.KEY_INTENT)));
+                if (!isActiveIncarnation()) return;
+                if (result != null && result.containsKey(AccountManager.KEY_INTENT)) retainApprovalDeadline();
                 if (result != null && result.containsKey(AccountManager.KEY_BOOLEAN_RESULT)
                         && !result.containsKey(AccountManager.KEY_INTENT)) {
                     final boolean removalAllowed = result.getBoolean(AccountManager.KEY_BOOLEAN_RESULT);
-                    if (removalAllowed) {
-                        removeAccountInternal(userId, account);
-                    }
+                    if (!consumeRemovalApproval(account, removalAllowed)) return;
                     IAccountManagerResponse response = getResponseAndClose();
                     if (response != null) {
                         Log.v(TAG, getClass().getSimpleName() + " calling onResult() on response "
@@ -739,6 +757,13 @@ public class VAccountManagerService extends IAccountManager.Stub {
     }
 
     private boolean removeAccountInternal(int userId, Account account) {
+        boolean removed;
+        synchronized (accountsByUserId) { removed = removeAccountStateLocked(userId, account); }
+        if (removed) sendAccountsChangedBroadcast(userId);
+        return removed;
+    }
+
+    private boolean removeAccountStateLocked(int userId, Account account) {
         List<VAccount> accounts = accountsByUserId.get(userId);
         if (accounts != null) {
             Iterator<VAccount> iterator = accounts.iterator();
@@ -749,7 +774,6 @@ public class VAccountManagerService extends IAccountManager.Stub {
                         && TextUtils.equals(account.type, vAccount.type)) {
                     iterator.remove();
                     saveAllAccounts();
-                    sendAccountsChangedBroadcast(userId);
                     return true;
                 }
             }
@@ -1094,6 +1118,7 @@ public class VAccountManagerService extends IAccountManager.Stub {
 
     public void refreshAuthenticatorCache(String packageName) {
         synchronized (authenticatorCachesByUserId) {
+            authenticatorCacheGeneration.invalidate();
             authenticatorCachesByUserId.clear();
         }
     }
@@ -1102,15 +1127,60 @@ public class VAccountManagerService extends IAccountManager.Stub {
         com.lody.virtual.server.VirtualUserAccessPolicy.enforceCallerUserOrHost(userId);
     }
 
+    @Override
+    public byte[] exportAccountsForBackup(int userId) {
+        com.lody.virtual.server.VirtualUserAccessPolicy.enforceHost();
+        if (userId < 0 || com.lody.virtual.server.pm.VUserManagerService.get().getUserInfo(userId) == null)
+            throw new IllegalArgumentException("Unknown account archive user");
+        synchronized (accountsByUserId) {
+            List<VAccount> accounts = accountsByUserId.get(userId);
+            try { return ScopedAccountArchive.encode(accounts == null ? new ArrayList<>() : accounts); }
+            catch (java.io.IOException e) { throw new IllegalStateException("Unable to export scoped accounts"); }
+        }
+    }
+
+    @Override
+    public void importAccountsFromBackup(int destinationUserId, byte[] archive) {
+        com.lody.virtual.server.VirtualUserAccessPolicy.enforceHost();
+        if (destinationUserId < 0 || com.lody.virtual.server.pm.VUserManagerService.get().getUserInfo(destinationUserId) == null)
+            throw new IllegalArgumentException("Unknown account archive destination");
+        final List<VAccount> imported;
+        try { imported = ScopedAccountArchive.decode(archive, destinationUserId); }
+        catch (java.io.IOException | IllegalArgumentException e) { throw new IllegalArgumentException("Invalid scoped account archive"); }
+        synchronized (accountsByUserId) {
+            List<VAccount> previous = accountsByUserId.get(destinationUserId);
+            if (previous != null && !previous.isEmpty()) throw new IllegalStateException("Account archive destination must be empty");
+            accountsByUserId.put(destinationUserId, imported);
+            try { saveAllAccounts(); }
+            catch (RuntimeException failure) {
+                if (previous == null) accountsByUserId.remove(destinationUserId);
+                else accountsByUserId.put(destinationUserId, previous);
+                throw failure;
+            }
+        }
+    }
+
     private AuthenticatorCache getAuthenticatorCache(int userId) {
+        final long generation;
         synchronized (authenticatorCachesByUserId) {
             AuthenticatorCache cache = authenticatorCachesByUserId.get(userId);
-            if (cache == null) {
-                cache = new AuthenticatorCache();
-                loadAuthenticatorCache(userId, cache);
-                authenticatorCachesByUserId.put(userId, cache);
-            }
-            return cache;
+            if (cache != null) return cache;
+            generation = authenticatorCacheGeneration.snapshot();
+        }
+        // User/package lookups acquire mPackagesLock. Never hold the account cache lock here:
+        // user cleanup owns mPackagesLock before invalidating this cache.
+        if (com.lody.virtual.server.pm.VUserManagerService.get().getUserInfo(userId) == null)
+            return new AuthenticatorCache();
+        AuthenticatorCache candidate = new AuthenticatorCache();
+        loadAuthenticatorCache(userId, candidate);
+        boolean userStillValid = com.lody.virtual.server.pm.VUserManagerService.get().getUserInfo(userId) != null;
+        synchronized (authenticatorCachesByUserId) {
+            if (!userStillValid || !authenticatorCacheGeneration.isCurrent(generation))
+                return new AuthenticatorCache();
+            AuthenticatorCache existing = authenticatorCachesByUserId.get(userId);
+            if (existing != null) return existing;
+            authenticatorCachesByUserId.put(userId, candidate);
+            return candidate;
         }
     }
 
@@ -1148,6 +1218,7 @@ public class VAccountManagerService extends IAccountManager.Stub {
             session.close();
         }
         synchronized (authenticatorCachesByUserId) {
+            authenticatorCacheGeneration.invalidate();
             authenticatorCachesByUserId.remove(userId);
         }
         saveAllAccounts();
@@ -1190,12 +1261,8 @@ public class VAccountManagerService extends IAccountManager.Stub {
         for (Session session : sessions) session.close();
 
         synchronized (authenticatorCachesByUserId) {
-            AuthenticatorCache cache = authenticatorCachesByUserId.get(userId);
-            if (cache != null) {
-                synchronized (cache) {
-                    for (String type : ownedTypes) cache.authenticators.remove(type);
-                }
-            }
+            authenticatorCacheGeneration.invalidate();
+            authenticatorCachesByUserId.remove(userId);
         }
         saveAllAccounts();
         return !hasPackageState(packageName, userId, requireDeclaredAuthenticator);
@@ -1379,6 +1446,18 @@ public class VAccountManagerService extends IAccountManager.Stub {
         private final boolean mStripAuthTokenFromResult;
         public int mNumResults;
         IAccountAuthenticator mAuthenticator;
+        private volatile IServiceConnection mVirtualConnection;
+        private IServiceConnection mVirtualCallback;
+        private final Object mBindLock = new Object();
+        private final boolean mAllowBindRetry;
+        private boolean mBindClosed;
+        private boolean mAuthenticatorInvoked;
+        private long mBindDeadline;
+        private long mBindInventoryGeneration;
+        private ScheduledFuture<?> mPendingBindRetry;
+        private ScheduledFuture<?> mApprovalExpiry;
+        private final AccountApprovalPolicy mRemovalApproval = new AccountApprovalPolicy();
+        private final int mUserSerial;
         private IAccountManagerResponse mResponse;
         private boolean mExpectActivityLaunch;
         private long mCreationTime;
@@ -1392,8 +1471,11 @@ public class VAccountManagerService extends IAccountManager.Stub {
         Session(IAccountManagerResponse response, int userId, AuthenticatorInfo info, boolean expectActivityLaunch, boolean stripAuthTokenFromResult, String accountName, boolean authDetailsRequired, boolean updateLastAuthenticatedTime) {
             if (info == null) throw new IllegalArgumentException("accountType is null");
             this.mStripAuthTokenFromResult = stripAuthTokenFromResult;
+            this.mAllowBindRetry = com.lody.virtual.server.VirtualUserAccessPolicy.isHostCaller();
             this.mResponse = response;
             this.mUserId = userId;
+            com.lody.virtual.os.VUserInfo initialUser = VUserManagerService.get().getUserInfo(userId);
+            this.mUserSerial = initialUser == null ? -1 : initialUser.serialNumber;
             this.mAuthenticatorInfo = info;
             this.mExpectActivityLaunch = expectActivityLaunch;
             this.mCreationTime = SystemClock.elapsedRealtime();
@@ -1428,6 +1510,13 @@ public class VAccountManagerService extends IAccountManager.Stub {
         }
 
         private void close() {
+            synchronized (mBindLock) {
+                mBindClosed = true;
+                if (mPendingBindRetry != null) mPendingBindRetry.cancel(false);
+                mPendingBindRetry = null;
+                if (mApprovalExpiry != null) mApprovalExpiry.cancel(false);
+                mApprovalExpiry = null;
+            }
             synchronized (mSessions) {
                 if (mSessions.remove(toString()) == null) {
                     // the session was already closed, so bail out now
@@ -1442,6 +1531,39 @@ public class VAccountManagerService extends IAccountManager.Stub {
                 mResponse = null;
             }
             unbind();
+        }
+
+        final boolean isActiveIncarnation() {
+            com.lody.virtual.os.VUserInfo current;
+            // The session already captured its authorized user at entry. Authenticator
+            // callbacks may arrive via framework oneway Binder with no caller PID; the
+            // incarnation lookup is server-owned bookkeeping, not a new guest request.
+            long identity = Binder.clearCallingIdentity();
+            try { current = VUserManagerService.get().getUserInfo(mUserId); }
+            finally { Binder.restoreCallingIdentity(identity); }
+            synchronized (mBindLock) {
+                return AccountApprovalPolicy.mayMutate(mBindClosed, mUserSerial, current == null ? null : current.serialNumber);
+            }
+        }
+
+        final boolean consumeRemovalApproval(Account account, boolean allowed) {
+            if (!isActiveIncarnation()) return false;
+            boolean removed;
+            synchronized (mBindLock) {
+                // Cleanup closes sessions before a numeric id can be reused. Keep the final
+                // close fence held through this mutation, without acquiring package locks.
+                if (mBindClosed || !mRemovalApproval.consumeDecision()) return false;
+                synchronized (accountsByUserId) { removed = allowed && removeAccountStateLocked(mUserId, account); }
+            }
+            if (removed) sendAccountsChangedBroadcast(mUserId);
+            return true;
+        }
+
+        final void retainApprovalDeadline() {
+            synchronized (mBindLock) {
+                if (mBindClosed || mApprovalExpiry != null) return;
+                mApprovalExpiry = authenticatorBindRetries.schedule(this::close, 120L, TimeUnit.SECONDS);
+            }
         }
 
         @Override
@@ -1579,9 +1701,88 @@ public class VAccountManagerService extends IAccountManager.Stub {
             Intent intent = new Intent();
             intent.setAction(AccountManager.ACTION_AUTHENTICATOR_INTENT);
             intent.setClassName(mAuthenticatorInfo.serviceInfo.packageName, mAuthenticatorInfo.serviceInfo.name);
-            intent.putExtra("_VA_|_user_id_", mUserId);
+            final ComponentName expected = intent.getComponent();
+            IServiceConnection callback = new CompatServiceConnection() {
+                @Override public void onConnected(ComponentName name, IBinder service, boolean dead) {
+                    Log.i(TAG, "virtual-auth-connected user=" + mUserId + " exact=" + expected.equals(name)
+                            + " dead=" + dead + " binder=" + (service != null));
+                    synchronized (mBindLock) {
+                        if (mBindClosed || mAuthenticatorInvoked) return;
+                        mAuthenticatorInvoked = true;
+                    }
+                    if (dead || !expected.equals(name) || service == null) {
+                        onError(AccountManager.ERROR_CODE_REMOTE_EXCEPTION, "authenticator disconnected");
+                        return;
+                    }
+                    Session.this.onServiceConnected(name, service);
+                }
+            };
+            final IServiceConnection connection;
+            synchronized (mBindLock) {
+                if (mBindClosed) return;
+                mVirtualCallback = callback;
+                connection = ServiceConnectionDelegate.getDelegate(callback);
+                mVirtualConnection = connection;
+                mBindDeadline = SystemClock.elapsedRealtime() + AuthenticatorBindRetryPolicy.DEADLINE_MS;
+            }
+            synchronized (authenticatorCachesByUserId) {
+                mBindInventoryGeneration = authenticatorCacheGeneration.snapshot();
+            }
+            attemptAuthenticatorBind(intent, connection);
+        }
 
-            if (!mContext.bindService(intent, this, Context.BIND_AUTO_CREATE)) {
+        private void attemptAuthenticatorBind(Intent intent, IServiceConnection connection) {
+            synchronized (mBindLock) {
+                if (mBindClosed || mAuthenticatorInvoked) return;
+                mPendingBindRetry = null;
+            }
+            if (SystemClock.elapsedRealtime() >= mBindDeadline) {
+                onError(AccountManager.ERROR_CODE_REMOTE_EXCEPTION, "authenticator bind timeout");
+                return;
+            }
+            // The AccountManager server must never ask physical Android to resolve a guest
+            // authenticator. Route the selected registered component directly to its virtual user.
+            long identity = Binder.clearCallingIdentity();
+            int result;
+            try {
+                // Re-query the exact-user registration on every attempt; removed/replaced
+                // authenticators cannot inherit a queued retry from an older inventory.
+                AuthenticatorInfo current = getAuthenticatorCache(mUserId).authenticators.get(mAuthenticatorInfo.desc.type);
+                boolean inventoryUnchanged;
+                synchronized (authenticatorCachesByUserId) {
+                    inventoryUnchanged = authenticatorCacheGeneration.isCurrent(mBindInventoryGeneration);
+                }
+                if (!inventoryUnchanged || current == null || !current.serviceInfo.packageName.equals(mAuthenticatorInfo.serviceInfo.packageName)
+                        || !current.serviceInfo.name.equals(mAuthenticatorInfo.serviceInfo.name)) {
+                    result = 0;
+                } else {
+                    Log.i(TAG, "virtual-auth-bind user=" + mUserId + " component=" + intent.getComponent());
+                    result = VActivityManagerService.get().bindAuthenticatorService(intent, connection, mUserId);
+                }
+            } catch (RuntimeException failure) {
+                Log.w(TAG, "virtual-auth-bind rejected class=" + failure.getClass().getSimpleName());
+                result = 0;
+            } finally { Binder.restoreCallingIdentity(identity); }
+            Log.i(TAG, "virtual-auth-bind-result user=" + mUserId + " result=" + result);
+            boolean closed;
+            synchronized (mBindLock) {
+                closed = mBindClosed;
+                if (!closed && (mAuthenticatorInvoked || result > 0)) return;
+                if (mAllowBindRetry && AuthenticatorBindRetryPolicy.shouldRetry(result,
+                        VActivityManagerService.AUTH_BIND_CONTENDED, SystemClock.elapsedRealtime(),
+                        mBindDeadline, closed, mAuthenticatorInvoked)) {
+                    mPendingBindRetry = authenticatorBindRetries.schedule(
+                            () -> attemptAuthenticatorBind(new Intent(intent), connection),
+                            AuthenticatorBindRetryPolicy.DELAY_MS, TimeUnit.MILLISECONDS);
+                    return;
+                }
+            }
+            if (closed) {
+                // close may have unbound before this synchronous bind registered.
+                if (AuthenticatorBindRetryPolicy.shouldUndoLateBind(closed, result)) unbindConnection(connection);
+                return;
+            }
+            if (result <= 0) {
                 Log.d(TAG, "bind attempt failed for " + toDebugString());
                 onError(AccountManager.ERROR_CODE_REMOTE_EXCEPTION, "bind failure");
             }
@@ -1600,23 +1801,26 @@ public class VAccountManagerService extends IAccountManager.Stub {
         }
 
         private void unbind() {
-            if (mAuthenticator != null) {
+            IServiceConnection connection = mVirtualConnection;
+            mVirtualConnection = null;
+            IServiceConnection callback = mVirtualCallback;
+            mVirtualCallback = null;
+            if (connection != null) {
                 mAuthenticator = null;
                 // Authenticator callbacks arrive on a Binder thread carrying the guest's
                 // calling identity. The unbind is server-owned cleanup; forwarding that
                 // nested identity into VActivityManager makes it look like a cross-user
                 // guest operation and can abort delivery of an otherwise valid auth token.
-                long identity = Binder.clearCallingIdentity();
-                try {
-                    mContext.unbindService(this);
-                } catch (SecurityException e) {
-                    // Cleanup must never turn a successful authenticator response into
-                    // AccountManager.OperationCanceledException for the requesting app.
-                    Log.w(TAG, "Unable to unbind authenticator session", e);
-                } finally {
-                    Binder.restoreCallingIdentity(identity);
-                }
+                unbindConnection(connection);
+                if (callback != null) ServiceConnectionDelegate.removeDelegate(callback);
             }
+        }
+
+        private void unbindConnection(IServiceConnection connection) {
+            long identity = Binder.clearCallingIdentity();
+            try { VActivityManagerService.get().unbindService(connection, mUserId); }
+            catch (RuntimeException e) { Log.w(TAG, "Unable to unbind authenticator session"); }
+            finally { Binder.restoreCallingIdentity(identity); }
         }
 
         @Override

@@ -12,6 +12,19 @@ class BootRecoveryPolicyTest {
     private val bootAction = "android.intent.action.BOOT_COMPLETED"
 
     @Test
+    fun `deleting and damaged spaces cannot reacquire durable Google workload`() {
+        val health = mapOf("active" to org.apptwin.groups.GroupHealth.HEALTHY,
+            "deleting" to org.apptwin.groups.GroupHealth.DELETING,
+            "damaged" to org.apptwin.groups.GroupHealth.DAMAGED)
+        assertTrue(DaemonWorkloadAuthorization.allowsGroupWorkload("active",health))
+        assertFalse(DaemonWorkloadAuthorization.allowsGroupWorkload("deleting",health))
+        assertFalse(DaemonWorkloadAuthorization.allowsGroupWorkload("damaged",health))
+        // Unknown profiles stay in resolution, which must fail closed instead of losing authority.
+        assertTrue(DaemonWorkloadAuthorization.allowsGroupWorkload("unknown",health))
+        org.junit.Assert.assertNull(DaemonWorkloadAuthorization.resolveEnabledVirtualUserIds(setOf("unknown"),emptyMap()))
+    }
+
+    @Test
     fun `boot starts only for enabled durable profile and allowed recovery`() {
         assertTrue(BootRecoveryPolicy.shouldStart(bootAction, bootAction, true, true))
         assertFalse(BootRecoveryPolicy.shouldStart(bootAction, bootAction, false, true))

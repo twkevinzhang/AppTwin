@@ -3,11 +3,27 @@
     <uses-permission android:name="android.permission.CAMERA" />
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
 
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
+    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
+    <uses-permission android:name="android.permission.READ_CONTACTS" />
+    <uses-permission android:name="android.permission.WRITE_CONTACTS" />
+    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" />
+    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" />
+
     <application
         android:allowBackup="false"
         android:label="AppTwin Runtime Fixture"
         android:supportsRtl="true"
         android:theme="@android:style/Theme.Material.Light.NoActionBar">
+        <service android:name=".FixtureAccountService" android:exported="true">
+            <intent-filter><action android:name="android.accounts.AccountAuthenticator" /></intent-filter>
+            <meta-data android:name="android.accounts.AccountAuthenticator" android:resource="@xml/fixture_authenticator" />
+        </service>
+        <service android:name=".FixtureSyncService" android:exported="true">
+            <intent-filter><action android:name="android.content.SyncAdapter" /></intent-filter>
+            <meta-data android:name="android.content.SyncAdapter" android:resource="@xml/fixture_sync_adapter" />
+        </service>
+        <provider android:name=".FixtureSyncProvider" android:authorities="org.apptwin.fixture.sync" android:exported="true" />
         <activity
             android:name=".SyntheticCrashActivity"
             android:exported="false" />

@@ -2,7 +2,7 @@ package org.apptwin.archive
 
 import java.io.File
 
-const val SPACE_ARCHIVE_SCHEMA_VERSION = 1
+const val SPACE_ARCHIVE_SCHEMA_VERSION = 2
 
 enum class SpaceArchiveAppState {
     ADDED,
@@ -26,7 +26,6 @@ data class SpaceArchiveManifest(
     val name: String,
     val createdAt: Long,
     val apps: List<SpaceArchiveApp>,
-    val gmsEnabled: Boolean,
     val custodianKeyspaceId: String,
     val schemaVersion: Int = SPACE_ARCHIVE_SCHEMA_VERSION,
 )

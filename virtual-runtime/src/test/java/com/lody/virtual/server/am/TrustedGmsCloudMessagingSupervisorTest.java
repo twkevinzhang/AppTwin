@@ -21,6 +21,42 @@ import java.util.concurrent.TimeUnit;
 public class TrustedGmsCloudMessagingSupervisorTest {
 
     @Test
+    public void localAuthorizationStopsStaleWorkWithoutWaitingForCurrentMessaging() {
+        Fixture fixture = new Fixture();
+        fixture.runtime.installed.add(7);
+        fixture.runtime.installed.add(9);
+        assertTrue(fixture.supervisor.reconcileDesiredUsers(new int[]{9}));
+        fixture.runtime.startedUsers.clear();
+        fixture.runtime.acceptStart = false;
+        assertTrue(fixture.supervisor.reconcileDesiredUsersLocally(new int[]{7}));
+        assertTrue(fixture.runtime.startedUsers.isEmpty());
+        assertTrue(fixture.runtime.stoppedUsers.contains(9));
+        assertEquals(java.util.Collections.singleton(7), fixture.supervisor.durableDesiredUsers());
+        assertFalse(fixture.supervisor.recoverAuthorizedUsers(java.util.Collections.singleton(7)));
+        assertEquals(java.util.Collections.singletonList(7), fixture.runtime.startedUsers);
+        assertFalse(fixture.supervisor.getState(7).phase == TrustedGmsCloudMessagingState.PHASE_CONNECTED);
+    }
+
+    @Test
+    public void staleOnlineRecoveryCannotRestoreRevokedAuthorization() {
+        Fixture fixture = new Fixture();
+        fixture.runtime.installed.add(7);
+        fixture.runtime.installed.add(9);
+        assertTrue(fixture.supervisor.reconcileDesiredUsersLocally(new int[]{7}));
+        assertTrue(fixture.supervisor.reconcileDesiredUsersLocally(new int[]{9}));
+        assertFalse(fixture.supervisor.recoverAuthorizedUsers(java.util.Collections.singleton(7)));
+        assertTrue(fixture.runtime.startedUsers.isEmpty());
+        assertEquals(java.util.Collections.singleton(9), fixture.supervisor.durableDesiredUsers());
+    }
+
+    @Test
+    public void localAuthorizationRejectsMissingTrustedPackage() {
+        Fixture fixture = new Fixture();
+        assertFalse(fixture.supervisor.reconcileDesiredUsersLocally(new int[]{7}));
+        assertTrue(fixture.runtime.startedUsers.isEmpty());
+    }
+
+    @Test
     public void acceptedStartBecomesConnectedOnlyAfterAuthenticatedSignal() {
         Fixture fixture = new Fixture();
         fixture.runtime.installed.add(7);

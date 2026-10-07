@@ -1,6 +1,10 @@
 package com.lody.virtual.server.am;
 
 import android.app.ActivityManager;
+import android.accounts.Account;
+import android.content.ISyncContext;
+import android.content.SyncResult;
+import android.content.ContentResolver;
 import android.app.IServiceConnection;
 import android.app.IStopUserCallback;
 import android.app.Notification;
@@ -275,6 +279,78 @@ public class VActivityManagerService extends IActivityManager.Stub
             new LinePushBroadcastAttestationRegistry();
     private final Map<Long, LinePushDaemonAuthorizationScope> mLinePushDaemonAuthorizations =
             new java.util.HashMap<>();
+    private final SelectedUriGrantState selectedUriGrants = new SelectedUriGrantState();
+    private final java.util.Map<String, PickerSession> pickerSessions = new java.util.HashMap<>();
+    private static final class PickerSession {
+        final int user; final String pkg; final Intent request;
+        final long deadline = SystemClock.elapsedRealtime() + 300000L;
+        boolean taken;
+        PickerSession(int user, String pkg, Intent request) { this.user = user; this.pkg = pkg; this.request = request; }
+    }
+    @Override public synchronized String prepareUriPicker(Intent request, IBinder resultTo) {
+        if (request == null || resultTo == null) throw new SecurityException("Picker requires a guest activity");
+        String action = request.getAction();
+        if (!Intent.ACTION_OPEN_DOCUMENT.equals(action) && !Intent.ACTION_GET_CONTENT.equals(action)
+                && !"android.provider.action.PICK_IMAGES".equals(action)) {
+            throw new SecurityException("Unsupported picker action");
+        }
+        ProcessRecord caller;
+        synchronized (mPidsSelfLocked) { caller = findProcessLocked(Binder.getCallingPid()); }
+        if (caller == null || !caller.info.packageName.equals(mMainStack.getPackageForToken(caller.userId, resultTo))) {
+            throw new SecurityException("Picker owner mismatch");
+        }
+        pickerSessions.entrySet().removeIf(entry -> entry.getValue().deadline < SystemClock.elapsedRealtime());
+        if (pickerSessions.size() >= 64) throw new SecurityException("Picker session quota exceeded");
+        Intent safe = new Intent(action);
+        safe.setType(request.getType());
+        if (!"android.provider.action.PICK_IMAGES".equals(action)) safe.addCategory(Intent.CATEGORY_OPENABLE);
+        safe.putExtra(Intent.EXTRA_ALLOW_MULTIPLE, request.getBooleanExtra(Intent.EXTRA_ALLOW_MULTIPLE, false));
+        safe.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION);
+        String id = java.util.UUID.randomUUID().toString();
+        pickerSessions.put(id, new PickerSession(caller.userId, caller.info.packageName, safe));
+        return id;
+    }
+    @Override public synchronized Intent takeUriPickerRequest(String id) {
+        com.lody.virtual.server.VirtualUserAccessPolicy.enforceHost();
+        PickerSession session = pickerSessions.get(id);
+        if (session == null || session.taken || session.deadline < SystemClock.elapsedRealtime()) return null;
+        session.taken = true;
+        return new Intent(session.request);
+    }
+    @Override public synchronized boolean completeUriPicker(String id, int resultCode, Intent result) {
+        com.lody.virtual.server.VirtualUserAccessPolicy.enforceHost();
+        PickerSession session = pickerSessions.remove(id);
+        if (session == null || !session.taken || session.deadline < SystemClock.elapsedRealtime()) return false;
+        if (resultCode != android.app.Activity.RESULT_OK) return true;
+        if (result == null) return false;
+        java.util.Set<String> uris = new java.util.HashSet<>();
+        if (result.getData() != null) uris.add(result.getData().toString());
+        if (result.getClipData() != null) for (int i = 0; i < result.getClipData().getItemCount(); i++) {
+            Uri uri = result.getClipData().getItemAt(i).getUri();
+            if (uri != null) uris.add(uri.toString());
+        }
+        if (uris.isEmpty() || uris.size() > 512) return false;
+        Context context = VirtualCore.get().getContext();
+        for (String value : uris) {
+            Uri uri = Uri.parse(value);
+            if (!"content".equals(uri.getScheme()) || context.checkUriPermission(uri,
+                    Process.myPid(), Process.myUid(), Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                    != PackageManager.PERMISSION_GRANTED) return false;
+        }
+        try { selectedUriGrants.add(session.user, session.pkg, uris); return true; }
+        catch (java.io.IOException failure) { return false; }
+    }
+    public synchronized void clearSelectedUriGrantsInternal(int user, String pkg) throws java.io.IOException {
+        selectedUriGrants.clear(user, pkg);
+        pickerSessions.entrySet().removeIf(entry -> entry.getValue().user == user
+                && (pkg == null || pkg.equals(entry.getValue().pkg)));
+    }
+    @Override public boolean hasSelectedUriGrant(String uri) {
+        ProcessRecord caller;
+        synchronized (mPidsSelfLocked) { caller = findProcessLocked(Binder.getCallingPid()); }
+        return caller != null && uri != null && selectedUriGrants.has(caller.userId, caller.info.packageName, uri);
+    }
+
     private final SparseArray<ProcessRecord> mPidsSelfLocked = new SparseArray<ProcessRecord>();
     private final ProcessStartGate mProcessStartGate = new ProcessStartGate();
     private final ActivityStack mMainStack = new ActivityStack(this);
@@ -404,7 +480,7 @@ public class VActivityManagerService extends IActivityManager.Stub
         synchronized (this) {
             TrustedGmsCloudMessagingSupervisor supervisor =
                     mTrustedGmsCloudMessagingSupervisor;
-            return DaemonService.isForegroundSessionActive()
+            boolean ready = DaemonService.isForegroundSessionActive()
                     && TextUtils.equals(expectedSessionToken,
                             mDaemonLaunchAuthorizationToken)
                     && mDaemonWorkloadGate.isOpenAt(
@@ -412,9 +488,14 @@ public class VActivityManagerService extends IActivityManager.Stub
                     && supervisor != null
                     && mGmsBackgroundKeepAlive != null
                     && mLinePushProcessGuard != null
-                    && mDaemonWorkloadMutationsInFlight == 0
                     && mGmsReconciliationReliability.isComplete()
                     && supervisor.durableDesiredUsers().equals(expected);
+            if (!ready) android.util.Log.i("AppTwinEngine", "daemon-token-not-ready foreground=" + DaemonService.isForegroundSessionActive()
+                    + " tokenMatches=" + TextUtils.equals(expectedSessionToken,mDaemonLaunchAuthorizationToken)
+                    + " epochOpen=" + mDaemonWorkloadGate.isOpenAt(mDaemonLaunchAuthorizationReopenEpoch)
+                    + " reliable=" + mGmsReconciliationReliability.isComplete()
+                    + " desiredMatches=" + (supervisor != null && supervisor.durableDesiredUsers().equals(expected)));
+            return ready;
         }
     }
 
@@ -426,8 +507,10 @@ public class VActivityManagerService extends IActivityManager.Stub
                 || mTrustedGmsCloudMessagingSupervisor == null
                 || mGmsBackgroundKeepAlive == null
                 || mLinePushProcessGuard == null
-                || mDaemonWorkloadMutationsInFlight != 0
                 || !mGmsReconciliationReliability.isComplete()) {
+            android.util.Log.i("AppTwinEngine", "daemon-token-rejected foreground=" + DaemonService.isForegroundSessionActive()
+                    + " inFlight=" + mDaemonWorkloadMutationsInFlight
+                    + " reliable=" + mGmsReconciliationReliability.isComplete());
             return false;
         }
         Set<Integer> expected = new HashSet<>();
@@ -441,6 +524,7 @@ public class VActivityManagerService extends IActivityManager.Stub
         if (!mDaemonWorkloadGate.isOpenAt(reopenEpoch)) return false;
         mDaemonLaunchAuthorizationToken = sessionToken;
         mDaemonLaunchAuthorizationReopenEpoch = reopenEpoch;
+        android.util.Log.i("AppTwinEngine", "daemon-token-recorded epoch=" + reopenEpoch + " desiredCount=" + expected.size());
         return true;
     }
 
@@ -452,7 +536,11 @@ public class VActivityManagerService extends IActivityManager.Stub
                     + "timeoutMs must be between 0 and "
                     + MAX_DAEMON_WORKLOAD_GATE_WAIT_MS);
         }
-        return mDaemonWorkloadGate.awaitOpenAfter(observedReopenEpoch, timeoutMs);
+        boolean opened = mDaemonWorkloadGate.awaitOpenAfter(observedReopenEpoch, timeoutMs);
+        android.util.Log.i("AppTwinEngine", "daemon-gate-wait opened=" + opened
+                + " observed=" + observedReopenEpoch + " current=" + mDaemonWorkloadGate.reopenEpoch()
+                + " closed=" + mDaemonWorkloadGate.isShutdownCommitted());
+        return opened;
     }
 
     static boolean isDaemonWorkloadGateWaitValid(long observedReopenEpoch, long timeoutMs) {
@@ -908,6 +996,11 @@ public class VActivityManagerService extends IActivityManager.Stub
     }
 
     @Override
+    public int getScopedSyncManagerPid() {
+        return Process.myPid();
+    }
+
+    @Override
     public String issueLinePushBroadcastAttestation(String action, String targetPackage) {
         int callingPid = Binder.getCallingPid();
         ProcessRecord caller;
@@ -1075,6 +1168,7 @@ public class VActivityManagerService extends IActivityManager.Stub
     }
 
     private synchronized void removeRecord(ServiceRecord r) {
+        scopedAccountSyncManager.retire(r);
         synchronized (mHistory) {
             if (mHistory.remove(r)) mDaemonWorkloadGate.workloadChanged();
         }
@@ -1441,6 +1535,61 @@ public class VActivityManagerService extends IActivityManager.Stub
         drainProcessLifecycle(r.process);
     }
 
+    public static final int AUTH_BIND_CONTENDED = -2;
+    private final ThreadLocal<Boolean> authenticatorBindContention = new ThreadLocal<>();
+    private final ScopedAccountSyncManager scopedAccountSyncManager = new ScopedAccountSyncManager(new ScopedAccountSyncManager.Gateway() {
+        @Override public ScopedAccountSyncManager.Target resolve(int user, ComponentName component) {
+            ServiceInfo info = VPackageManagerService.get().getServiceInfo(component, PackageManager.GET_META_DATA, user);
+            synchronized (VActivityManagerService.this) {
+                if (!scopedSyncGateAllows(user) || !beginDaemonWorkloadAcquisition()) return null;
+                try {
+                    ServiceRecord record = info == null ? null : findRecordLocked(user, info);
+                    if (!isUsableServiceRecordLocked(record, user) || !isServiceDispatchValid(record.process, record)) return null;
+                    ServiceRecord.IntentBindRecord binding = record.peekBinding(new Intent("android.content.SyncAdapter").setComponent(component));
+                    if (binding == null || !binding.hasPublishedBinder() || binding.binder == null) return null;
+                    return new ScopedAccountSyncManager.Target(user, component, record, binding.binder,
+                            mDaemonLaunchAuthorizationReopenEpoch, mDaemonLaunchAuthorizationToken);
+                } finally { endDaemonWorkloadMutation(); }
+            }
+        }
+        @Override public boolean isCurrent(ScopedAccountSyncManager.Target target) {
+            synchronized (VActivityManagerService.this) {
+                return target.record.process == target.process && target.serviceGeneration == target.record.generation
+                        && isUsableServiceRecordLocked(target.record, target.user) && isServiceDispatchValid(target.process, target.record)
+                        && scopedSyncGateAllows(target.user) && target.gateEpoch == mDaemonLaunchAuthorizationReopenEpoch
+                        && TextUtils.equals(target.authorizationToken, mDaemonLaunchAuthorizationToken);
+            }
+        }
+    });
+    private boolean scopedSyncGateAllows(int user) {
+        return user > 0 && DaemonService.isForegroundSessionActive() && mGmsReconciliationReliability.isComplete()
+                && mTrustedGmsCloudMessagingSupervisor != null
+                && mTrustedGmsCloudMessagingSupervisor.durableDesiredUsers().contains(user)
+                && mDaemonWorkloadGate.isOpenAt(mDaemonLaunchAuthorizationReopenEpoch);
+    }
+    @Override public boolean startScopedAccountSync(int user, ComponentName component, Account account, String authority, IBinder context) {
+        com.lody.virtual.server.VirtualUserAccessPolicy.enforceHost();
+        return scopedAccountSyncManager.start(user, component, account, authority, context);
+    }
+    @Override public void cancelScopedAccountSync(int user, ComponentName component, IBinder context) {
+        com.lody.virtual.server.VirtualUserAccessPolicy.enforceHost();
+        scopedAccountSyncManager.cancel(user, component, context);
+    }
+
+    /** Server-owned authenticator requests may distinguish transient start contention from denial. */
+    public int bindAuthenticatorService(Intent intent, IServiceConnection connection, int userId) {
+        com.lody.virtual.server.VirtualUserAccessPolicy.enforceHost();
+        if (intent == null || intent.getComponent() == null
+                || !android.accounts.AccountManager.ACTION_AUTHENTICATOR_INTENT.equals(intent.getAction()))
+            throw new IllegalArgumentException("Invalid authenticator binding");
+        authenticatorBindContention.set(false);
+        try {
+            int result = bindService(null, null, intent, null, connection, Context.BIND_AUTO_CREATE, userId);
+            return result == 0 && Boolean.TRUE.equals(authenticatorBindContention.get())
+                    ? AUTH_BIND_CONTENDED : result;
+        } finally { authenticatorBindContention.remove(); }
+    }
+
     @Override
     public synchronized int bindService(
                            IBinder caller, IBinder token, Intent service, String resolvedType,
@@ -1679,6 +1828,22 @@ public class VActivityManagerService extends IActivityManager.Stub
 
     @Override
     public void serviceDoneExecuting(IBinder token, int type, int startId, int res, int userId) {
+        final int callbackVuid = VBinder.getCallingUid();
+        final int callbackPid = Binder.getCallingPid();
+        synchronized (this) {
+            ServiceRecord completed = token instanceof ServiceRecord ? (ServiceRecord) token : null;
+            ProcessRecord owner = completed == null ? null : completed.process;
+            if (TerminalServiceCallbackPolicy.mayIgnore(
+                    type == ActivityManagerCompat.SERVICE_DONE_EXECUTING_STOP
+                            || type == ActivityManagerCompat.SERVICE_DONE_EXECUTING_UNBIND,
+                    callbackVuid < 0, owner != null && owner.pid == callbackPid,
+                    owner != null && owner.userId == userId,
+                    completed != null && completed.isRetired(),
+                    completed != null && containsServiceRecordLocked(completed),
+                    Binder.getCallingUid() == Process.myUid())) {
+                return; // No mutation, authorization or process revival for a terminal owned callback.
+            }
+        }
         enforceCallerUserOrHost(userId);
         ServiceRecord r;
         boolean queuedWork = false;
@@ -1729,6 +1894,11 @@ public class VActivityManagerService extends IActivityManager.Stub
     public void publishService(IBinder token, IBinder bindToken, Intent intent,
                                IBinder service, int userId) {
         enforceCallerUserOrHost(userId);
+        // Load registered metadata before taking the VAMS monitor. Guest-local mediation then
+        // validates it against its already-loaded APK resources, without a nested PM RPC.
+        ServiceInfo registration = token instanceof ServiceRecord
+                ? VPackageManagerService.get().getServiceInfo(ComponentUtils.toComponentName(((ServiceRecord) token).serviceInfo), PackageManager.GET_META_DATA, userId)
+                : null;
         final ServiceRecord r;
         final ServiceRecord.IntentBindRecord boundRecord;
         final List<IServiceConnection> connections;
@@ -1747,12 +1917,13 @@ public class VActivityManagerService extends IActivityManager.Stub
                 return;
             }
             component = ComponentUtils.toComponentName(r.serviceInfo);
+            long proxyIdentity = Binder.clearCallingIdentity();
             try {
-                service = r.process.client.createProxyService(component, service);
+                service = r.process.client.createProxyService(component, service, registration);
             } catch (RemoteException e) {
                 VLog.w(TAG, "Unable to create guest service proxy " + component, e);
                 service = null;
-            }
+            } finally { Binder.restoreCallingIdentity(proxyIdentity); }
             connections = boundRecord.publish(r.generation, service);
         }
         for (IServiceConnection conn : connections) {
@@ -2376,40 +2547,53 @@ public class VActivityManagerService extends IActivityManager.Stub
     @Override
     public void reconcileTrustedGmsCloudMessaging() {
         com.lody.virtual.server.VirtualUserAccessPolicy.enforceHost();
-        if (!shouldRunAutomaticGmsReconciliation(
-                DaemonService.isForegroundSessionActive())) {
-            return;
-        }
+        int[] exact = mTrustedGmsCloudMessagingSupervisor.durableDesiredUsers().stream()
+                .mapToInt(Integer::intValue).toArray();
+        if (!mGmsReconciliationReliability.isComplete() && !reconcileDaemonLaunchLocally(exact)) return;
+        recoverDaemonMessagingAfterLocalAuthorization(exact);
+    }
+
+    /** Runs only the already durable exact workload; does not mutate launch authorization. */
+    public void recoverDaemonMessagingAfterLocalAuthorization(int[] expectedUsers) {
+        if (!shouldRunAutomaticGmsReconciliation(DaemonService.isForegroundSessionActive())) return;
+        Set<Integer> expected = new HashSet<>();
+        if (expectedUsers == null) return;
+        for (int userId : expectedUsers) { if (userId <= 0 || !expected.add(userId)) return; }
+        if (!mTrustedGmsCloudMessagingSupervisor.durableDesiredUsers().equals(expected)) return;
         if (!beginDaemonWorkloadAcquisition()) return;
-        long reconciliationGeneration = mGmsReconciliationReliability.begin();
+        try { mTrustedGmsCloudMessagingSupervisor.recoverAuthorizedUsers(expected); }
+        finally { endDaemonWorkloadMutation(); }
+    }
+
+    /** Host daemon handshake: validate exact local authorization before optional online recovery. */
+    public boolean reconcileDaemonLaunchLocally(int[] desiredUserIds) {
+        if (!shouldRunAutomaticGmsReconciliation(DaemonService.isForegroundSessionActive())) return false;
+        if (desiredUserIds == null) return false;
+        Set<Integer> requested = new HashSet<>();
+        for (int userId : desiredUserIds) { if (userId <= 0 || !requested.add(userId)) return false; }
+        if (mGmsReconciliationReliability.isComplete()
+                && !mDaemonWorkloadGate.isShutdownCommitted()
+                && mTrustedGmsCloudMessagingSupervisor.durableDesiredUsers().equals(requested)) return true;
+        if (!beginDaemonWorkloadAcquisition()) return false;
+        long generation = mGmsReconciliationReliability.begin();
         try {
-            boolean reconciled = mTrustedGmsCloudMessagingSupervisor.reconcile();
-            mGmsReconciliationReliability.finish(reconciliationGeneration,
-                    shouldMarkGmsReconciliationComplete(reconciled));
-        } finally {
-            endDaemonWorkloadMutation();
-        }
+            Set<Integer> exact = new HashSet<>();
+            for (int userId : desiredUserIds) {
+                if (userId <= 0 || !exact.add(userId)) return false;
+            }
+            boolean accepted = mTrustedGmsCloudMessagingSupervisor.reconcileDesiredUsersLocally(desiredUserIds.clone());
+            mGmsReconciliationReliability.finish(generation, shouldMarkGmsReconciliationComplete(accepted));
+            return accepted;
+        } finally { endDaemonWorkloadMutation(); }
     }
 
     @Override
     public boolean reconcileTrustedGmsCloudMessagingForUsers(int[] desiredUserIds) {
         com.lody.virtual.server.VirtualUserAccessPolicy.enforceHost();
-        if (!shouldRunAutomaticGmsReconciliation(
-                DaemonService.isForegroundSessionActive())) {
-            return false;
-        }
-        if (!beginDaemonWorkloadAcquisition()) return false;
-        long reconciliationGeneration = mGmsReconciliationReliability.begin();
-        try {
-            boolean accepted = mTrustedGmsCloudMessagingSupervisor
-                    .reconcileDesiredUsers(desiredUserIds == null
-                            ? new int[0] : desiredUserIds.clone());
-            mGmsReconciliationReliability.finish(reconciliationGeneration,
-                    shouldMarkGmsReconciliationComplete(accepted));
-            return accepted;
-        } finally {
-            endDaemonWorkloadMutation();
-        }
+        int[] exact = desiredUserIds == null ? new int[0] : desiredUserIds.clone();
+        if (!reconcileDaemonLaunchLocally(exact)) return false;
+        recoverDaemonMessagingAfterLocalAuthorization(exact);
+        return true;
     }
 
     @Override
@@ -2465,6 +2649,7 @@ public class VActivityManagerService extends IActivityManager.Stub
             }
             VLog.d(TAG, "Skipping contended service process start package=" + packageName
                     + " process=" + processName + " user=" + userId);
+            if (authenticatorBindContention.get() != null) authenticatorBindContention.set(true);
             return null;
         }
         final ProcessRecord started;
@@ -2569,9 +2754,17 @@ public class VActivityManagerService extends IActivityManager.Stub
     private ProcessRecord startProcessWithGateHeld(String processName, int userId,
                                                     String packageName,
                                                     boolean isolatedProcess) {
+        if (!VUserManagerService.get().isRuntimeAvailable(userId)) return null;
         PackageSetting ps = PackageCacheManager.getSetting(packageName);
-        ApplicationInfo info = VPackageManagerService.get().getApplicationInfo(
-                packageName, 0, userId);
+        final ApplicationInfo info;
+        try {
+            info = VPackageManagerService.get().getApplicationInfo(packageName, 0, userId);
+        } catch (SecurityException staleUser) {
+            // Removal can win between the lifecycle check and PackageManager lookup.
+            if (!VUserManagerService.get().isRuntimeAvailable(userId)) return null;
+            throw staleUser;
+        }
+        if (!VUserManagerService.get().isRuntimeAvailable(userId)) return null;
         if (ps == null || info == null) {
             return null;
         }
@@ -3709,6 +3902,10 @@ public class VActivityManagerService extends IActivityManager.Stub
             LinePushStopFence.Permit recoveryStopPermit) {
         try {
         final int userId = getUserId(vuid);
+        if (!VUserManagerService.get().isRuntimeAvailable(userId)) {
+            LinePushDeliveryDiagnostics.checkpoint(result, "target-user-removed");
+            return false;
+        }
         final boolean linePush = LinePushBroadcastPolicy.LINE_PACKAGE.equals(info.packageName)
                 && LinePushBroadcastPolicy.LINE_PACKAGE.equals(info.processName)
                 && LinePushBroadcastPolicy.C2DM_RECEIVE.equals(intent.getAction());
@@ -3749,6 +3946,7 @@ public class VActivityManagerService extends IActivityManager.Stub
         LinePushDeliveryDiagnostics.checkpoint(result, "dispatch-queued");
         mStaticBroadcastDispatcher.enqueue(r, info, intent, result,
                 () -> mBroadcastDispatchStopFence.isCurrent(broadcastStopPermit)
+                        && VUserManagerService.get().isRuntimeAvailable(userId)
                         && (!linePush
                         || mLinePushStopFence.isCurrent(dispatchStopPermit)));
         mDaemonWorkloadGate.workloadChanged();

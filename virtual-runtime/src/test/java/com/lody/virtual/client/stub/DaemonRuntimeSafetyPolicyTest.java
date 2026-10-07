@@ -220,7 +220,14 @@ public class DaemonRuntimeSafetyPolicyTest {
         assertTrue(submit >= 0);
         assertTrue(workerBody.indexOf("if (!isReconciliationCurrent(epoch)) return;") > submit);
         assertTrue(workerBody.indexOf("reconcileTrustedGmsCloudMessaging();") > submit);
-        assertTrue(workerBody.indexOf("reconcileTrustedGmsCloudMessagingForUsers(") > submit);
+        int localAuthorization = workerBody.indexOf("reconcileDaemonLaunchLocally(users)");
+        int publish = workerBody.indexOf("recordDaemonLaunchAuthorization(launchToken, users)");
+        int online = workerBody.indexOf("recoverDaemonMessagingAfterLocalAuthorization(users)");
+        assertTrue(localAuthorization > submit);
+        assertTrue(publish > localAuthorization);
+        assertTrue(online > publish);
+        assertTrue(workerBody.substring(publish, online).contains("isReconciliationCurrent(epoch)"));
+        assertTrue(workerBody.substring(publish, online).contains("onlineRecoveryExecutor.submit(() -> {"));
         assertTrue(source.contains("MAX_PENDING_LINE_RECOVERY_NONCES = 64"));
         assertTrue(source.contains("SecureRandom lineRecoveryNonceRandom"));
     }
@@ -284,7 +291,9 @@ public class DaemonRuntimeSafetyPolicyTest {
                 "startupForBackgroundRecovery(Context context,"));
         assertTrue(source.contains("intent.putExtra(EXTRA_DESIRED_GMS_USER_IDS"));
         assertTrue(source.contains("getIntArrayExtra(EXTRA_DESIRED_GMS_USER_IDS)"));
-        assertTrue(source.contains("reconcileTrustedGmsCloudMessagingForUsers("));
+        assertTrue(source.contains("reconcileDaemonLaunchLocally(users)"));
+        assertTrue(source.contains("recordDaemonLaunchAuthorization(launchToken, users)"));
+        assertTrue(source.contains("recoverDaemonMessagingAfterLocalAuthorization(users)"));
     }
 
     @Test

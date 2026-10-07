@@ -16,18 +16,39 @@ class FileGroupStore internal constructor(private val filesRoot: File) : GroupSt
 
     private val root = File(filesRoot, "groups")
     @Synchronized
+    override fun prepareCreation(group: Group) {
+        ensureRoot()
+        val staging = File(root, ".staging-${group.id}")
+        check(!staging.exists()) { "Creation staging already exists" }
+        check(staging.mkdirs()) { "Unable to stage Group" }
+        check(File(staging, DATA_DIRECTORY).mkdir())
+        check(File(staging, APPS_DIRECTORY).mkdir())
+        writeGroupMetadata(File(staging, GROUP_METADATA),group)
+    }
+
+    @Synchronized
+    override fun discardCreation(groupId: String) {
+        val staging = File(root, ".staging-${UUID.fromString(groupId)}")
+        check(!staging.exists() || staging.deleteRecursively()) { "Unable to remove staged Group" }
+    }
+
+    @Synchronized
     override fun create(
         id: String,
         name: String,
         environmentBinding: EnvironmentBinding,
         createdAtEpochMillis: Long,
-    ): Group {
+    ): Group = createWithApps(id, name, environmentBinding, createdAtEpochMillis, emptyList())
+
+    @Synchronized
+    override fun createWithApps(id: String, name: String, environmentBinding: EnvironmentBinding, createdAtEpochMillis: Long, apps: List<GroupApp>): Group {
         val group = Group(
             id = UUID.fromString(id).toString(),
             name = name.trim(),
             createdAtEpochMillis = createdAtEpochMillis,
             environmentBinding = environmentBinding,
             health = GroupHealth.HEALTHY,
+            apps = apps,
         )
         val snapshot = loadSnapshot()
         snapshot.issues.firstOrNull()?.let { throw GroupStoreLoadException(it) }
@@ -37,11 +58,14 @@ class FileGroupStore internal constructor(private val filesRoot: File) : GroupSt
         DaemonAuthorizationGeneration.invalidateBeforeMutation(filesRoot)
         ensureRoot()
         val staging = File(root, ".staging-${group.id}")
-        check(staging.mkdirs()) { "Unable to create Group staging root" }
+        if (!staging.exists()) {
+            check(staging.mkdirs()) { "Unable to create Group staging root" }
+            check(File(staging, DATA_DIRECTORY).mkdir())
+            check(File(staging, APPS_DIRECTORY).mkdir())
+        }
         return try {
-            check(File(staging, DATA_DIRECTORY).mkdir()) { "Unable to create Group data root" }
-            check(File(staging, APPS_DIRECTORY).mkdir()) { "Unable to create Group apps root" }
             writeGroupMetadata(File(staging, GROUP_METADATA), group)
+            apps.forEach { writeAppMetadata(File(File(staging, APPS_DIRECTORY), "${it.packageName}.properties"), it) }
             check(staging.renameTo(File(root, group.id))) { "Unable to activate Group" }
             group
         } catch (error: Throwable) {

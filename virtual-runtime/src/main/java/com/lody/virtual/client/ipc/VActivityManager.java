@@ -243,8 +243,14 @@ public class VActivityManager {
         try { getService().cancelForegroundLaunch(packageName, userId); }
         catch (RemoteException ignored) { }
     }
+    private static final java.util.Set<IBinder> visibleGuestActivities =
+            java.util.Collections.newSetFromMap(new java.util.concurrent.ConcurrentHashMap<IBinder, Boolean>());
+    public static boolean hasVisibleGuestActivity() { return !visibleGuestActivities.isEmpty(); }
     public void onActivityVisibilityChanged(Activity activity, boolean visible) {
         IBinder token = mirror.android.app.Activity.mToken.get(activity);
+        if (token != null) {
+            if (visible) visibleGuestActivities.add(token); else visibleGuestActivities.remove(token);
+        }
         try { getService().onActivityVisibilityChanged(VUserHandle.myUserId(), token, visible); }
         catch (RemoteException ignored) { }
     }
@@ -547,6 +553,10 @@ public class VActivityManager {
         }
     }
 
+    public int getScopedSyncManagerPid() throws RemoteException {
+        return getService().getScopedSyncManagerPid();
+    }
+
     public void sendActivityResult(IBinder resultTo, String resultWho, int requestCode) {
         ActivityClientRecord r = mActivities.get(resultTo);
         if (r != null && r.activity != null) {
@@ -658,4 +668,21 @@ public class VActivityManager {
             VirtualRuntime.crash(e);
         }
     }
+    public String prepareUriPicker(Intent request, IBinder resultTo) {
+        try { return getService().prepareUriPicker(request, resultTo); }
+        catch (RemoteException failure) { throw new IllegalStateException(failure); }
+    }
+    public Intent takeUriPickerRequest(String session) {
+        try { return getService().takeUriPickerRequest(session); }
+        catch (RemoteException failure) { throw new IllegalStateException(failure); }
+    }
+    public boolean completeUriPicker(String session, int resultCode, Intent result) {
+        try { return getService().completeUriPicker(session, resultCode, result); }
+        catch (RemoteException failure) { return false; }
+    }
+    public boolean hasSelectedUriGrant(String uri) {
+        try { return getService().hasSelectedUriGrant(uri); }
+        catch (RemoteException failure) { return false; }
+    }
+
 }

@@ -176,6 +176,48 @@ class GroupLifecycleCoordinatorTest {
         assertEquals(EnvironmentBinding(5), store.find(GROUP_B)?.environmentBinding)
     }
 
+    @Test
+    fun `initializer failure never commits and rolls back provisioned environment`() {
+        val store = InMemoryGroupStore()
+        val runtime = FakeRuntime(nextId = 8)
+        val journal = FakeJournal()
+        val coordinator = GroupLifecycleCoordinator(store, runtime, journal, idFactory = { GROUP_A }, initialize = { provisional ->
+            assertNull(store.find(provisional.id))
+            assertEquals(GroupHealth.PROVISIONING, provisional.health)
+            error("Google initialization failed")
+        })
+        val failure = runCatching { coordinator.createGroup("工作") }.exceptionOrNull()
+        assertEquals("Google initialization failed", failure?.message)
+        assertTrue(store.listAll().isEmpty())
+        assertTrue(runtime.environments.isEmpty())
+        assertTrue(journal.listAll().isEmpty())
+    }
+
+    @Test
+    fun `initializer rollback failure retains journal and restart completes cleanup`() {
+        val store = InMemoryGroupStore()
+        val runtime = FakeRuntime(nextId = 9, failDeleteCount = 1)
+        val journal = FakeJournal()
+        val coordinator = GroupLifecycleCoordinator(store, runtime, journal, idFactory = { GROUP_A }, initialize = { error("Google failed") })
+        assertTrue(runCatching { coordinator.createGroup("工作") }.isFailure)
+        assertTrue(store.listAll().isEmpty())
+        assertEquals(1, journal.listAll().size)
+        coordinator.reconcile()
+        assertTrue(runtime.environments.isEmpty())
+        assertTrue(journal.listAll().isEmpty())
+    }
+
+    @Test
+    fun `backup preparation precedes initialization and membership commit`() {
+        val store = InMemoryGroupStore()
+        val runtime = FakeRuntime(nextId = 10)
+        val events = mutableListOf<String>()
+        val coordinator = GroupLifecycleCoordinator(store,runtime,FakeJournal(),idFactory={GROUP_A},initialize={ events += "google"; assertNull(store.find(it.id)) })
+        coordinator.createGroup("工作") { events += "hydrate" }
+        assertEquals(listOf("hydrate","google"),events)
+        assertEquals(GroupHealth.HEALTHY,store.find(GROUP_A)?.health)
+    }
+
     private fun coordinator(
         store: GroupStore,
         runtime: FakeRuntime,

@@ -15,6 +15,10 @@ import java.io.File
 
 /** A deliberately tiny guest whose files prove that a runtime code update preserves private data. */
 class FixtureActivity : Activity() {
+    private var selectedUriProbe: SelectedUriProbe? = null
+    private var permissionProbeStarted = false
+    @Volatile private var probeResumed = false
+    private var probeReadinessDeadline = 0L
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
@@ -44,6 +48,11 @@ class FixtureActivity : Activity() {
         runCatching { File(filesDir, ENVIRONMENT_PROBE_FILE).writeText(probeJson) }
         Log.i(ENVIRONMENT_PROBE_LOG_TAG, probeJson)
 
+        if (File(filesDir, SelectedUriProbe.ENABLE_FILE).exists()) {
+            selectedUriProbe = SelectedUriProbe(this).also { it.show() }
+            return
+        }
+
         setContentView(
             ScrollView(this).apply {
                 addView(
@@ -61,6 +70,60 @@ class FixtureActivity : Activity() {
                 )
             },
         )
+    }
+
+    override fun onResume() {
+        super.onResume()
+        probeResumed = true
+        if (File(filesDir, "enable-permission-probe").exists()) {
+            window.addFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+            if (probeReadinessDeadline == 0L) {
+                probeReadinessDeadline = android.os.SystemClock.elapsedRealtime() + 20_000
+            }
+            window.decorView.post { startProbeWhenForeground() }
+        }
+    }
+
+    override fun onPause() {
+        probeResumed = false
+        super.onPause()
+    }
+
+    override fun onWindowFocusChanged(hasFocus: Boolean) {
+        super.onWindowFocusChanged(hasFocus)
+        if (hasFocus) window.decorView.post { startProbeWhenForeground() }
+    }
+
+    private fun startProbeWhenForeground() {
+        if (permissionProbeStarted || !File(filesDir, "enable-permission-probe").exists()) return
+        if (!probeResumed || !hasWindowFocus() || isFinishing) {
+            if (probeReadinessDeadline == 0L) return
+            if (android.os.SystemClock.elapsedRealtime() < probeReadinessDeadline) {
+                window.decorView.postDelayed({ startProbeWhenForeground() }, 100)
+            } else {
+                permissionProbeStarted = true
+                File(filesDir, PermissionEnforcementProbe.RESULT_FILE).writeText(
+                    org.json.JSONObject().put("readiness", "foreground-timeout")
+                        .put("resumed", probeResumed).put("hasWindowFocus", hasWindowFocus())
+                        .put("isFinishing", isFinishing).toString(),
+                )
+            }
+            return
+        }
+        permissionProbeStarted = true
+        Thread {
+            val result = PermissionEnforcementProbe.collect(this) {
+                org.json.JSONObject().put("resumed", probeResumed)
+                    .put("hasWindowFocus", hasWindowFocus()).put("isFinishing", isFinishing)
+                    .put("elapsedRealtime", android.os.SystemClock.elapsedRealtime())
+            }
+            File(filesDir, PermissionEnforcementProbe.RESULT_FILE).writeText(result.toString())
+        }.start()
+    }
+
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: android.content.Intent?) {
+        super.onActivityResult(requestCode, resultCode, data)
+        selectedUriProbe?.onResult(requestCode, resultCode, data)
     }
 
     private fun permissionGranted(permission: String): Boolean =

@@ -157,19 +157,19 @@ public class VUserManagerService extends IUserManager.Stub {
     /** Called only after package settings and every user-scoped service have loaded durable state. */
     public void recoverPartialUsers() {
         synchronized (mInstallLock) {
+            ArrayList<Integer> partials = new ArrayList<>();
             synchronized (mPackagesLock) {
-                ArrayList<VUserInfo> partials = new ArrayList<>();
                 for (int i = 0; i < mUsers.size(); i++) {
                     VUserInfo user = mUsers.valueAt(i);
-                    if (user.partial && user.id != 0) partials.add(user);
+                    if (user.partial && user.id != 0) partials.add(user.id);
                 }
-                for (VUserInfo user : partials) {
-                    try {
-                        removeUserStateLocked(user.id);
-                    } catch (IllegalStateException failure) {
-                        // Keep the partial record durable. A later process restart retries it.
-                        VLog.e(LOG_TAG, "Partial virtual-user cleanup remains incomplete");
-                    }
+            }
+            for (Integer userId : partials) {
+                try {
+                    removeUserStateWithInstallLock(userId);
+                } catch (IllegalStateException failure) {
+                    // Keep the partial record durable. A later restart retries every step.
+                    VLog.e(LOG_TAG, "Partial virtual-user cleanup remains incomplete");
                 }
             }
         }
@@ -229,6 +229,14 @@ public class VUserManagerService extends IUserManager.Stub {
             return null;
         }
         return ui;
+    }
+
+    /** Server-only lifecycle query; partial/removing users cannot acquire new runtime work. */
+    public boolean isRuntimeAvailable(int userId) {
+        synchronized (mPackagesLock) {
+            VUserInfo user = mUsers.get(userId);
+            return user != null && !user.partial && !mRemovingUserIds.contains(userId);
+        }
     }
 
     public boolean exists(int userId) {
@@ -789,41 +797,28 @@ public class VUserManagerService extends IUserManager.Stub {
     }
 
     void finishRemoveUser(final int userHandle) {
-        if (DBG) VLog.i(LOG_TAG, "finishRemoveUser " + userHandle);
-        // Let other services shutdown any activity and clean up their state before completely
-        // wiping the user's system directory and removing from the user list
         long identity = Binder.clearCallingIdentity();
         try {
-            Intent addedIntent = new Intent(Constants.ACTION_USER_REMOVED);
-            addedIntent.putExtra(Constants.EXTRA_USER_HANDLE, userHandle);
-            VActivityManagerService.get().sendOrderedBroadcastAsUser(addedIntent, VUserHandle.ALL,
-                   null,
-                    new BroadcastReceiver() {
-                        @Override
-                        public void onReceive(Context context, Intent intent) {
-                            if (DBG) {
-                                VLog.i(LOG_TAG,
-                                        "USER_REMOVED broadcast sent, cleaning up user data "
-                                        + userHandle);
-                            }
-                            new Thread() {
-                                public void run() {
-                                    synchronized (mInstallLock) {
-                                        synchronized (mPackagesLock) {
-                                            removeUserStateLocked(userHandle);
-                                        }
-                                    }
-                                }
-                            }.start();
-                        }
-                    },
-                    null, Activity.RESULT_OK, null, null);
+            // User stop has already revoked durable workloads and retired processes. Complete
+            // mandatory idempotent cleanup before returning success or releasing this numeric ID;
+            // a host ordered broadcast is not a cleanup acknowledgement.
+            synchronized (mInstallLock) {
+                removeUserStateWithInstallLock(userHandle);
+            }
+            android.util.Log.i("AppTwinEngine", "virtual-user-removal-completed");
+            Intent removed = new Intent(Constants.ACTION_USER_REMOVED);
+            removed.putExtra(Constants.EXTRA_USER_HANDLE, userHandle);
+            try {
+                VActivityManagerService.get().sendBroadcastAsUser(removed, VUserHandle.ALL);
+            } catch (RuntimeException notificationFailure) {
+                android.util.Log.w("AppTwinEngine", "virtual-user-removal-notification-failed");
+            }
         } finally {
             Binder.restoreCallingIdentity(identity);
         }
     }
 
-    private void removeUserStateLocked(int userHandle) {
+    private void removeUserStateWithInstallLock(int userHandle) {
         // This must finish before the numeric id becomes reusable. A failure deliberately leaves
         // the partial user record in place so startup recovery retries the full idempotent cleanup.
         mCleanupCoordinator.clearUserState(userHandle);
@@ -847,6 +842,9 @@ public class VUserManagerService extends IUserManager.Stub {
             throw new IllegalStateException("Virtual-user filesystem cleanup is incomplete");
         }
 
+        // No service callback runs while holding the package monitor. The install lock and
+        // partial user record prevent numeric ID reuse until every cleanup step has succeeded.
+        synchronized (mPackagesLock) {
         // Remove this user from the list
         mUsers.remove(userHandle);
         mRemovingUserIds.remove(userHandle);
@@ -856,6 +854,7 @@ public class VUserManagerService extends IUserManager.Stub {
         // Update the user list
         writeUserListLocked();
         updateUserIdsLocked();
+        }
     }
 
     @android.annotation.SuppressLint("NewApi") // AppTwin's production app minSdk is 26.

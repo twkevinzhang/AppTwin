@@ -231,6 +231,8 @@
         android:required="false" />
 
     <application>
+        <activity android:name="com.lody.virtual.client.stub.TrustedUriPickerActivity"
+            android:exported="false" android:theme="@android:style/Theme.Translucent.NoTitleBar" />
         <service
             android:name="com.lody.virtual.client.stub.ForegroundEngineService"
             android:exported="false"

@@ -9,6 +9,9 @@ import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
+import androidx.compose.ui.test.performScrollToNode
+import androidx.compose.ui.test.hasTestTag
+import androidx.compose.ui.test.hasText
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import org.apptwin.MainUiState
 import org.apptwin.archive.SpaceArchiveCompression
@@ -33,7 +36,8 @@ class SettingsPermissionUiTest {
         var selected: ClonePermissionSummary? = null
         setContent(onPermissionAction = { selected = it })
 
-        composeRule.onNodeWithTag("clone-permission-card").performScrollTo().assertIsDisplayed()
+        composeRule.onNodeWithTag("settings-list").performScrollToNode(hasTestTag("clone-permission-card"))
+        composeRule.onNodeWithTag("clone-permission-card").assertIsDisplayed()
         composeRule.onNodeWithText("0 / 1 項已就緒").performScrollTo().assertIsDisplayed()
         composeRule.onNodeWithText("相機").performScrollTo().assertIsDisplayed()
         composeRule.onNodeWithText("尚未授權").performScrollTo().assertIsDisplayed()
@@ -48,7 +52,8 @@ class SettingsPermissionUiTest {
     fun settingsExpandsAffectedClonesAndGroupedPermissions() {
         setContent()
 
-        composeRule.onNodeWithText("影響 2 個分身").performScrollTo().performClick()
+        composeRule.onNodeWithTag("settings-list").performScrollToNode(hasText("影響 2 個分身"))
+        composeRule.onNodeWithText("影響 2 個分身").performClick()
         composeRule.onNodeWithText("工作 · 相機 App").performScrollTo().assertIsDisplayed()
         composeRule.onNodeWithText("個人 · 聊天 App").performScrollTo().assertIsDisplayed()
 
@@ -75,7 +80,7 @@ class SettingsPermissionUiTest {
         composeRule.onNodeWithTag("archive-compression-medium").assertIsSelected()
         composeRule.onNodeWithTag("archive-compression-low").assertIsNotSelected()
         composeRule.onNodeWithText("檔案通常較小，匯出較慢").assertDoesNotExist()
-        composeRule.onNodeWithText("檔案大小與匯出速度較為平衡").assertIsDisplayed()
+        composeRule.onNodeWithText("檔案大小與匯出速度較為平衡").performScrollTo().assertIsDisplayed()
         composeRule.onNodeWithText("匯出較快，檔案通常較大").assertDoesNotExist()
     }
 
@@ -119,6 +124,23 @@ class SettingsPermissionUiTest {
         composeRule.onNodeWithText("匯出較快，檔案通常較大").assertIsDisplayed()
     }
 
+    @Test
+    fun globalBackupLocationIsSharedAndDispatchesDirectoryPicker() {
+        var selected = false
+        composeRule.setContent { AppTwinTheme {
+            SettingsScreen(
+                state = MainUiState(isRefreshing = false),
+                onOpenStorageSettings = {}, onExportDiagnostics = {},
+                notificationsGranted = true, onRequestNotifications = {}, onPermissionAction = {},
+                globalBackupLocation = "content://com.android.externalstorage.documents/tree/primary%3ADownload%2FAppTwin", onChooseGlobalBackupLocation = { selected = true },
+            )
+        } }
+        composeRule.onNodeWithTag("global-backup-location").performScrollTo().assertIsDisplayed()
+        composeRule.onNodeWithText("內部儲存空間 / Download/AppTwin").assertIsDisplayed()
+        composeRule.onNodeWithTag("choose-global-backup-location").performScrollTo().performClick()
+        composeRule.runOnIdle { assertEquals(true, selected) }
+    }
+
     private fun setContent(
         onPermissionAction: (ClonePermissionSummary) -> Unit = {},
     ) {
@@ -156,7 +178,7 @@ class SettingsPermissionUiTest {
             permission = "android.permission.CAMERA",
             label = "相機",
             category = ClonePermissionCategory.RUNTIME,
-            virtualScope = ClonePermissionVirtualScope.CAMERA_MIC_PER_SPACE,
+            virtualScope = ClonePermissionVirtualScope.SPACE_SCOPED,
             granted = false,
             action = ClonePermissionAction.REQUEST_RUNTIME,
             affectedClones = listOf(workCamera, personalChat),

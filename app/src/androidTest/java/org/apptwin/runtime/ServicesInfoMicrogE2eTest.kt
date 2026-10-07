@@ -69,8 +69,8 @@ class ServicesInfoMicrogE2eTest {
         val userB = groupB.environmentId()
         assertTrue("Groups must use distinct positive virtual users", userA > 0 && userB > 0 && userA != userB)
 
-        operations.grantGmsConsent(groupA.id)
-        val enabled = operations.enableGms(groupA.id)
+        internalGmsLifecycleFixture().grantNetworkConsent(groupA.id)
+        val enabled = internalGmsLifecycleFixture().enable(groupA.id)
         assertTrue(
             "Group A microG enable must reach a business terminal: $enabled",
             enabled is GmsLifecycleResult.Completed || enabled is GmsLifecycleResult.AlreadySatisfied,

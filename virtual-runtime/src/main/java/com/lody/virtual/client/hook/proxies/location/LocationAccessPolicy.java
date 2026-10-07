@@ -4,7 +4,7 @@ import android.Manifest;
 import android.content.Context;
 import android.content.pm.PackageManager;
 import android.os.Build;
-import android.os.SystemClock;
+
 
 import com.lody.virtual.client.core.VirtualCore;
 
@@ -17,34 +17,33 @@ import com.lody.virtual.client.core.VirtualCore;
  * fine location access, expose location as unavailable and avoid the host Binder call entirely.
  */
 public final class LocationAccessPolicy {
-    private static final long CACHE_DURATION_MS = 1_000L;
-
-    private static volatile long sCheckedAtMs = Long.MIN_VALUE;
-    private static volatile boolean sHasLocationPermission;
-
     private LocationAccessPolicy() {
     }
 
     public static boolean hasLocationPermission() {
-        long now = SystemClock.elapsedRealtime();
-        long checkedAtMs = sCheckedAtMs;
-        if (checkedAtMs != Long.MIN_VALUE && now - checkedAtMs <= CACHE_DURATION_MS) {
-            return sHasLocationPermission;
-        }
+        return com.lody.virtual.client.hook.GuestPermissionPolicy.isGranted(
+                Manifest.permission.ACCESS_FINE_LOCATION)
+                || com.lody.virtual.client.hook.GuestPermissionPolicy.isGranted(
+                Manifest.permission.ACCESS_COARSE_LOCATION);
+    }
 
-        Context context = VirtualCore.get().getContext();
-        int fine = checkPermission(context, Manifest.permission.ACCESS_FINE_LOCATION);
-        int coarse = checkPermission(context, Manifest.permission.ACCESS_COARSE_LOCATION);
-        boolean granted = hasAnyLocationPermission(fine, coarse);
-        sHasLocationPermission = granted;
-        sCheckedAtMs = now;
-        return granted;
+    public static void requireLocationAccess(Object[] args) {
+        if (!hasLocationPermission()) throw new SecurityException("Space location permission denied");
+        if (!hasFineLocationPermission() && args != null) {
+            for (Object value : args) if ("gps".equals(value)) {
+                throw new SecurityException("GPS requires fine space permission");
+            }
+            CoarseLocationDelivery.wrapCallbacks(args);
+        }
+        if (!com.lody.virtual.client.ipc.VActivityManager.hasVisibleGuestActivity()) {
+            com.lody.virtual.client.hook.GuestPermissionPolicy.require(Manifest.permission.ACCESS_BACKGROUND_LOCATION);
+        }
     }
 
     /** NMEA contains precise coordinates; approximate location permission is insufficient. */
     public static boolean hasFineLocationPermission() {
-        return checkPermission(VirtualCore.get().getContext(),
-                Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED;
+        return com.lody.virtual.client.hook.GuestPermissionPolicy.isGranted(
+                Manifest.permission.ACCESS_FINE_LOCATION);
     }
 
     static boolean hasAnyLocationPermission(int finePermission, int coarsePermission) {
