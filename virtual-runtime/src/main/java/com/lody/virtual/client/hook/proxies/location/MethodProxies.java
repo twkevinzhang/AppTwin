@@ -292,6 +292,57 @@ public class MethodProxies {
     }
 
 
+    /** Android 12 split NMEA registration from GNSS status registration. */
+    static class RegisterGnssNmeaCallback extends MethodProxy {
+        @Override
+        public String getMethodName() {
+            return "registerGnssNmeaCallback";
+        }
+
+        protected boolean hasFinePermission() {
+            return LocationAccessPolicy.hasFineLocationPermission();
+        }
+
+        protected boolean usesFakeLocation() {
+            return isFakeLocationEnable();
+        }
+
+        protected void rewritePackage(Object[] args) {
+            LocationPackageIdentity.replaceGnssNmeaPackage(args, getAppPkg(), getHostPkg());
+        }
+
+        @Override
+        public Object call(Object who, Method method, Object... args) throws Throwable {
+            // Real NMEA must never escape a fake-location space. No synthetic NMEA
+            // transport is implemented for this newer Binder API, so fail closed.
+            if (!hasFinePermission() || usesFakeLocation()) {
+                return LocationAccessPolicy.deniedResult(method.getReturnType());
+            }
+            rewritePackage(args);
+            return super.call(who, method, args);
+        }
+    }
+
+    static class UnregisterGnssNmeaCallback extends MethodProxy {
+        @Override
+        public String getMethodName() {
+            return "unregisterGnssNmeaCallback";
+        }
+
+        protected boolean usesFakeLocation() {
+            return isFakeLocationEnable();
+        }
+
+        @Override
+        public Object call(Object who, Method method, Object... args) throws Throwable {
+            if (usesFakeLocation()) {
+                return LocationAccessPolicy.deniedResult(method.getReturnType());
+            }
+            // Cleanup must still reach Android after location permission is revoked.
+            return super.call(who, method, args);
+        }
+    }
+
     static class UnregisterGnssStatusCallback extends RemoveGpsStatusListener {
         public UnregisterGnssStatusCallback() {
             super("unregisterGnssStatusCallback");

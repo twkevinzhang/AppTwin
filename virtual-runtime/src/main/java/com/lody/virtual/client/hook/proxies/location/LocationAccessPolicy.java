@@ -41,6 +41,12 @@ public final class LocationAccessPolicy {
         return granted;
     }
 
+    /** NMEA contains precise coordinates; approximate location permission is insufficient. */
+    public static boolean hasFineLocationPermission() {
+        return checkPermission(VirtualCore.get().getContext(),
+                Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED;
+    }
+
     static boolean hasAnyLocationPermission(int finePermission, int coarsePermission) {
         return finePermission == PackageManager.PERMISSION_GRANTED
                 || coarsePermission == PackageManager.PERMISSION_GRANTED;
