@@ -1,0 +1,18 @@
+{
+  "snapshots": [
+    {
+      "frameCount": 4881,
+      "captureRequestCount": 4884,
+      "activeClientPID": 24362,
+      "configuredOutputStreamCount": 3
+    },
+    {
+      "frameCount": 4944,
+      "captureRequestCount": 4947,
+      "activeClientPID": 24362,
+      "configuredOutputStreamCount": 3
+    }
+  ],
+  "frameAdvances": true,
+  "requestCounterAdvances": true
+}

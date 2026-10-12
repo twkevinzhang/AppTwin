@@ -1,0 +1,103 @@
+{
+  "nonce": "96e57df6-daa3-4b1b-b826-16dea6ccb34e",
+  "results": [
+    {
+      "phase": "A-read-only",
+      "pid": 343,
+      "taskId": 1615,
+      "WRITE_EXTERNAL_STORAGE": false,
+      "READ_EXTERNAL_STORAGE": true,
+      "READ_MEDIA_IMAGES": true,
+      "READ_MEDIA_VIDEO": true,
+      "sharedQuery": "allowed",
+      "sharedOpen": "allowed",
+      "sharedDirectRead": "allowed",
+      "providerWrite": "blocked:SecurityException",
+      "directTruncate": "blocked:FileNotFoundException",
+      "relativeWrite": "empty",
+      "directRename": "empty",
+      "directDelete": "empty",
+      "directCreate": "blocked:FileNotFoundException",
+      "privateWrite": "allowed",
+      "virtualWrite": "allowed",
+      "launch": "Started(packageName=org.apptwin.fixture.mediacompat, processPrefix=org.apptwin:p, dataDirectory=/data/user/0/org.apptwin/virtual/data/user/3/org.apptwin.fixture.mediacompat)",
+      "host": {
+        "lifecycle": "STARTED",
+        "focus": false,
+        "registrySame": false,
+        "interactive": true,
+        "keyguard": false
+      },
+      "groupId": "68f13720-c32a-4eaf-ac0d-d269def3086c",
+      "user": 3,
+      "hostBefore": {
+        "read": "4ee608f5f399c8e5f2fd68d8eb5f569344b059144cb28ed61cae69031833e718",
+        "providerWrite": "4ee608f5f399c8e5f2fd68d8eb5f569344b059144cb28ed61cae69031833e718",
+        "directTruncate": "4ee608f5f399c8e5f2fd68d8eb5f569344b059144cb28ed61cae69031833e718",
+        "directRename": "4ee608f5f399c8e5f2fd68d8eb5f569344b059144cb28ed61cae69031833e718",
+        "directDelete": "4ee608f5f399c8e5f2fd68d8eb5f569344b059144cb28ed61cae69031833e718",
+        "directCreate": "absent",
+        "renameDestination": "absent"
+      },
+      "hostAfter": {
+        "read": "4ee608f5f399c8e5f2fd68d8eb5f569344b059144cb28ed61cae69031833e718",
+        "providerWrite": "4ee608f5f399c8e5f2fd68d8eb5f569344b059144cb28ed61cae69031833e718",
+        "directTruncate": "4ee608f5f399c8e5f2fd68d8eb5f569344b059144cb28ed61cae69031833e718",
+        "directRename": "4ee608f5f399c8e5f2fd68d8eb5f569344b059144cb28ed61cae69031833e718",
+        "directDelete": "4ee608f5f399c8e5f2fd68d8eb5f569344b059144cb28ed61cae69031833e718",
+        "directCreate": "absent",
+        "renameDestination": "absent"
+      },
+      "phaseCompleted": true,
+      "closingFixture": true
+    },
+    {
+      "phase": "A-write-allowed",
+      "pid": 863,
+      "taskId": 1616,
+      "WRITE_EXTERNAL_STORAGE": true,
+      "READ_EXTERNAL_STORAGE": true,
+      "READ_MEDIA_IMAGES": true,
+      "READ_MEDIA_VIDEO": true,
+      "sharedQuery": "allowed",
+      "sharedOpen": "allowed",
+      "sharedDirectRead": "allowed",
+      "providerWrite": "allowed",
+      "directTruncate": "allowed",
+      "relativeWrite": "empty",
+      "directRename": "allowed",
+      "directDelete": "allowed",
+      "directCreate": "allowed",
+      "privateWrite": "allowed",
+      "virtualWrite": "allowed",
+      "launch": "Started(packageName=org.apptwin.fixture.mediacompat, processPrefix=org.apptwin:p, dataDirectory=/data/user/0/org.apptwin/virtual/data/user/3/org.apptwin.fixture.mediacompat)",
+      "host": {
+        "lifecycle": "STARTED",
+        "focus": false,
+        "registrySame": false,
+        "interactive": true,
+        "keyguard": false
+      },
+      "groupId": "68f13720-c32a-4eaf-ac0d-d269def3086c",
+      "user": 3,
+      "hostBefore": {
+        "read": "4ee608f5f399c8e5f2fd68d8eb5f569344b059144cb28ed61cae69031833e718",
+        "providerWrite": "4ee608f5f399c8e5f2fd68d8eb5f569344b059144cb28ed61cae69031833e718",
+        "directTruncate": "4ee608f5f399c8e5f2fd68d8eb5f569344b059144cb28ed61cae69031833e718",
+        "directRename": "4ee608f5f399c8e5f2fd68d8eb5f569344b059144cb28ed61cae69031833e718",
+        "directDelete": "4ee608f5f399c8e5f2fd68d8eb5f569344b059144cb28ed61cae69031833e718",
+        "directCreate": "absent",
+        "renameDestination": "absent"
+      },
+      "hostAfter": {
+        "read": "4ee608f5f399c8e5f2fd68d8eb5f569344b059144cb28ed61cae69031833e718",
+        "providerWrite": "159a5d65189697b927564565bf00998610bc9b2627e3cd2a128cf70a224faf39",
+        "directTruncate": "159a5d65189697b927564565bf00998610bc9b2627e3cd2a128cf70a224faf39",
+        "directRename": "absent",
+        "directDelete": "absent",
+        "directCreate": "159a5d65189697b927564565bf00998610bc9b2627e3cd2a128cf70a224faf39",
+        "renameDestination": "4ee608f5f399c8e5f2fd68d8eb5f569344b059144cb28ed61cae69031833e718"
+      }
+    }
+  ]
+}

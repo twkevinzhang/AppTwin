@@ -1,0 +1,19 @@
+{
+  "cameraControlIDs": [],
+  "cameraPackageMetadataLines": 45,
+  "previewControlIDs": [],
+  "activeCameraClient": {
+    "package": "org.apptwin",
+    "pid": 20219,
+    "cameraId": "1"
+  },
+  "uiClasses": {
+    "android.widget.FrameLayout": 5,
+    "android.widget.LinearLayout": 3,
+    "android.widget.RelativeLayout": 1,
+    "android.widget.TextView": 1,
+    "android.widget.ImageView": 1,
+    "android.widget.Button": 1
+  },
+  "safeCameraRoles": []
+}

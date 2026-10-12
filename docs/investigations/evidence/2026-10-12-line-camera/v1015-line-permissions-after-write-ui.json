@@ -1,0 +1,6 @@
+{
+  "WRITE_EXTERNAL_STORAGE": true,
+  "READ_EXTERNAL_STORAGE": true,
+  "CAMERA": true,
+  "RECORD_AUDIO": true
+}

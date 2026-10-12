@@ -1,0 +1,29 @@
+{
+  "source": "during-run filtered VA++ buffer tool observation",
+  "api": 31,
+  "observations": [
+    {
+      "pid": 14483,
+      "time": "00:45:17.246",
+      "jniCompleteReady": 1
+    },
+    {
+      "pid": 14497,
+      "time": "00:45:18.909",
+      "jniCompleteReady": 1
+    },
+    {
+      "pid": 14514,
+      "time": "00:45:20.398",
+      "jniCompleteReady": 1
+    },
+    {
+      "pid": 14542,
+      "time": "00:45:21.834",
+      "jniCompleteReady": 1
+    }
+  ],
+  "fixturePidAttribution": "unverified",
+  "activationSymbolLogs": "not observed",
+  "finalBufferRotated": true
+}

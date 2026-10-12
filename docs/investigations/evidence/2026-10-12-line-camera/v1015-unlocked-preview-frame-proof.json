@@ -1,0 +1,44 @@
+[
+  {
+    "frameHistoryMin": null,
+    "frameHistoryMax": null,
+    "frameHistoryRows": 0,
+    "requestStatus": [
+      "Request ID counter: 1",
+      "0x800b0001 (num_frames) with type 1 (int32) defined in section org.codeaurora.qcamera3.ae_bracket",
+      "0x80150000 (MFNRTotalNumFrames) with type 1 (int32) defined in section org.quic.camera2.mfnrconfigs",
+      "0x80160000 (MFSRTotalNumFrames) with type 1 (int32) defined in section org.quic.camera2.mfsrconfigs"
+    ],
+    "configuredStreamMetadata": [
+      "No input stream.",
+      "Stream[0]: Output",
+      "Max size: 0",
+      "Stream[1]: Output",
+      "Max size: 3342499",
+      "Stream[2]: Output",
+      "Max size: 0",
+      "Total stream sets: 0"
+    ]
+  },
+  {
+    "frameHistoryMin": null,
+    "frameHistoryMax": null,
+    "frameHistoryRows": 0,
+    "requestStatus": [
+      "Request ID counter: 1",
+      "0x800b0001 (num_frames) with type 1 (int32) defined in section org.codeaurora.qcamera3.ae_bracket",
+      "0x80150000 (MFNRTotalNumFrames) with type 1 (int32) defined in section org.quic.camera2.mfnrconfigs",
+      "0x80160000 (MFSRTotalNumFrames) with type 1 (int32) defined in section org.quic.camera2.mfsrconfigs"
+    ],
+    "configuredStreamMetadata": [
+      "No input stream.",
+      "Stream[0]: Output",
+      "Max size: 0",
+      "Stream[1]: Output",
+      "Max size: 3342499",
+      "Stream[2]: Output",
+      "Max size: 0",
+      "Total stream sets: 0"
+    ]
+  }
+]

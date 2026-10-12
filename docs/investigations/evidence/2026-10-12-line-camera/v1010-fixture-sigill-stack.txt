@@ -1,0 +1,6 @@
+10-13 00:54:50.885 19692 19692 F DEBUG   : signal 4 (SIGILL), code 1 (ILL_ILLOPC), fault addr 0x7004f4a7ac
+10-13 00:54:50.887 19692 19692 F DEBUG   :       #00 pc 000000000005d7ac  <binary> (open+0) (BuildId: 35c247de3bc12550437d791ecc197c4c)
+10-13 00:54:50.888 19692 19692 F DEBUG   :       #01 pc 00000000001d2748  <binary> (OpenArchive(char const*, ZipArchive**)+56) (BuildId: 6c8cd7ac1dcf8dde986346155b3da28d)
+10-13 00:54:50.888 19692 19692 F DEBUG   :       #02 pc 000000000004dba8  <binary> (android::ZipAssetsProvider::Create(std::__1::basic_string<char, std::__1::char_traits<char>, std::__1::allocator<char> >, unsigned int)+80) (BuildId: 5b71b6790ae523f68db735eccc0e11b6)
+10-13 00:54:50.902 19692 19692 F DEBUG   :       #03 pc 00000000001b0544  <binary> (android::NativeLoad(_JNIEnv*, _jclass*, int, _jstring*, int, _jobject*)+672) (BuildId: 6c8cd7ac1dcf8dde986346155b3da28d)
+10-13 00:54:50.902 19692 19692 F DEBUG   :       #04 pc 00000000021c1bb0  <binary> (deleted)

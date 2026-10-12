@@ -1,0 +1,9 @@
+{
+  "CAMERA": true,
+  "READ_EXTERNAL_STORAGE": true,
+  "WRITE_EXTERNAL_STORAGE": true,
+  "physicalCameraBlock": "ASUS\u80cc\u84cb\u5361\u69ab",
+  "previewVerified": false,
+  "debugPropertyOriginalEmpty": true,
+  "globalEnabled": true
+}

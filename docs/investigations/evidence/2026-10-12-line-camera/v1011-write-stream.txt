@@ -1,0 +1,385 @@
+10-13 01:01:13.090 24884 24884 I VA++    : SharedMediaHooks phase=jni-start api=31
+10-13 01:01:13.092 24884 24884 I VA++    : SharedMediaHooks phase=jni-uniformer-return
+10-13 01:01:13.092 24884 24884 I VA++    : SharedMediaHooks phase=jni-complete ready=1
+10-13 01:01:14.528 24908 24908 I VA++    : SharedMediaHooks phase=jni-start api=31
+10-13 01:01:14.530 24908 24908 I VA++    : SharedMediaHooks phase=jni-uniformer-return
+10-13 01:01:14.530 24908 24908 I VA++    : SharedMediaHooks phase=jni-complete ready=1
+10-13 01:01:16.273 24933 24933 I VA++    : SharedMediaHooks phase=jni-start api=31
+10-13 01:01:16.275 24933 24933 I VA++    : SharedMediaHooks phase=jni-uniformer-return
+10-13 01:01:16.275 24933 24933 I VA++    : SharedMediaHooks phase=jni-complete ready=1
+10-13 01:01:17.241 24951 24951 I VA++    : SharedMediaHooks phase=jni-start api=31
+10-13 01:01:17.243 24951 24951 I VA++    : SharedMediaHooks phase=jni-uniformer-return
+10-13 01:01:17.243 24951 24951 I VA++    : SharedMediaHooks phase=jni-complete ready=1
+10-13 01:01:34.579 25283 25283 I VA++    : SharedMediaHooks phase=jni-start api=31
+10-13 01:01:34.581 25283 25283 I VA++    : SharedMediaHooks phase=jni-uniformer-return
+10-13 01:01:34.581 25283 25283 I VA++    : SharedMediaHooks phase=jni-complete ready=1
+10-13 01:01:34.794 25296 25296 I VA++    : SharedMediaHooks phase=jni-start api=31
+10-13 01:01:34.794 25296 25296 I VA++    : SharedMediaHooks symbol=access phase=resolve
+10-13 01:01:34.794 25296 25296 I VA++    : SharedMediaHooks symbol=access phase=install
+10-13 01:01:34.794 25296 25296 I VA++    : SharedMediaHooks symbol=access phase=installed ready=1
+10-13 01:01:34.794 25296 25296 I VA++    : SharedMediaHooks symbol=chmod phase=resolve
+10-13 01:01:34.794 25296 25296 I VA++    : SharedMediaHooks symbol=chmod phase=install
+10-13 01:01:34.794 25296 25296 I VA++    : SharedMediaHooks symbol=chmod phase=installed ready=1
+10-13 01:01:34.794 25296 25296 I VA++    : SharedMediaHooks symbol=fchmodat phase=resolve
+10-13 01:01:34.795 25296 25296 I VA++    : SharedMediaHooks symbol=fchmodat phase=install
+10-13 01:01:34.795 25296 25296 I VA++    : SharedMediaHooks symbol=fchmodat phase=installed ready=1
+10-13 01:01:34.795 25296 25296 I VA++    : SharedMediaHooks symbol=stat phase=resolve
+10-13 01:01:34.795 25296 25296 I VA++    : SharedMediaHooks symbol=stat phase=install
+10-13 01:01:34.795 25296 25296 I VA++    : SharedMediaHooks symbol=stat phase=installed ready=1
+10-13 01:01:34.795 25296 25296 I VA++    : SharedMediaHooks symbol=lstat phase=resolve
+10-13 01:01:34.795 25296 25296 I VA++    : SharedMediaHooks symbol=lstat phase=install
+10-13 01:01:34.795 25296 25296 I VA++    : SharedMediaHooks symbol=lstat phase=installed ready=1
+10-13 01:01:34.795 25296 25296 I VA++    : SharedMediaHooks symbol=open phase=resolve
+10-13 01:01:34.795 25296 25296 I VA++    : SharedMediaHooks symbol=open phase=install
+10-13 01:01:34.795 25296 25296 I VA++    : SharedMediaHooks symbol=open phase=installed ready=1
+10-13 01:01:34.795 25296 25296 I VA++    : SharedMediaHooks symbol=openat phase=resolve
+10-13 01:01:34.795 25296 25296 I VA++    : SharedMediaHooks symbol=openat phase=install
+10-13 01:01:34.795 25296 25296 I VA++    : SharedMediaHooks symbol=openat phase=installed ready=1
+10-13 01:01:34.795 25296 25296 I VA++    : SharedMediaHooks symbol=__open_2 phase=resolve
+10-13 01:01:34.795 25296 25296 I VA++    : SharedMediaHooks symbol=__open_2 phase=install
+10-13 01:01:34.795 25296 25296 I VA++    : SharedMediaHooks symbol=__open_2 phase=installed ready=1
+10-13 01:01:34.795 25296 25296 I VA++    : SharedMediaHooks symbol=__openat_2 phase=resolve
+10-13 01:01:34.795 25296 25296 I VA++    : SharedMediaHooks symbol=__openat_2 phase=install
+10-13 01:01:34.795 25296 25296 I VA++    : SharedMediaHooks symbol=__openat_2 phase=installed ready=1
+10-13 01:01:34.795 25296 25296 I VA++    : SharedMediaHooks symbol=fopen phase=resolve
+10-13 01:01:34.795 25296 25296 I VA++    : SharedMediaHooks symbol=fopen phase=install
+10-13 01:01:34.795 25296 25296 I VA++    : SharedMediaHooks symbol=fopen phase=installed ready=1
+10-13 01:01:34.795 25296 25296 I VA++    : SharedMediaHooks symbol=opendir phase=resolve
+10-13 01:01:34.795 25296 25296 I VA++    : SharedMediaHooks symbol=opendir phase=install
+10-13 01:01:34.795 25296 25296 I VA++    : SharedMediaHooks symbol=opendir phase=installed ready=1
+10-13 01:01:34.795 25296 25296 I VA++    : SharedMediaHooks symbol=mkdir phase=resolve
+10-13 01:01:34.795 25296 25296 I VA++    : SharedMediaHooks symbol=mkdir phase=install
+10-13 01:01:34.795 25296 25296 I VA++    : SharedMediaHooks symbol=mkdir phase=installed ready=1
+10-13 01:01:34.795 25296 25296 I VA++    : SharedMediaHooks symbol=rename phase=resolve
+10-13 01:01:34.795 25296 25296 I VA++    : SharedMediaHooks symbol=rename phase=install
+10-13 01:01:34.795 25296 25296 I VA++    : SharedMediaHooks symbol=rename phase=installed ready=1
+10-13 01:01:34.795 25296 25296 I VA++    : SharedMediaHooks symbol=unlink phase=resolve
+10-13 01:01:34.795 25296 25296 I VA++    : SharedMediaHooks symbol=unlink phase=install
+10-13 01:01:34.795 25296 25296 I VA++    : SharedMediaHooks symbol=unlink phase=installed ready=1
+10-13 01:01:34.795 25296 25296 I VA++    : SharedMediaHooks symbol=rmdir phase=resolve
+10-13 01:01:34.795 25296 25296 I VA++    : SharedMediaHooks symbol=rmdir phase=install
+10-13 01:01:34.795 25296 25296 I VA++    : SharedMediaHooks symbol=rmdir phase=installed ready=1
+10-13 01:01:34.795 25296 25296 I VA++    : SharedMediaHooks symbol=fchownat phase=resolve
+10-13 01:01:34.795 25296 25296 I VA++    : SharedMediaHooks symbol=fchownat phase=install
+10-13 01:01:34.795 25296 25296 I VA++    : SharedMediaHooks symbol=fchownat phase=installed ready=1
+10-13 01:01:34.795 25296 25296 I VA++    : SharedMediaHooks symbol=renameat phase=resolve
+10-13 01:01:34.795 25296 25296 I VA++    : SharedMediaHooks symbol=renameat phase=install
+10-13 01:01:34.795 25296 25296 I VA++    : SharedMediaHooks symbol=renameat phase=installed ready=1
+10-13 01:01:34.795 25296 25296 I VA++    : SharedMediaHooks symbol=fstatat64 phase=resolve
+10-13 01:01:34.795 25296 25296 I VA++    : SharedMediaHooks symbol=fstatat64 phase=install
+10-13 01:01:34.795 25296 25296 I VA++    : SharedMediaHooks symbol=fstatat64 phase=installed ready=1
+10-13 01:01:34.795 25296 25296 I VA++    : SharedMediaHooks symbol=__statfs phase=resolve
+10-13 01:01:34.795 25296 25296 I VA++    : SharedMediaHooks symbol=__statfs phase=missing
+10-13 01:01:34.795 25296 25296 I VA++    : SharedMediaHooks symbol=mkdirat phase=resolve
+10-13 01:01:34.795 25296 25296 I VA++    : SharedMediaHooks symbol=mkdirat phase=install
+10-13 01:01:34.795 25296 25296 I VA++    : SharedMediaHooks symbol=mkdirat phase=installed ready=1
+10-13 01:01:34.795 25296 25296 I VA++    : SharedMediaHooks symbol=mknodat phase=resolve
+10-13 01:01:34.795 25296 25296 I VA++    : SharedMediaHooks symbol=mknodat phase=install
+10-13 01:01:34.795 25296 25296 I VA++    : SharedMediaHooks symbol=mknodat phase=installed ready=1
+10-13 01:01:34.795 25296 25296 I VA++    : SharedMediaHooks symbol=truncate phase=resolve
+10-13 01:01:34.795 25296 25296 I VA++    : SharedMediaHooks symbol=truncate phase=install
+10-13 01:01:34.795 25296 25296 I VA++    : SharedMediaHooks symbol=truncate phase=installed ready=1
+10-13 01:01:34.795 25296 25296 I VA++    : SharedMediaHooks symbol=linkat phase=resolve
+10-13 01:01:34.795 25296 25296 I VA++    : SharedMediaHooks symbol=linkat phase=install
+10-13 01:01:34.795 25296 25296 I VA++    : SharedMediaHooks symbol=linkat phase=installed ready=1
+10-13 01:01:34.795 25296 25296 I VA++    : SharedMediaHooks symbol=readlinkat phase=resolve
+10-13 01:01:34.795 25296 25296 I VA++    : SharedMediaHooks symbol=readlinkat phase=install
+10-13 01:01:34.795 25296 25296 I VA++    : SharedMediaHooks symbol=readlinkat phase=installed ready=1
+10-13 01:01:34.795 25296 25296 I VA++    : SharedMediaHooks symbol=unlinkat phase=resolve
+10-13 01:01:34.795 25296 25296 I VA++    : SharedMediaHooks symbol=unlinkat phase=install
+10-13 01:01:34.795 25296 25296 I VA++    : SharedMediaHooks symbol=unlinkat phase=installed ready=1
+10-13 01:01:34.795 25296 25296 I VA++    : SharedMediaHooks symbol=symlinkat phase=resolve
+10-13 01:01:34.795 25296 25296 I VA++    : SharedMediaHooks symbol=symlinkat phase=install
+10-13 01:01:34.795 25296 25296 I VA++    : SharedMediaHooks symbol=symlinkat phase=installed ready=1
+10-13 01:01:34.795 25296 25296 I VA++    : SharedMediaHooks symbol=utimensat phase=resolve
+10-13 01:01:34.795 25296 25296 I VA++    : SharedMediaHooks symbol=utimensat phase=install
+10-13 01:01:34.795 25296 25296 I VA++    : SharedMediaHooks symbol=utimensat phase=installed ready=1
+10-13 01:01:34.795 25296 25296 I VA++    : SharedMediaHooks symbol=chdir phase=resolve
+10-13 01:01:34.796 25296 25296 I VA++    : SharedMediaHooks symbol=chdir phase=install
+10-13 01:01:34.796 25296 25296 I VA++    : SharedMediaHooks symbol=chdir phase=installed ready=1
+10-13 01:01:34.796 25296 25296 I VA++    : SharedMediaHooks symbol=execve phase=resolve
+10-13 01:01:34.796 25296 25296 I VA++    : SharedMediaHooks symbol=execve phase=install
+10-13 01:01:34.796 25296 25296 I VA++    : SharedMediaHooks symbol=execve phase=installed ready=1
+10-13 01:01:34.796 25296 25296 I VA++    : SharedMediaHooks symbol=statfs64 phase=resolve
+10-13 01:01:34.796 25296 25296 I VA++    : SharedMediaHooks symbol=statfs64 phase=install
+10-13 01:01:34.796 25296 25296 I VA++    : SharedMediaHooks symbol=statfs64 phase=installed ready=1
+10-13 01:01:34.797 25296 25296 I VA++    : SharedMediaHooks symbol=android_dlopen_ext phase=resolve
+10-13 01:01:34.797 25296 25296 I VA++    : SharedMediaHooks symbol=android_dlopen_ext phase=install
+10-13 01:01:34.797 25296 25296 I VA++    : SharedMediaHooks symbol=android_dlopen_ext phase=installed ready=1
+10-13 01:01:34.797 25296 25296 I VA++    : SharedMediaHooks phase=jni-uniformer-return
+10-13 01:01:34.797 25296 25296 I VA++    : SharedMediaHooks phase=activation-enter
+10-13 01:01:34.797 25296 25296 I VA++    : SharedMediaHooks phase=activation-locked
+10-13 01:01:34.797 25296 25296 I VA++    : SharedMediaHooks symbol=read phase=resolve
+10-13 01:01:34.797 25296 25296 I VA++    : SharedMediaHooks symbol=read phase=install
+10-13 01:01:34.797 25296 25296 I VA++    : SharedMediaHooks symbol=read phase=installed ready=1
+10-13 01:01:34.797 25296 25296 I VA++    : SharedMediaHooks symbol=write phase=resolve
+10-13 01:01:34.797 25296 25296 I VA++    : SharedMediaHooks symbol=write phase=install
+10-13 01:01:34.797 25296 25296 I VA++    : SharedMediaHooks symbol=write phase=installed ready=1
+10-13 01:01:34.797 25296 25296 I VA++    : SharedMediaHooks symbol=pread phase=resolve
+10-13 01:01:34.797 25296 25296 I VA++    : SharedMediaHooks symbol=pread phase=install
+10-13 01:01:34.797 25296 25296 I VA++    : SharedMediaHooks symbol=pread phase=installed ready=1
+10-13 01:01:34.797 25296 25296 I VA++    : SharedMediaHooks symbol=pwrite phase=resolve
+10-13 01:01:34.797 25296 25296 I VA++    : SharedMediaHooks symbol=pwrite phase=install
+10-13 01:01:34.797 25296 25296 I VA++    : SharedMediaHooks symbol=pwrite phase=installed ready=1
+10-13 01:01:34.797 25296 25296 I VA++    : SharedMediaHooks symbol=pread64 phase=resolve
+10-13 01:01:34.797 25296 25296 I VA++    : SharedMediaHooks symbol=pread64 phase=install
+10-13 01:01:34.797 25296 25296 I VA++    : SharedMediaHooks symbol=pread64 phase=installed ready=1
+10-13 01:01:34.797 25296 25296 I VA++    : SharedMediaHooks symbol=pwrite64 phase=resolve
+10-13 01:01:34.798 25296 25296 I VA++    : SharedMediaHooks symbol=pwrite64 phase=install
+10-13 01:01:34.798 25296 25296 I VA++    : SharedMediaHooks symbol=pwrite64 phase=installed ready=1
+10-13 01:01:34.798 25296 25296 I VA++    : SharedMediaHooks symbol=preadv phase=resolve
+10-13 01:01:34.798 25296 25296 I VA++    : SharedMediaHooks symbol=preadv phase=install
+10-13 01:01:34.798 25296 25296 I VA++    : SharedMediaHooks symbol=preadv phase=installed ready=1
+10-13 01:01:34.798 25296 25296 I VA++    : SharedMediaHooks symbol=pwritev phase=resolve
+10-13 01:01:34.798 25296 25296 I VA++    : SharedMediaHooks symbol=pwritev phase=install
+10-13 01:01:34.798 25296 25296 I VA++    : SharedMediaHooks symbol=pwritev phase=installed ready=1
+10-13 01:01:34.798 25296 25296 I VA++    : SharedMediaHooks symbol=readv phase=resolve
+10-13 01:01:34.798 25296 25296 I VA++    : SharedMediaHooks symbol=readv phase=install
+10-13 01:01:34.798 25296 25296 I VA++    : SharedMediaHooks symbol=readv phase=installed ready=1
+10-13 01:01:34.798 25296 25296 I VA++    : SharedMediaHooks symbol=writev phase=resolve
+10-13 01:01:34.798 25296 25296 I VA++    : SharedMediaHooks symbol=writev phase=install
+10-13 01:01:34.798 25296 25296 I VA++    : SharedMediaHooks symbol=writev phase=installed ready=1
+10-13 01:01:34.798 25296 25296 I VA++    : SharedMediaHooks symbol=ftruncate phase=resolve
+10-13 01:01:34.798 25296 25296 I VA++    : SharedMediaHooks symbol=ftruncate phase=install
+10-13 01:01:34.798 25296 25296 I VA++    : SharedMediaHooks symbol=ftruncate phase=installed ready=1
+10-13 01:01:34.798 25296 25296 I VA++    : SharedMediaHooks symbol=ftruncate64 phase=resolve
+10-13 01:01:34.798 25296 25296 I VA++    : SharedMediaHooks symbol=ftruncate64 phase=install
+10-13 01:01:34.798 25296 25296 I VA++    : SharedMediaHooks symbol=ftruncate64 phase=installed ready=1
+10-13 01:01:34.798 25296 25296 I VA++    : SharedMediaHooks symbol=fchmod phase=resolve
+10-13 01:01:34.798 25296 25296 I VA++    : SharedMediaHooks symbol=fchmod phase=install
+10-13 01:01:34.798 25296 25296 I VA++    : SharedMediaHooks symbol=fchmod phase=installed ready=1
+10-13 01:01:34.798 25296 25296 I VA++    : SharedMediaHooks symbol=fchown phase=resolve
+10-13 01:01:34.798 25296 25296 I VA++    : SharedMediaHooks symbol=fchown phase=install
+10-13 01:01:34.798 25296 25296 I VA++    : SharedMediaHooks symbol=fchown phase=installed ready=1
+10-13 01:01:34.798 25296 25296 I VA++    : SharedMediaHooks symbol=mmap phase=resolve
+10-13 01:01:34.798 25296 25296 I VA++    : SharedMediaHooks symbol=mmap phase=install
+10-13 01:01:34.798 25296 25296 I VA++    : SharedMediaHooks symbol=mmap phase=installed ready=1
+10-13 01:01:34.798 25296 25296 I VA++    : SharedMediaHooks symbol=mmap64 phase=resolve
+10-13 01:01:34.798 25296 25296 I VA++    : SharedMediaHooks symbol=mmap64 phase=install
+10-13 01:01:34.798 25296 25296 I VA++    : SharedMediaHooks symbol=mmap64 phase=installed ready=1
+10-13 01:01:34.798 25296 25296 I VA++    : SharedMediaHooks symbol=creat phase=resolve
+10-13 01:01:34.798 25296 25296 I VA++    : SharedMediaHooks symbol=creat phase=install
+10-13 01:01:34.798 25296 25296 I VA++    : SharedMediaHooks symbol=creat phase=installed ready=1
+10-13 01:01:34.798 25296 25296 I VA++    : SharedMediaHooks symbol=truncate64 phase=resolve
+10-13 01:01:34.798 25296 25296 I VA++    : SharedMediaHooks symbol=truncate64 phase=install
+10-13 01:01:34.798 25296 25296 I VA++    : SharedMediaHooks symbol=truncate64 phase=installed ready=1
+10-13 01:01:34.798 25296 25296 I VA++    : SharedMediaHooks symbol=chown phase=resolve
+10-13 01:01:34.798 25296 25296 I VA++    : SharedMediaHooks symbol=chown phase=install
+10-13 01:01:34.799 25296 25296 I VA++    : SharedMediaHooks symbol=chown phase=installed ready=1
+10-13 01:01:34.799 25296 25296 I VA++    : SharedMediaHooks symbol=lchown phase=resolve
+10-13 01:01:34.799 25296 25296 I VA++    : SharedMediaHooks symbol=lchown phase=install
+10-13 01:01:34.799 25296 25296 I VA++    : SharedMediaHooks symbol=lchown phase=installed ready=1
+10-13 01:01:34.799 25296 25296 I VA++    : SharedMediaHooks symbol=link phase=resolve
+10-13 01:01:34.799 25296 25296 I VA++    : SharedMediaHooks symbol=link phase=install
+10-13 01:01:34.799 25296 25296 I VA++    : SharedMediaHooks symbol=link phase=installed ready=1
+10-13 01:01:34.799 25296 25296 I VA++    : SharedMediaHooks symbol=symlink phase=resolve
+10-13 01:01:34.799 25296 25296 I VA++    : SharedMediaHooks symbol=symlink phase=install
+10-13 01:01:34.799 25296 25296 I VA++    : SharedMediaHooks symbol=symlink phase=installed ready=1
+10-13 01:01:34.799 25296 25296 I VA++    : SharedMediaHooks symbol=futimens phase=resolve
+10-13 01:01:34.799 25296 25296 I VA++    : SharedMediaHooks symbol=futimens phase=install
+10-13 01:01:34.799 25296 25296 I VA++    : SharedMediaHooks symbol=futimens phase=installed ready=1
+10-13 01:01:34.799 25296 25296 I VA++    : SharedMediaHooks symbol=utime phase=resolve
+10-13 01:01:34.799 25296 25296 I VA++    : SharedMediaHooks symbol=utime phase=install
+10-13 01:01:34.799 25296 25296 I VA++    : SharedMediaHooks symbol=utime phase=installed ready=1
+10-13 01:01:34.799 25296 25296 I VA++    : SharedMediaHooks symbol=utimes phase=resolve
+10-13 01:01:34.799 25296 25296 I VA++    : SharedMediaHooks symbol=utimes phase=install
+10-13 01:01:34.799 25296 25296 I VA++    : SharedMediaHooks symbol=utimes phase=installed ready=1
+10-13 01:01:34.799 25296 25296 I VA++    : SharedMediaHooks phase=activation-complete ready=1
+10-13 01:01:34.799 25296 25296 I VA++    : SharedMediaHooks phase=jni-complete ready=1
+10-13 01:01:35.009 25296 25296 I SharedWriteFixture: stage=create pid=25296 task=1607
+10-13 01:01:35.028 25296 25296 I SharedWriteFixture: stage=resume pid=25296 task=1607
+10-13 01:01:35.042 25296 25338 I SharedWriteFixture: stage=probe-start pid=25296 task=1607
+10-13 01:01:35.118 25296 25338 I SharedWriteFixture: stage=probe-end pid=25296 task=1607
+10-13 01:01:36.844 25322 25322 I VA++    : SharedMediaHooks phase=jni-start api=31
+10-13 01:01:36.846 25322 25322 I VA++    : SharedMediaHooks phase=jni-uniformer-return
+10-13 01:01:36.846 25322 25322 I VA++    : SharedMediaHooks phase=jni-complete ready=1
+10-13 01:01:37.144 24823 24946 W VActivityManagerService: process-lifecycle-cleanup pid=25296 generation=6 reason=process-died services=0
+10-13 01:01:38.396 25352 25352 I VA++    : SharedMediaHooks phase=jni-start api=31
+10-13 01:01:38.399 25352 25352 I VA++    : SharedMediaHooks phase=jni-uniformer-return
+10-13 01:01:38.399 25352 25352 I VA++    : SharedMediaHooks phase=jni-complete ready=1
+10-13 01:01:40.378 24823 24823 I VActivityManagerService: Removed orphan StubActivity task=1608 reason=process-death-full virtualTasks=0
+10-13 01:01:40.588 25388 25388 I VA++    : SharedMediaHooks phase=jni-start api=31
+10-13 01:01:40.591 25388 25388 I VA++    : SharedMediaHooks phase=jni-uniformer-return
+10-13 01:01:40.591 25388 25388 I VA++    : SharedMediaHooks phase=jni-complete ready=1
+10-13 01:01:40.789 25424 25424 I VA++    : SharedMediaHooks phase=jni-start api=31
+10-13 01:01:40.789 25424 25424 I VA++    : SharedMediaHooks symbol=access phase=resolve
+10-13 01:01:40.789 25424 25424 I VA++    : SharedMediaHooks symbol=access phase=install
+10-13 01:01:40.789 25424 25424 I VA++    : SharedMediaHooks symbol=access phase=installed ready=1
+10-13 01:01:40.789 25424 25424 I VA++    : SharedMediaHooks symbol=chmod phase=resolve
+10-13 01:01:40.789 25424 25424 I VA++    : SharedMediaHooks symbol=chmod phase=install
+10-13 01:01:40.789 25424 25424 I VA++    : SharedMediaHooks symbol=chmod phase=installed ready=1
+10-13 01:01:40.789 25424 25424 I VA++    : SharedMediaHooks symbol=fchmodat phase=resolve
+10-13 01:01:40.789 25424 25424 I VA++    : SharedMediaHooks symbol=fchmodat phase=install
+10-13 01:01:40.789 25424 25424 I VA++    : SharedMediaHooks symbol=fchmodat phase=installed ready=1
+10-13 01:01:40.789 25424 25424 I VA++    : SharedMediaHooks symbol=stat phase=resolve
+10-13 01:01:40.789 25424 25424 I VA++    : SharedMediaHooks symbol=stat phase=install
+10-13 01:01:40.789 25424 25424 I VA++    : SharedMediaHooks symbol=stat phase=installed ready=1
+10-13 01:01:40.789 25424 25424 I VA++    : SharedMediaHooks symbol=lstat phase=resolve
+10-13 01:01:40.789 25424 25424 I VA++    : SharedMediaHooks symbol=lstat phase=install
+10-13 01:01:40.789 25424 25424 I VA++    : SharedMediaHooks symbol=lstat phase=installed ready=1
+10-13 01:01:40.789 25424 25424 I VA++    : SharedMediaHooks symbol=open phase=resolve
+10-13 01:01:40.789 25424 25424 I VA++    : SharedMediaHooks symbol=open phase=install
+10-13 01:01:40.789 25424 25424 I VA++    : SharedMediaHooks symbol=open phase=installed ready=1
+10-13 01:01:40.789 25424 25424 I VA++    : SharedMediaHooks symbol=openat phase=resolve
+10-13 01:01:40.789 25424 25424 I VA++    : SharedMediaHooks symbol=openat phase=install
+10-13 01:01:40.789 25424 25424 I VA++    : SharedMediaHooks symbol=openat phase=installed ready=1
+10-13 01:01:40.789 25424 25424 I VA++    : SharedMediaHooks symbol=__open_2 phase=resolve
+10-13 01:01:40.789 25424 25424 I VA++    : SharedMediaHooks symbol=__open_2 phase=install
+10-13 01:01:40.789 25424 25424 I VA++    : SharedMediaHooks symbol=__open_2 phase=installed ready=1
+10-13 01:01:40.789 25424 25424 I VA++    : SharedMediaHooks symbol=__openat_2 phase=resolve
+10-13 01:01:40.789 25424 25424 I VA++    : SharedMediaHooks symbol=__openat_2 phase=install
+10-13 01:01:40.789 25424 25424 I VA++    : SharedMediaHooks symbol=__openat_2 phase=installed ready=1
+10-13 01:01:40.789 25424 25424 I VA++    : SharedMediaHooks symbol=fopen phase=resolve
+10-13 01:01:40.789 25424 25424 I VA++    : SharedMediaHooks symbol=fopen phase=install
+10-13 01:01:40.789 25424 25424 I VA++    : SharedMediaHooks symbol=fopen phase=installed ready=1
+10-13 01:01:40.790 25424 25424 I VA++    : SharedMediaHooks symbol=opendir phase=resolve
+10-13 01:01:40.790 25424 25424 I VA++    : SharedMediaHooks symbol=opendir phase=install
+10-13 01:01:40.790 25424 25424 I VA++    : SharedMediaHooks symbol=opendir phase=installed ready=1
+10-13 01:01:40.790 25424 25424 I VA++    : SharedMediaHooks symbol=mkdir phase=resolve
+10-13 01:01:40.790 25424 25424 I VA++    : SharedMediaHooks symbol=mkdir phase=install
+10-13 01:01:40.790 25424 25424 I VA++    : SharedMediaHooks symbol=mkdir phase=installed ready=1
+10-13 01:01:40.790 25424 25424 I VA++    : SharedMediaHooks symbol=rename phase=resolve
+10-13 01:01:40.790 25424 25424 I VA++    : SharedMediaHooks symbol=rename phase=install
+10-13 01:01:40.790 25424 25424 I VA++    : SharedMediaHooks symbol=rename phase=installed ready=1
+10-13 01:01:40.790 25424 25424 I VA++    : SharedMediaHooks symbol=unlink phase=resolve
+10-13 01:01:40.790 25424 25424 I VA++    : SharedMediaHooks symbol=unlink phase=install
+10-13 01:01:40.790 25424 25424 I VA++    : SharedMediaHooks symbol=unlink phase=installed ready=1
+10-13 01:01:40.790 25424 25424 I VA++    : SharedMediaHooks symbol=rmdir phase=resolve
+10-13 01:01:40.790 25424 25424 I VA++    : SharedMediaHooks symbol=rmdir phase=install
+10-13 01:01:40.790 25424 25424 I VA++    : SharedMediaHooks symbol=rmdir phase=installed ready=1
+10-13 01:01:40.790 25424 25424 I VA++    : SharedMediaHooks symbol=fchownat phase=resolve
+10-13 01:01:40.790 25424 25424 I VA++    : SharedMediaHooks symbol=fchownat phase=install
+10-13 01:01:40.790 25424 25424 I VA++    : SharedMediaHooks symbol=fchownat phase=installed ready=1
+10-13 01:01:40.790 25424 25424 I VA++    : SharedMediaHooks symbol=renameat phase=resolve
+10-13 01:01:40.790 25424 25424 I VA++    : SharedMediaHooks symbol=renameat phase=install
+10-13 01:01:40.790 25424 25424 I VA++    : SharedMediaHooks symbol=renameat phase=installed ready=1
+10-13 01:01:40.790 25424 25424 I VA++    : SharedMediaHooks symbol=fstatat64 phase=resolve
+10-13 01:01:40.790 25424 25424 I VA++    : SharedMediaHooks symbol=fstatat64 phase=install
+10-13 01:01:40.790 25424 25424 I VA++    : SharedMediaHooks symbol=fstatat64 phase=installed ready=1
+10-13 01:01:40.790 25424 25424 I VA++    : SharedMediaHooks symbol=__statfs phase=resolve
+10-13 01:01:40.790 25424 25424 I VA++    : SharedMediaHooks symbol=__statfs phase=missing
+10-13 01:01:40.790 25424 25424 I VA++    : SharedMediaHooks symbol=mkdirat phase=resolve
+10-13 01:01:40.790 25424 25424 I VA++    : SharedMediaHooks symbol=mkdirat phase=install
+10-13 01:01:40.790 25424 25424 I VA++    : SharedMediaHooks symbol=mkdirat phase=installed ready=1
+10-13 01:01:40.790 25424 25424 I VA++    : SharedMediaHooks symbol=mknodat phase=resolve
+10-13 01:01:40.790 25424 25424 I VA++    : SharedMediaHooks symbol=mknodat phase=install
+10-13 01:01:40.790 25424 25424 I VA++    : SharedMediaHooks symbol=mknodat phase=installed ready=1
+10-13 01:01:40.790 25424 25424 I VA++    : SharedMediaHooks symbol=truncate phase=resolve
+10-13 01:01:40.790 25424 25424 I VA++    : SharedMediaHooks symbol=truncate phase=install
+10-13 01:01:40.790 25424 25424 I VA++    : SharedMediaHooks symbol=truncate phase=installed ready=1
+10-13 01:01:40.790 25424 25424 I VA++    : SharedMediaHooks symbol=linkat phase=resolve
+10-13 01:01:40.790 25424 25424 I VA++    : SharedMediaHooks symbol=linkat phase=install
+10-13 01:01:40.790 25424 25424 I VA++    : SharedMediaHooks symbol=linkat phase=installed ready=1
+10-13 01:01:40.790 25424 25424 I VA++    : SharedMediaHooks symbol=readlinkat phase=resolve
+10-13 01:01:40.790 25424 25424 I VA++    : SharedMediaHooks symbol=readlinkat phase=install
+10-13 01:01:40.790 25424 25424 I VA++    : SharedMediaHooks symbol=readlinkat phase=installed ready=1
+10-13 01:01:40.790 25424 25424 I VA++    : SharedMediaHooks symbol=unlinkat phase=resolve
+10-13 01:01:40.790 25424 25424 I VA++    : SharedMediaHooks symbol=unlinkat phase=install
+10-13 01:01:40.790 25424 25424 I VA++    : SharedMediaHooks symbol=unlinkat phase=installed ready=1
+10-13 01:01:40.790 25424 25424 I VA++    : SharedMediaHooks symbol=symlinkat phase=resolve
+10-13 01:01:40.790 25424 25424 I VA++    : SharedMediaHooks symbol=symlinkat phase=install
+10-13 01:01:40.790 25424 25424 I VA++    : SharedMediaHooks symbol=symlinkat phase=installed ready=1
+10-13 01:01:40.790 25424 25424 I VA++    : SharedMediaHooks symbol=utimensat phase=resolve
+10-13 01:01:40.790 25424 25424 I VA++    : SharedMediaHooks symbol=utimensat phase=install
+10-13 01:01:40.790 25424 25424 I VA++    : SharedMediaHooks symbol=utimensat phase=installed ready=1
+10-13 01:01:40.790 25424 25424 I VA++    : SharedMediaHooks symbol=chdir phase=resolve
+10-13 01:01:40.790 25424 25424 I VA++    : SharedMediaHooks symbol=chdir phase=install
+10-13 01:01:40.790 25424 25424 I VA++    : SharedMediaHooks symbol=chdir phase=installed ready=1
+10-13 01:01:40.790 25424 25424 I VA++    : SharedMediaHooks symbol=execve phase=resolve
+10-13 01:01:40.790 25424 25424 I VA++    : SharedMediaHooks symbol=execve phase=install
+10-13 01:01:40.790 25424 25424 I VA++    : SharedMediaHooks symbol=execve phase=installed ready=1
+10-13 01:01:40.790 25424 25424 I VA++    : SharedMediaHooks symbol=statfs64 phase=resolve
+10-13 01:01:40.790 25424 25424 I VA++    : SharedMediaHooks symbol=statfs64 phase=install
+10-13 01:01:40.790 25424 25424 I VA++    : SharedMediaHooks symbol=statfs64 phase=installed ready=1
+10-13 01:01:40.791 25424 25424 I VA++    : SharedMediaHooks symbol=android_dlopen_ext phase=resolve
+10-13 01:01:40.791 25424 25424 I VA++    : SharedMediaHooks symbol=android_dlopen_ext phase=install
+10-13 01:01:40.791 25424 25424 I VA++    : SharedMediaHooks symbol=android_dlopen_ext phase=installed ready=1
+10-13 01:01:40.791 25424 25424 I VA++    : SharedMediaHooks phase=jni-uniformer-return
+10-13 01:01:40.791 25424 25424 I VA++    : SharedMediaHooks phase=activation-enter
+10-13 01:01:40.791 25424 25424 I VA++    : SharedMediaHooks phase=activation-locked
+10-13 01:01:40.792 25424 25424 I VA++    : SharedMediaHooks symbol=read phase=resolve
+10-13 01:01:40.792 25424 25424 I VA++    : SharedMediaHooks symbol=read phase=install
+10-13 01:01:40.792 25424 25424 I VA++    : SharedMediaHooks symbol=read phase=installed ready=1
+10-13 01:01:40.792 25424 25424 I VA++    : SharedMediaHooks symbol=write phase=resolve
+10-13 01:01:40.792 25424 25424 I VA++    : SharedMediaHooks symbol=write phase=install
+10-13 01:01:40.792 25424 25424 I VA++    : SharedMediaHooks symbol=write phase=installed ready=1
+10-13 01:01:40.792 25424 25424 I VA++    : SharedMediaHooks symbol=pread phase=resolve
+10-13 01:01:40.792 25424 25424 I VA++    : SharedMediaHooks symbol=pread phase=install
+10-13 01:01:40.792 25424 25424 I VA++    : SharedMediaHooks symbol=pread phase=installed ready=1
+10-13 01:01:40.792 25424 25424 I VA++    : SharedMediaHooks symbol=pwrite phase=resolve
+10-13 01:01:40.792 25424 25424 I VA++    : SharedMediaHooks symbol=pwrite phase=install
+10-13 01:01:40.792 25424 25424 I VA++    : SharedMediaHooks symbol=pwrite phase=installed ready=1
+10-13 01:01:40.792 25424 25424 I VA++    : SharedMediaHooks symbol=pread64 phase=resolve
+10-13 01:01:40.792 25424 25424 I VA++    : SharedMediaHooks symbol=pread64 phase=install
+10-13 01:01:40.792 25424 25424 I VA++    : SharedMediaHooks symbol=pread64 phase=installed ready=1
+10-13 01:01:40.792 25424 25424 I VA++    : SharedMediaHooks symbol=pwrite64 phase=resolve
+10-13 01:01:40.792 25424 25424 I VA++    : SharedMediaHooks symbol=pwrite64 phase=install
+10-13 01:01:40.792 25424 25424 I VA++    : SharedMediaHooks symbol=pwrite64 phase=installed ready=1
+10-13 01:01:40.792 25424 25424 I VA++    : SharedMediaHooks symbol=preadv phase=resolve
+10-13 01:01:40.792 25424 25424 I VA++    : SharedMediaHooks symbol=preadv phase=install
+10-13 01:01:40.792 25424 25424 I VA++    : SharedMediaHooks symbol=preadv phase=installed ready=1
+10-13 01:01:40.792 25424 25424 I VA++    : SharedMediaHooks symbol=pwritev phase=resolve
+10-13 01:01:40.792 25424 25424 I VA++    : SharedMediaHooks symbol=pwritev phase=install
+10-13 01:01:40.792 25424 25424 I VA++    : SharedMediaHooks symbol=pwritev phase=installed ready=1
+10-13 01:01:40.792 25424 25424 I VA++    : SharedMediaHooks symbol=readv phase=resolve
+10-13 01:01:40.792 25424 25424 I VA++    : SharedMediaHooks symbol=readv phase=install
+10-13 01:01:40.792 25424 25424 I VA++    : SharedMediaHooks symbol=readv phase=installed ready=1
+10-13 01:01:40.792 25424 25424 I VA++    : SharedMediaHooks symbol=writev phase=resolve
+10-13 01:01:40.792 25424 25424 I VA++    : SharedMediaHooks symbol=writev phase=install
+10-13 01:01:40.792 25424 25424 I VA++    : SharedMediaHooks symbol=writev phase=installed ready=1
+10-13 01:01:40.792 25424 25424 I VA++    : SharedMediaHooks symbol=ftruncate phase=resolve
+10-13 01:01:40.792 25424 25424 I VA++    : SharedMediaHooks symbol=ftruncate phase=install
+10-13 01:01:40.792 25424 25424 I VA++    : SharedMediaHooks symbol=ftruncate phase=installed ready=1
+10-13 01:01:40.792 25424 25424 I VA++    : SharedMediaHooks symbol=ftruncate64 phase=resolve
+10-13 01:01:40.792 25424 25424 I VA++    : SharedMediaHooks symbol=ftruncate64 phase=install
+10-13 01:01:40.792 25424 25424 I VA++    : SharedMediaHooks symbol=ftruncate64 phase=installed ready=1
+10-13 01:01:40.792 25424 25424 I VA++    : SharedMediaHooks symbol=fchmod phase=resolve
+10-13 01:01:40.792 25424 25424 I VA++    : SharedMediaHooks symbol=fchmod phase=install
+10-13 01:01:40.792 25424 25424 I VA++    : SharedMediaHooks symbol=fchmod phase=installed ready=1
+10-13 01:01:40.792 25424 25424 I VA++    : SharedMediaHooks symbol=fchown phase=resolve
+10-13 01:01:40.792 25424 25424 I VA++    : SharedMediaHooks symbol=fchown phase=install
+10-13 01:01:40.792 25424 25424 I VA++    : SharedMediaHooks symbol=fchown phase=installed ready=1
+10-13 01:01:40.792 25424 25424 I VA++    : SharedMediaHooks symbol=mmap phase=resolve
+10-13 01:01:40.792 25424 25424 I VA++    : SharedMediaHooks symbol=mmap phase=install
+10-13 01:01:40.792 25424 25424 I VA++    : SharedMediaHooks symbol=mmap phase=installed ready=1
+10-13 01:01:40.792 25424 25424 I VA++    : SharedMediaHooks symbol=mmap64 phase=resolve
+10-13 01:01:40.792 25424 25424 I VA++    : SharedMediaHooks symbol=mmap64 phase=install
+10-13 01:01:40.792 25424 25424 I VA++    : SharedMediaHooks symbol=mmap64 phase=installed ready=1
+10-13 01:01:40.792 25424 25424 I VA++    : SharedMediaHooks symbol=creat phase=resolve
+10-13 01:01:40.792 25424 25424 I VA++    : SharedMediaHooks symbol=creat phase=install
+10-13 01:01:40.792 25424 25424 I VA++    : SharedMediaHooks symbol=creat phase=installed ready=1
+10-13 01:01:40.792 25424 25424 I VA++    : SharedMediaHooks symbol=truncate64 phase=resolve
+10-13 01:01:40.792 25424 25424 I VA++    : SharedMediaHooks symbol=truncate64 phase=install
+10-13 01:01:40.792 25424 25424 I VA++    : SharedMediaHooks symbol=truncate64 phase=installed ready=1
+10-13 01:01:40.792 25424 25424 I VA++    : SharedMediaHooks symbol=chown phase=resolve
+10-13 01:01:40.792 25424 25424 I VA++    : SharedMediaHooks symbol=chown phase=install
+10-13 01:01:40.793 25424 25424 I VA++    : SharedMediaHooks symbol=chown phase=installed ready=1
+10-13 01:01:40.793 25424 25424 I VA++    : SharedMediaHooks symbol=lchown phase=resolve
+10-13 01:01:40.793 25424 25424 I VA++    : SharedMediaHooks symbol=lchown phase=install
+10-13 01:01:40.793 25424 25424 I VA++    : SharedMediaHooks symbol=lchown phase=installed ready=1
+10-13 01:01:40.793 25424 25424 I VA++    : SharedMediaHooks symbol=link phase=resolve
+10-13 01:01:40.793 25424 25424 I VA++    : SharedMediaHooks symbol=link phase=install
+10-13 01:01:40.793 25424 25424 I VA++    : SharedMediaHooks symbol=link phase=installed ready=1
+10-13 01:01:40.793 25424 25424 I VA++    : SharedMediaHooks symbol=symlink phase=resolve
+10-13 01:01:40.793 25424 25424 I VA++    : SharedMediaHooks symbol=symlink phase=install
+10-13 01:01:40.793 25424 25424 I VA++    : SharedMediaHooks symbol=symlink phase=installed ready=1
+10-13 01:01:40.793 25424 25424 I VA++    : SharedMediaHooks symbol=futimens phase=resolve
+10-13 01:01:40.793 25424 25424 I VA++    : SharedMediaHooks symbol=futimens phase=install
+10-13 01:01:40.793 25424 25424 I VA++    : SharedMediaHooks symbol=futimens phase=installed ready=1
+10-13 01:01:40.793 25424 25424 I VA++    : SharedMediaHooks symbol=utime phase=resolve
+10-13 01:01:40.793 25424 25424 I VA++    : SharedMediaHooks symbol=utime phase=install
+10-13 01:01:40.793 25424 25424 I VA++    : SharedMediaHooks symbol=utime phase=installed ready=1
+10-13 01:01:40.793 25424 25424 I VA++    : SharedMediaHooks symbol=utimes phase=resolve
+10-13 01:01:40.793 25424 25424 I VA++    : SharedMediaHooks symbol=utimes phase=install
+10-13 01:01:40.793 25424 25424 I VA++    : SharedMediaHooks symbol=utimes phase=installed ready=1
+10-13 01:01:40.793 25424 25424 I VA++    : SharedMediaHooks phase=activation-complete ready=1
+10-13 01:01:40.793 25424 25424 I VA++    : SharedMediaHooks phase=jni-complete ready=1
+10-13 01:01:41.000 25424 25424 I SharedWriteFixture: stage=create pid=25424 task=1608
+10-13 01:01:41.021 25424 25424 I SharedWriteFixture: stage=resume pid=25424 task=1608
+10-13 01:01:41.036 25424 25470 I SharedWriteFixture: stage=probe-start pid=25424 task=1608
+10-13 01:01:41.267 25424 25470 I SharedWriteFixture: stage=probe-end pid=25424 task=-1
+10-13 01:01:42.094 24823 24832 W VActivityManagerService: process-lifecycle-cleanup pid=25424 generation=10 reason=user-stop services=0
+10-13 01:01:42.099 24823 24832 W VActivityManagerService: process-lifecycle-cleanup pid=25322 generation=7 reason=user-stop services=0
+10-13 01:01:42.103 24823 24832 W VActivityManagerService: process-lifecycle-cleanup pid=25283 generation=5 reason=user-stop services=1
+10-13 01:01:42.222 24823 24833 W VActivityManagerService: process-lifecycle-cleanup pid=25388 generation=9 reason=user-stop services=0
+10-13 01:01:42.226 24823 24833 W VActivityManagerService: process-lifecycle-cleanup pid=25352 generation=8 reason=user-stop services=1

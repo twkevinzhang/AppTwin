@@ -1,0 +1,71 @@
+INSTRUMENTATION_STATUS: class=org.apptwin.runtime.SharedMediaWritePermissionE2eTest
+INSTRUMENTATION_STATUS: current=1
+INSTRUMENTATION_STATUS: id=AndroidJUnitRunner
+INSTRUMENTATION_STATUS: numtests=1
+INSTRUMENTATION_STATUS: stream=
+org.apptwin.runtime.SharedMediaWritePermissionE2eTest:
+INSTRUMENTATION_STATUS: test=sharedWritesRespectIndependentSpacePermission
+INSTRUMENTATION_STATUS_CODE: 1
+INSTRUMENTATION_STATUS: class=org.apptwin.runtime.SharedMediaWritePermissionE2eTest
+INSTRUMENTATION_STATUS: current=1
+INSTRUMENTATION_STATUS: id=AndroidJUnitRunner
+INSTRUMENTATION_STATUS: numtests=1
+INSTRUMENTATION_STATUS: stack=java.lang.AssertionError: Strict guest launch {"phase":"A-read-only","launch":"Failed(reason=群組 App 啟動失敗：Expected Group activity did not resume, error=java.lang.IllegalStateException: 群組 App 啟動失敗：Expected Group activity did not resume)","host":{"lifecycle":"RESUMED","focus":true,"registrySame":true,"interactive":true,"keyguard":false},"groupId":"1b9983cf-1e87-46b7-bfa9-3bb74908720b","user":3,"hostBefore":{"read":"0bd3feb70cd5900743288fac4b2fd6280295e38731cdad020c17a02bcde10511","providerWrite":"0bd3feb70cd5900743288fac4b2fd6280295e38731cdad020c17a02bcde10511","directTruncate":"0bd3feb70cd5900743288fac4b2fd6280295e38731cdad020c17a02bcde10511","directRename":"0bd3feb70cd5900743288fac4b2fd6280295e38731cdad020c17a02bcde10511","directDelete":"0bd3feb70cd5900743288fac4b2fd6280295e38731cdad020c17a02bcde10511","directCreate":"absent","renameDestination":"absent"},"hostAfter":{"read":"0bd3feb70cd5900743288fac4b2fd6280295e38731cdad020c17a02bcde10511","providerWrite":"0bd3feb70cd5900743288fac4b2fd6280295e38731cdad020c17a02bcde10511","directTruncate":"0bd3feb70cd5900743288fac4b2fd6280295e38731cdad020c17a02bcde10511","directRename":"0bd3feb70cd5900743288fac4b2fd6280295e38731cdad020c17a02bcde10511","directDelete":"0bd3feb70cd5900743288fac4b2fd6280295e38731cdad020c17a02bcde10511","directCreate":"absent","renameDestination":"absent"}}
+	at org.junit.Assert.fail(Assert.java:89)
+	at org.junit.Assert.assertTrue(Assert.java:42)
+	at org.apptwin.runtime.SharedMediaWritePermissionE2eTest$sharedWritesRespectIndependentSpacePermission$1.invokeSuspend$phase(SharedMediaWritePermissionE2eTest.kt:171)
+	at org.apptwin.runtime.SharedMediaWritePermissionE2eTest$sharedWritesRespectIndependentSpacePermission$1.invokeSuspend(SharedMediaWritePermissionE2eTest.kt:200)
+	at kotlin.coroutines.jvm.internal.BaseContinuationImpl.resumeWith(ContinuationImpl.kt:33)
+	at kotlinx.coroutines.DispatchedTask.run(DispatchedTask.kt:101)
+	at kotlinx.coroutines.EventLoopImplBase.processNextEvent(EventLoop.common.kt:263)
+	at kotlinx.coroutines.BlockingCoroutine.joinBlocking(Builders.kt:95)
+	at kotlinx.coroutines.BuildersKt__BuildersKt.runBlocking(Builders.kt:69)
+	at kotlinx.coroutines.BuildersKt.runBlocking(dex-id-65446c4f9c44ac477786ec4707273e13655e4f91:1)
+	at kotlinx.coroutines.BuildersKt__BuildersKt.runBlocking$default(Builders.kt:47)
+	at kotlinx.coroutines.BuildersKt.runBlocking$default(dex-id-65446c4f9c44ac477786ec4707273e13655e4f91:1)
+	at org.apptwin.runtime.SharedMediaWritePermissionE2eTest.sharedWritesRespectIndependentSpacePermission(SharedMediaWritePermissionE2eTest.kt:42)
+
+INSTRUMENTATION_STATUS: stream=
+Error in sharedWritesRespectIndependentSpacePermission(org.apptwin.runtime.SharedMediaWritePermissionE2eTest):
+java.lang.AssertionError: Strict guest launch {"phase":"A-read-only","launch":"Failed(reason=群組 App 啟動失敗：Expected Group activity did not resume, error=java.lang.IllegalStateException: 群組 App 啟動失敗：Expected Group activity did not resume)","host":{"lifecycle":"RESUMED","focus":true,"registrySame":true,"interactive":true,"keyguard":false},"groupId":"1b9983cf-1e87-46b7-bfa9-3bb74908720b","user":3,"hostBefore":{"read":"0bd3feb70cd5900743288fac4b2fd6280295e38731cdad020c17a02bcde10511","providerWrite":"0bd3feb70cd5900743288fac4b2fd6280295e38731cdad020c17a02bcde10511","directTruncate":"0bd3feb70cd5900743288fac4b2fd6280295e38731cdad020c17a02bcde10511","directRename":"0bd3feb70cd5900743288fac4b2fd6280295e38731cdad020c17a02bcde10511","directDelete":"0bd3feb70cd5900743288fac4b2fd6280295e38731cdad020c17a02bcde10511","directCreate":"absent","renameDestination":"absent"},"hostAfter":{"read":"0bd3feb70cd5900743288fac4b2fd6280295e38731cdad020c17a02bcde10511","providerWrite":"0bd3feb70cd5900743288fac4b2fd6280295e38731cdad020c17a02bcde10511","directTruncate":"0bd3feb70cd5900743288fac4b2fd6280295e38731cdad020c17a02bcde10511","directRename":"0bd3feb70cd5900743288fac4b2fd6280295e38731cdad020c17a02bcde10511","directDelete":"0bd3feb70cd5900743288fac4b2fd6280295e38731cdad020c17a02bcde10511","directCreate":"absent","renameDestination":"absent"}}
+	at org.junit.Assert.fail(Assert.java:89)
+	at org.junit.Assert.assertTrue(Assert.java:42)
+	at org.apptwin.runtime.SharedMediaWritePermissionE2eTest$sharedWritesRespectIndependentSpacePermission$1.invokeSuspend$phase(SharedMediaWritePermissionE2eTest.kt:171)
+	at org.apptwin.runtime.SharedMediaWritePermissionE2eTest$sharedWritesRespectIndependentSpacePermission$1.invokeSuspend(SharedMediaWritePermissionE2eTest.kt:200)
+	at kotlin.coroutines.jvm.internal.BaseContinuationImpl.resumeWith(ContinuationImpl.kt:33)
+	at kotlinx.coroutines.DispatchedTask.run(DispatchedTask.kt:101)
+	at kotlinx.coroutines.EventLoopImplBase.processNextEvent(EventLoop.common.kt:263)
+	at kotlinx.coroutines.BlockingCoroutine.joinBlocking(Builders.kt:95)
+	at kotlinx.coroutines.BuildersKt__BuildersKt.runBlocking(Builders.kt:69)
+	at kotlinx.coroutines.BuildersKt.runBlocking(dex-id-65446c4f9c44ac477786ec4707273e13655e4f91:1)
+	at kotlinx.coroutines.BuildersKt__BuildersKt.runBlocking$default(Builders.kt:47)
+	at kotlinx.coroutines.BuildersKt.runBlocking$default(dex-id-65446c4f9c44ac477786ec4707273e13655e4f91:1)
+	at org.apptwin.runtime.SharedMediaWritePermissionE2eTest.sharedWritesRespectIndependentSpacePermission(SharedMediaWritePermissionE2eTest.kt:42)
+
+INSTRUMENTATION_STATUS: test=sharedWritesRespectIndependentSpacePermission
+INSTRUMENTATION_STATUS_CODE: -2
+INSTRUMENTATION_RESULT: stream=
+
+Time: 35.829
+There was 1 failure:
+1) sharedWritesRespectIndependentSpacePermission(org.apptwin.runtime.SharedMediaWritePermissionE2eTest)
+java.lang.AssertionError: Strict guest launch {"phase":"A-read-only","launch":"Failed(reason=群組 App 啟動失敗：Expected Group activity did not resume, error=java.lang.IllegalStateException: 群組 App 啟動失敗：Expected Group activity did not resume)","host":{"lifecycle":"RESUMED","focus":true,"registrySame":true,"interactive":true,"keyguard":false},"groupId":"1b9983cf-1e87-46b7-bfa9-3bb74908720b","user":3,"hostBefore":{"read":"0bd3feb70cd5900743288fac4b2fd6280295e38731cdad020c17a02bcde10511","providerWrite":"0bd3feb70cd5900743288fac4b2fd6280295e38731cdad020c17a02bcde10511","directTruncate":"0bd3feb70cd5900743288fac4b2fd6280295e38731cdad020c17a02bcde10511","directRename":"0bd3feb70cd5900743288fac4b2fd6280295e38731cdad020c17a02bcde10511","directDelete":"0bd3feb70cd5900743288fac4b2fd6280295e38731cdad020c17a02bcde10511","directCreate":"absent","renameDestination":"absent"},"hostAfter":{"read":"0bd3feb70cd5900743288fac4b2fd6280295e38731cdad020c17a02bcde10511","providerWrite":"0bd3feb70cd5900743288fac4b2fd6280295e38731cdad020c17a02bcde10511","directTruncate":"0bd3feb70cd5900743288fac4b2fd6280295e38731cdad020c17a02bcde10511","directRename":"0bd3feb70cd5900743288fac4b2fd6280295e38731cdad020c17a02bcde10511","directDelete":"0bd3feb70cd5900743288fac4b2fd6280295e38731cdad020c17a02bcde10511","directCreate":"absent","renameDestination":"absent"}}
+	at org.junit.Assert.fail(Assert.java:89)
+	at org.junit.Assert.assertTrue(Assert.java:42)
+	at org.apptwin.runtime.SharedMediaWritePermissionE2eTest$sharedWritesRespectIndependentSpacePermission$1.invokeSuspend$phase(SharedMediaWritePermissionE2eTest.kt:171)
+	at org.apptwin.runtime.SharedMediaWritePermissionE2eTest$sharedWritesRespectIndependentSpacePermission$1.invokeSuspend(SharedMediaWritePermissionE2eTest.kt:200)
+	at kotlin.coroutines.jvm.internal.BaseContinuationImpl.resumeWith(ContinuationImpl.kt:33)
+	at kotlinx.coroutines.DispatchedTask.run(DispatchedTask.kt:101)
+	at kotlinx.coroutines.EventLoopImplBase.processNextEvent(EventLoop.common.kt:263)
+	at kotlinx.coroutines.BlockingCoroutine.joinBlocking(Builders.kt:95)
+	at kotlinx.coroutines.BuildersKt__BuildersKt.runBlocking(Builders.kt:69)
+	at kotlinx.coroutines.BuildersKt.runBlocking(dex-id-65446c4f9c44ac477786ec4707273e13655e4f91:1)
+	at kotlinx.coroutines.BuildersKt__BuildersKt.runBlocking$default(Builders.kt:47)
+	at kotlinx.coroutines.BuildersKt.runBlocking$default(dex-id-65446c4f9c44ac477786ec4707273e13655e4f91:1)
+	at org.apptwin.runtime.SharedMediaWritePermissionE2eTest.sharedWritesRespectIndependentSpacePermission(SharedMediaWritePermissionE2eTest.kt:42)
+
+FAILURES!!!
+Tests run: 1,  Failures: 1
+
+
+INSTRUMENTATION_CODE: -1

@@ -1,0 +1,19 @@
+{
+  "Awake": true,
+  "Unlocked": true,
+  "CAMERA": {
+    "hostGranted": true,
+    "LINEuser2ExplicitGranted": true
+  },
+  "READ_EXTERNAL_STORAGE": {
+    "hostGranted": true,
+    "LINEuser2ExplicitGranted": true
+  },
+  "WRITE_EXTERNAL_STORAGE": {
+    "hostGranted": false,
+    "LINEuser2ExplicitGranted": false
+  },
+  "globalBackgroundEnabled": true,
+  "fixtureHostAbsent": true,
+  "debugPropertyEmpty": true
+}

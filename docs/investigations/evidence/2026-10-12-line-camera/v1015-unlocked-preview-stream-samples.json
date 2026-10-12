@@ -1,0 +1,12 @@
+[
+  [
+    "Stream configuration:",
+    "In-flight requests:",
+    "Frame Number ## REQUEST_ERROR ## RESULT_ERROR ## BUFFER_ERROR ## Shutter ##  Metadata[Rcvd/Tot] ## Output[Rcvd/Tot(inErr)] ## Input ## S0[Rcvd/StatusOK/BufErrNotify](0xb400007abc77a228)[0] ## S1[Rcvd/StatusOK/BufErrNotify](0xb400007abc7a74b8)[0] ## S2[Rcvd/StatusOK/BufErrNotify](0xb400007abc73b508)[0] ##"
+  ],
+  [
+    "Stream configuration:",
+    "In-flight requests:",
+    "Frame Number ## REQUEST_ERROR ## RESULT_ERROR ## BUFFER_ERROR ## Shutter ##  Metadata[Rcvd/Tot] ## Output[Rcvd/Tot(inErr)] ## Input ## S0[Rcvd/StatusOK/BufErrNotify](0xb400007abc77a228)[0] ## S1[Rcvd/StatusOK/BufErrNotify](0xb400007abc7a74b8)[0] ## S2[Rcvd/StatusOK/BufErrNotify](0xb400007abc73b508)[0] ##"
+  ]
+]

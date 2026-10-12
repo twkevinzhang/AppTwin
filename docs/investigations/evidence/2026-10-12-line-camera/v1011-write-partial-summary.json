@@ -1,0 +1,107 @@
+{
+  "nonce": "e67b6715-3c58-4f58-8193-2acdb073628b",
+  "results": [
+    {
+      "phase": "A-read-only",
+      "pid": 25296,
+      "taskId": 1607,
+      "WRITE_EXTERNAL_STORAGE": false,
+      "READ_EXTERNAL_STORAGE": true,
+      "READ_MEDIA_IMAGES": true,
+      "READ_MEDIA_VIDEO": true,
+      "sharedQuery": "allowed",
+      "sharedOpen": "allowed",
+      "sharedDirectRead": "allowed",
+      "providerWrite": "blocked:SecurityException",
+      "directTruncate": "blocked:FileNotFoundException",
+      "relativeWrite": "empty",
+      "directRename": "empty",
+      "directDelete": "empty",
+      "directCreate": "blocked:FileNotFoundException",
+      "privateWrite": "allowed",
+      "virtualWrite": "allowed",
+      "launch": "Started(packageName=org.apptwin.fixture.mediacompat, processPrefix=org.apptwin:p, dataDirectory=/data/user/0/org.apptwin/virtual/data/user/3/org.apptwin.fixture.mediacompat)",
+      "host": {
+        "lifecycle": "STARTED",
+        "focus": false,
+        "registrySame": false,
+        "interactive": true,
+        "keyguard": false
+      },
+      "groupId": "81a0154a-4dde-447d-86c7-fbb54fda1929",
+      "user": 3,
+      "hostBefore": {
+        "read": "b560b8e77a60b6e3a6474dc804c21571cd30eee1546ba2d370eea0b86be4c0bc",
+        "providerWrite": "b560b8e77a60b6e3a6474dc804c21571cd30eee1546ba2d370eea0b86be4c0bc",
+        "directTruncate": "b560b8e77a60b6e3a6474dc804c21571cd30eee1546ba2d370eea0b86be4c0bc",
+        "directRename": "b560b8e77a60b6e3a6474dc804c21571cd30eee1546ba2d370eea0b86be4c0bc",
+        "directDelete": "b560b8e77a60b6e3a6474dc804c21571cd30eee1546ba2d370eea0b86be4c0bc",
+        "directCreate": "absent",
+        "renameDestination": "absent"
+      },
+      "hostAfter": {
+        "read": "b560b8e77a60b6e3a6474dc804c21571cd30eee1546ba2d370eea0b86be4c0bc",
+        "providerWrite": "b560b8e77a60b6e3a6474dc804c21571cd30eee1546ba2d370eea0b86be4c0bc",
+        "directTruncate": "b560b8e77a60b6e3a6474dc804c21571cd30eee1546ba2d370eea0b86be4c0bc",
+        "directRename": "b560b8e77a60b6e3a6474dc804c21571cd30eee1546ba2d370eea0b86be4c0bc",
+        "directDelete": "b560b8e77a60b6e3a6474dc804c21571cd30eee1546ba2d370eea0b86be4c0bc",
+        "directCreate": "absent",
+        "renameDestination": "absent"
+      },
+      "phaseCompleted": true,
+      "closingFixture": true
+    },
+    {
+      "phase": "A-write-allowed",
+      "pid": 25424,
+      "taskId": 1608,
+      "WRITE_EXTERNAL_STORAGE": true,
+      "READ_EXTERNAL_STORAGE": true,
+      "READ_MEDIA_IMAGES": true,
+      "READ_MEDIA_VIDEO": true,
+      "sharedQuery": "allowed",
+      "sharedOpen": "allowed",
+      "sharedDirectRead": "allowed",
+      "providerWrite": "allowed",
+      "directTruncate": "allowed",
+      "relativeWrite": "empty",
+      "directRename": "allowed",
+      "directDelete": "allowed",
+      "directCreate": "allowed",
+      "privateWrite": "allowed",
+      "virtualWrite": "allowed",
+      "exactFixturePids": [
+        25424
+      ],
+      "exactFixtureRunning": true,
+      "launch": "Failed(reason=\u7fa4\u7d44 App \u555f\u52d5\u5931\u6557\uff1aExpected Group activity did not resume, error=java.lang.IllegalStateException: \u7fa4\u7d44 App \u555f\u52d5\u5931\u6557\uff1aExpected Group activity did not resume)",
+      "host": {
+        "lifecycle": "RESUMED",
+        "focus": true,
+        "registrySame": true,
+        "interactive": true,
+        "keyguard": false
+      },
+      "groupId": "81a0154a-4dde-447d-86c7-fbb54fda1929",
+      "user": 3,
+      "hostBefore": {
+        "read": "b560b8e77a60b6e3a6474dc804c21571cd30eee1546ba2d370eea0b86be4c0bc",
+        "providerWrite": "b560b8e77a60b6e3a6474dc804c21571cd30eee1546ba2d370eea0b86be4c0bc",
+        "directTruncate": "b560b8e77a60b6e3a6474dc804c21571cd30eee1546ba2d370eea0b86be4c0bc",
+        "directRename": "b560b8e77a60b6e3a6474dc804c21571cd30eee1546ba2d370eea0b86be4c0bc",
+        "directDelete": "b560b8e77a60b6e3a6474dc804c21571cd30eee1546ba2d370eea0b86be4c0bc",
+        "directCreate": "absent",
+        "renameDestination": "absent"
+      },
+      "hostAfter": {
+        "read": "b560b8e77a60b6e3a6474dc804c21571cd30eee1546ba2d370eea0b86be4c0bc",
+        "providerWrite": "11399a3c7749d76024bdcdaa3849d6efa4f3af06d6bac6f6152bc879b6e7fd75",
+        "directTruncate": "11399a3c7749d76024bdcdaa3849d6efa4f3af06d6bac6f6152bc879b6e7fd75",
+        "directRename": "absent",
+        "directDelete": "absent",
+        "directCreate": "11399a3c7749d76024bdcdaa3849d6efa4f3af06d6bac6f6152bc879b6e7fd75",
+        "renameDestination": "b560b8e77a60b6e3a6474dc804c21571cd30eee1546ba2d370eea0b86be4c0bc"
+      }
+    }
+  ]
+}

@@ -1,0 +1,11 @@
+{
+  "groupLabel": "\u4fee\u6539\u6216\u522a\u9664\u5171\u7528\u5132\u5b58\u7a7a\u9593\u4e2d\u7684\u5167\u5bb9",
+  "members": [
+    "Facebook",
+    "eWeLink"
+  ],
+  "LINEPresent": false,
+  "LINEReadPresent": true,
+  "LINEWriteChanged": false,
+  "cameraPreviewAttemptedAfterWriteTests": false
+}

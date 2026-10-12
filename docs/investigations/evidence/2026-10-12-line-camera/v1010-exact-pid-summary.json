@@ -1,0 +1,38 @@
+{
+  "nonce": "3a43cbbd-e84f-4996-853c-43b6d003a33c",
+  "results": [
+    {
+      "phase": "A-read-only",
+      "exactFixturePids": [],
+      "exactFixtureRunning": false,
+      "launch": "Failed(reason=\u7fa4\u7d44 App \u555f\u52d5\u5931\u6557\uff1aExpected Group activity did not resume, error=java.lang.IllegalStateException: \u7fa4\u7d44 App \u555f\u52d5\u5931\u6557\uff1aExpected Group activity did not resume)",
+      "host": {
+        "lifecycle": "RESUMED",
+        "focus": true,
+        "registrySame": true,
+        "interactive": true,
+        "keyguard": false
+      },
+      "groupId": "2788d786-47be-4214-b54d-188779915250",
+      "user": 3,
+      "hostBefore": {
+        "read": "3b694d5077c6818dfecfab15064db16e14f36dc6e3f4fc3672442fe2fbd89b2e",
+        "providerWrite": "3b694d5077c6818dfecfab15064db16e14f36dc6e3f4fc3672442fe2fbd89b2e",
+        "directTruncate": "3b694d5077c6818dfecfab15064db16e14f36dc6e3f4fc3672442fe2fbd89b2e",
+        "directRename": "3b694d5077c6818dfecfab15064db16e14f36dc6e3f4fc3672442fe2fbd89b2e",
+        "directDelete": "3b694d5077c6818dfecfab15064db16e14f36dc6e3f4fc3672442fe2fbd89b2e",
+        "directCreate": "absent",
+        "renameDestination": "absent"
+      },
+      "hostAfter": {
+        "read": "3b694d5077c6818dfecfab15064db16e14f36dc6e3f4fc3672442fe2fbd89b2e",
+        "providerWrite": "3b694d5077c6818dfecfab15064db16e14f36dc6e3f4fc3672442fe2fbd89b2e",
+        "directTruncate": "3b694d5077c6818dfecfab15064db16e14f36dc6e3f4fc3672442fe2fbd89b2e",
+        "directRename": "3b694d5077c6818dfecfab15064db16e14f36dc6e3f4fc3672442fe2fbd89b2e",
+        "directDelete": "3b694d5077c6818dfecfab15064db16e14f36dc6e3f4fc3672442fe2fbd89b2e",
+        "directCreate": "absent",
+        "renameDestination": "absent"
+      }
+    }
+  ]
+}

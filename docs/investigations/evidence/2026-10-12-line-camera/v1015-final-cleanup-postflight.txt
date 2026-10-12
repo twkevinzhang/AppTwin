@@ -1,0 +1,15 @@
+shared-media-write owned_groups0 media0 paths0
+shared-media-write images nonce_rows0
+shared-media-write owned_host_files0
+media-compat owned_groups0 media0 paths0
+media-compat images nonce_rows0
+media-compat video nonce_rows0
+media-compat owned_host_files0
+media-compat owned_host_files0
+hostfixture_uninstall=Success
+group ['name=test', 'environmentBindingId=1', 'id=1b9fb1b0-a800-4825-a0b8-e0d29ec24111']
+group ['name=openinfo', 'environmentBindingId=2', 'id=9556e507-9308-438b-b5c7-d49ad7e4a4e3']
+94c8056777654dbde7fe19d9599a285efb55f5827f9a99c385ff2f79be89a72f  virtual/data/app/jp.naver.line.android/base.apk
+26ae3c06095a7533154dc39f637a6bd0d092cf65be814472f0d0e3ebef5719c2  virtual/data/app/jp.naver.line.android/split_config.arm64_v8a.apk
+5ad82153b14e5ae0e3afc03b19dbc1c475f39628922463c0453ee8194a2eec2c  virtual/data/app/jp.naver.line.android/split_config.xxhdpi.apk
+CAMERA/READ/WRITE LINEtrue; global1; propertyoriginalempty; no collectors/test jobs; no image capture/send; preview pending physical ASUS latch.
