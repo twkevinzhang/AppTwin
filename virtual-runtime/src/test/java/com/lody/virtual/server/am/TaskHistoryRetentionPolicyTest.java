@@ -50,6 +50,28 @@ public class TaskHistoryRetentionPolicyTest {
         assertFalse(owner(42, 2, 2, false, false));
     }
 
+    @Test
+    public void pendingOwnerHasFixedDeadlineAndNeverRenewsOnQuery() {
+        assertTrue(pending(1_000L, 1_000L, 2, 7, true));
+        assertTrue(pending(5_999L, 1_000L, 2, 7, true));
+        assertFalse(pending(6_000L, 1_000L, 2, 7, true));
+        assertFalse(pending(6_001L, 1_000L, 2, 7, true));
+        assertFalse(pending(999L, 1_000L, 2, 7, true));
+    }
+
+    @Test
+    public void pendingOwnerRejectsCrossUserDeadAndSupersededGeneration() {
+        assertFalse(pending(1_001L, 1_000L, 3, 7, true));
+        assertFalse(pending(1_001L, 1_000L, 2, 8, true));
+        assertFalse(pending(1_001L, 1_000L, 2, 7, false));
+    }
+
+    private static boolean pending(long now, long preparedAt, int processUserId,
+            long processGeneration, boolean currentOwner) {
+        return TaskHistoryRetentionPolicy.isPendingOwnerValid(now, preparedAt, 2,
+                processUserId, 7, processGeneration, currentOwner);
+    }
+
     private static boolean owner(int activityTaskId, int activityUserId, int processUserId,
             boolean marked, boolean currentGenerationAlive) {
         return TaskHistoryRetentionPolicy.hasEligibleOwner(42, 2, activityTaskId,

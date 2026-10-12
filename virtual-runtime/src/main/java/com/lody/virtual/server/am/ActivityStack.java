@@ -11,6 +11,7 @@ import android.os.Build;
 import android.os.Bundle;
 import android.os.IBinder;
 import android.os.RemoteException;
+import android.os.SystemClock;
 import android.util.SparseArray;
 
 import com.lody.virtual.client.core.VirtualCore;
@@ -29,6 +30,8 @@ import java.util.List;
 import java.util.Iterator;
 import java.util.ListIterator;
 import java.util.UUID;
+import java.util.HashMap;
+import java.util.Map;
 
 import mirror.android.app.ActivityManagerNative;
 import mirror.android.app.ActivityThread;
@@ -68,6 +71,26 @@ import static android.content.pm.ActivityInfo.LAUNCH_SINGLE_TOP;
      * [Key] = TaskId [Value] = TaskRecord
      */
     private final SparseArray<TaskRecord> mHistory = new SparseArray<>();
+    private final Map<String, PendingTaskOwner> mPendingTaskOwners = new HashMap<>();
+
+    private static final class PendingTaskOwner {
+        final ProcessRecord process;
+        final ComponentName stub;
+        final ComponentName guest;
+        final int userId;
+        final long generation;
+        final long preparedAt;
+
+        PendingTaskOwner(ProcessRecord process, ComponentName stub, ComponentName guest,
+                int userId, long preparedAt) {
+            this.process = process;
+            this.stub = stub;
+            this.guest = guest;
+            this.userId = userId;
+            this.generation = process.generation;
+            this.preparedAt = preparedAt;
+        }
+    }
 
 
     ActivityStack(VActivityManagerService mService) {
@@ -833,6 +856,14 @@ import static android.content.pm.ActivityInfo.LAUNCH_SINGLE_TOP;
                 sourceRecord != null ? sourceRecord.component : null, userId,
                 preparedLaunchId);
         saveInstance.saveToIntent(targetIntent);
+        if (preparedLaunchId != null) {
+            synchronized (mHistory) {
+                prunePendingTaskOwners(SystemClock.elapsedRealtime());
+                mPendingTaskOwners.put(preparedLaunchId, new PendingTaskOwner(targetApp,
+                        targetIntent.getComponent(), component, userId,
+                        SystemClock.elapsedRealtime()));
+            }
+        }
         return targetIntent;
     }
 
@@ -865,6 +896,7 @@ import static android.content.pm.ActivityInfo.LAUNCH_SINGLE_TOP;
             synchronized (task.activities) {
                 task.activities.add(record);
             }
+            if (preparedLaunchId != null) mPendingTaskOwners.remove(preparedLaunchId);
             return true;
         }
     }
@@ -917,6 +949,10 @@ import static android.content.pm.ActivityInfo.LAUNCH_SINGLE_TOP;
     List<Integer> processDied(ProcessRecord record) {
         List<Integer> emptiedTaskIds = new ArrayList<>();
         synchronized (mHistory) {
+            Iterator<PendingTaskOwner> pending = mPendingTaskOwners.values().iterator();
+            while (pending.hasNext()) {
+                if (pending.next().process == record) pending.remove();
+            }
             optimizeTasksLocked();
             int N = mHistory.size();
             while (N-- > 0) {
@@ -942,8 +978,7 @@ import static android.content.pm.ActivityInfo.LAUNCH_SINGLE_TOP;
     boolean hasLiveTaskOwnership(int taskId) {
         synchronized (mHistory) {
             TaskRecord task = mHistory.get(taskId);
-            if (task == null) return false;
-            synchronized (task.activities) {
+            if (task != null) synchronized (task.activities) {
                 for (ActivityRecord activity : task.activities) {
                     if (!activity.marked
                             && mService.isCurrentActivityProcessOwner(activity.process)) {
@@ -951,7 +986,59 @@ import static android.content.pm.ActivityInfo.LAUNCH_SINGLE_TOP;
                     }
                 }
             }
-            return false;
+            return hasPendingTaskOwnership(taskId);
+        }
+    }
+
+    /** Protect only an exact host-started task during the existing prepared-launch window. */
+    private boolean hasPendingTaskOwnership(int taskId) {
+        long now = SystemClock.elapsedRealtime();
+        prunePendingTaskOwners(now);
+        if (mPendingTaskOwners.isEmpty()) return false;
+        for (ActivityManager.RecentTaskInfo physical : snapshotPhysicalTasks()) {
+            if (physical.id != taskId || physical.baseIntent == null) continue;
+            try {
+                StubActivityRecord launch = new StubActivityRecord(physical.baseIntent);
+                PendingTaskOwner owner = mPendingTaskOwners.get(launch.preparedLaunchId);
+                if (owner == null) continue;
+                if (!mService.isPreparedActivityLaunchPending(launch.preparedLaunchId, owner.userId)) {
+                    mPendingTaskOwners.remove(launch.preparedLaunchId);
+                    continue;
+                }
+                if (launch.userId != owner.userId || launch.intent == null
+                        || !owner.guest.equals(launch.intent.getComponent())
+                        || !owner.stub.equals(physical.baseIntent.getComponent())
+                        || (!owner.stub.equals(physical.baseActivity)
+                            && !owner.stub.equals(physical.topActivity))) continue;
+                if (TaskHistoryRetentionPolicy.shouldRetain(taskId, physical.id,
+                        mService.isPreparedActivityLaunchPending(launch.preparedLaunchId, owner.userId)
+                            && TaskHistoryRetentionPolicy.isPendingOwnerValid(
+                                SystemClock.elapsedRealtime(), owner.preparedAt,
+                                owner.userId, owner.process.userId, owner.generation,
+                                owner.process.generation,
+                                mService.isCurrentActivityProcessOwner(owner.process)),
+                        VirtualCore.get().getHostPkg(),
+                        physical.baseActivity == null ? null : physical.baseActivity.getPackageName(),
+                        physical.baseActivity == null ? null : physical.baseActivity.getClassName(),
+                        physical.topActivity == null ? null : physical.topActivity.getPackageName(),
+                        physical.topActivity == null ? null : physical.topActivity.getClassName(),
+                        VASettings.STUB_COUNT)) return true;
+            } catch (RuntimeException unavailable) {
+                // Missing/invalid task metadata cannot establish pending ownership.
+            }
+        }
+        return false;
+    }
+
+    private void prunePendingTaskOwners(long now) {
+        Iterator<PendingTaskOwner> owners = mPendingTaskOwners.values().iterator();
+        while (owners.hasNext()) {
+            PendingTaskOwner owner = owners.next();
+            if (!TaskHistoryRetentionPolicy.isPendingOwnerValid(now, owner.preparedAt,
+                    owner.userId, owner.process.userId, owner.generation,
+                    owner.process.generation, mService.isCurrentActivityProcessOwner(owner.process))) {
+                owners.remove();
+            }
         }
     }
 

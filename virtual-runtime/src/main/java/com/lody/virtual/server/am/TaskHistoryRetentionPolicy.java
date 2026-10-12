@@ -5,6 +5,13 @@ final class TaskHistoryRetentionPolicy {
     private TaskHistoryRetentionPolicy() {
     }
 
+    static boolean isPendingOwnerValid(long now, long preparedAt, int userId,
+            int processUserId, long generation, long processGeneration, boolean currentOwner) {
+        // Matches the existing prepared launch acknowledgement ceiling; never renew on query.
+        return now >= preparedAt && now - preparedAt < 5_000L && userId == processUserId
+                && generation == processGeneration && currentOwner;
+    }
+
     static boolean hasEligibleOwner(int taskId, int taskUserId, int activityTaskId,
             int activityUserId, int processUserId, boolean marked,
             boolean currentGenerationAlive) {
