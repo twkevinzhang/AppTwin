@@ -34,6 +34,7 @@
 #include <stdlib.h>
 #include <sys/mman.h>
 #include "And64InlineHook.hpp"
+#include "A64FarJumpPatch.h"
 #define   A64_MAX_INSTRUCTIONS 5
 #define   A64_MAX_REFERENCES   (A64_MAX_INSTRUCTIONS * 2)
 #define   A64_NOP              0xd503201fu
@@ -509,7 +510,7 @@ A64_JNIEXPORT void *A64HookFunctionV(void *const symbol, void *const replace,
     static_assert(A64_MAX_INSTRUCTIONS >= 5, "please fix A64_MAX_INSTRUCTIONS!");
     auto pc_offset = static_cast<int64_t>(__intval(replace) - __intval(symbol)) >> 2;
     if (llabs(pc_offset) >= (mask >>1)) {
-        int32_t count = (reinterpret_cast<uint64_t>(original + 2) & 7u) != 0u ? 5 : 4;
+        constexpr int32_t count = A64FarJump::kInstructionCount;
         if (trampoline) {
             if (rwx_size < count * 10u) {
                 return NULL;
@@ -517,15 +518,9 @@ A64_JNIEXPORT void *A64HookFunctionV(void *const symbol, void *const replace,
             __fix_instructions(original, count, trampoline);
         } //if
 
-        if (__make_rwx(original, 5 * sizeof(uint32_t)) == 0) {
-            if (count == 5) {
-                original[0] = A64_NOP;
-                ++original;
-            } //if
-            original[0] = 0x58000051u; // LDR X17, #0x8
-            original[1] = 0xd61f0220u; // BR X17
-            *reinterpret_cast<int64_t *>(original + 2) = __intval(replace);
-            __flush_cache(symbol, 5 * sizeof(uint32_t));
+        if (__make_rwx(original, A64FarJump::kSize) == 0) {
+            A64FarJump::encode(original, static_cast<uint64_t>(__intval(replace)));
+            __flush_cache(symbol, A64FarJump::kSize);
 
         } else {
             trampoline = NULL;
