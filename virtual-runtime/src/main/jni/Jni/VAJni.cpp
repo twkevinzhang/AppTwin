@@ -38,14 +38,19 @@ static void jni_disableJit(alias_ref<jclass> clazz, jint apiLevel) {
     disableJit(apiLevel);
 }
 
-static void jni_nativeEnableIORedirect(alias_ref<jclass>, jstring selfSoPath, jstring hostPackage,
+static jboolean jni_nativeEnableIORedirect(alias_ref<jclass>, jstring selfSoPath, jstring hostPackage,
                                        jstring guestProcessName, jint apiLevel,
                                        jint preview_api_level) {
     ScopeUtfString so_path(selfSoPath);
     ScopeUtfString host_package(hostPackage);
     ScopeUtfString guest_process_name(guestProcessName);
+    ALOGI("SharedMediaHooks phase=jni-start api=%d", apiLevel);
     IOUniformer::startUniformer(so_path.c_str(), host_package.c_str(),
                                 guest_process_name.c_str(), apiLevel, preview_api_level);
+    ALOGI("SharedMediaHooks phase=jni-uniformer-return");
+    bool ready = IOUniformer::sharedMediaHooksReady();
+    ALOGI("SharedMediaHooks phase=jni-complete ready=%d", ready);
+    return ready;
 }
 
 static void jni_nativeConfigureUidOverride(alias_ref<jclass>, jint uidOverride) {
@@ -58,6 +63,12 @@ static jint jni_nativeReadUidForProbe(alias_ref<jclass>) {
 
 static jint jni_nativeCountProcMapsLeaksForProbe(alias_ref<jclass>) {
     return IOUniformer::countProcMapsLeaksForProbe();
+}
+
+static jboolean jni_nativeIOSharedMediaAccess(alias_ref<jclass>, jstring _path,
+                                              jboolean read, jboolean write) {
+    ScopeUtfString path(_path);
+    return IOUniformer::sharedMediaAccess(path.c_str(), read, write);
 }
 
 static void jni_nativeIOWhitelist(alias_ref<jclass> jclazz, jstring _path) {
@@ -125,6 +136,7 @@ JNIEXPORT jint JNICALL JNI_OnLoad(JavaVM *vm, void *) {
                                          jni_nativeReadUidForProbe),
                         makeNativeMethod("nativeCountProcMapsLeaksForProbe",
                                          jni_nativeCountProcMapsLeaksForProbe),
+                        makeNativeMethod("nativeIOSharedMediaAccess", jni_nativeIOSharedMediaAccess),
                         makeNativeMethod("nativeIOWhitelist",
                                          jni_nativeIOWhitelist),
                         makeNativeMethod("nativeIOForbid",

@@ -6,6 +6,12 @@ public class SpaceAppOpPermissionTest {
         assertEquals("android.permission.READ_EXTERNAL_STORAGE", SpaceAppOpPermission.permissionFor(85, 31));
         assertEquals("android.permission.READ_EXTERNAL_STORAGE", SpaceAppOpPermission.permissionFor(83, 31));
     }
+    @Test public void storageWriteIsSeparateFromRead() {
+        assertNull(SpaceAppOpPermission.permissionFor(60, 33));
+        assertEquals("android.permission.WRITE_EXTERNAL_STORAGE", SpaceAppOpPermission.permissionFor(60, 32));
+        assertEquals("android.permission.READ_EXTERNAL_STORAGE", SpaceAppOpPermission.permissionFor(59, 31));
+        assertEquals("android.permission.WRITE_EXTERNAL_STORAGE", SpaceAppOpPermission.permissionFor(60, 31));
+    }
     @Test public void mapsProtectedAccessAndLeavesUnrelatedOpsAlone() {
         assertEquals("android.permission.READ_CONTACTS", SpaceAppOpPermission.permissionFor(4));
         assertEquals("android.permission.WRITE_CONTACTS", SpaceAppOpPermission.permissionFor(5));

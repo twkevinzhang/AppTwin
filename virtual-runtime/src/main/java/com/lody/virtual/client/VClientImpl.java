@@ -714,7 +714,9 @@ public final class VClientImpl extends IVClient.Stub {
 
         setupVirtualStorage(info, userId);
 
-        NativeEngine.enableIORedirect(mBoundApplication.processName);
+        if (!NativeEngine.enableIORedirect(mBoundApplication.processName)) {
+            throw new SecurityException("Unable to establish guest shared storage boundary");
+        }
     }
 
     private void setupVirtualStorage(ApplicationInfo info, int userId) {
@@ -785,8 +787,18 @@ public final class VClientImpl extends IVClient.Stub {
                     // white list, do not redirect
                     String whitePath = new File(storageRoot, whiteDir).getAbsolutePath();
                     // Broad shared-media paths must not bypass the per-space decision.
-                    boolean mediaGranted = com.lody.virtual.client.hook.GuestPermissionPolicy.canReadMedia(true, true);
-                    if (mediaGranted) NativeEngine.whitelist(whitePath, true);
+                    boolean mediaReadGranted = com.lody.virtual.client.hook.GuestPermissionPolicy.canReadMedia(true, true);
+                    if (Build.VERSION.SDK_INT <= 32) {
+                        boolean mediaWriteGranted = com.lody.virtual.client.hook.GuestPermissionPolicy.isGranted(
+                                "android.permission.WRITE_EXTERNAL_STORAGE");
+                        if ((mediaReadGranted || mediaWriteGranted)
+                                && NativeEngine.sharedMediaAccess(whitePath, mediaReadGranted, mediaWriteGranted)) {
+                            NativeEngine.whitelist(whitePath, true);
+                        }
+                    } else if (mediaReadGranted) {
+                        // Modern scoped-storage mutations remain subject to the existing platform policy.
+                        NativeEngine.whitelist(whitePath, true);
+                    }
                 }
             }
 

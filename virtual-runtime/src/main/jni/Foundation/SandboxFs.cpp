@@ -1,4 +1,5 @@
 #include <stdlib.h>
+#include <cstdio>
 #include "SandboxFs.h"
 #include "Path.h"
 
@@ -18,6 +19,7 @@ int add_keep_item(const char *path) {
     PathItem &item = keep_items[keep_item_count];
     item.path = strdup(path);
     item.size = strlen(path);
+    item.is_folder = item.size > 0 && path[item.size - 1] == '/';
     return ++keep_item_count;
 }
 
