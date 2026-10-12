@@ -33,6 +33,19 @@ class SpaceDetailsUiTest {
         composeRule.runOnIdle { assertEquals(Triple(app, Manifest.permission.CAMERA, false), changed) }
     }
 
+    @Test fun platformExemptMediaShowsAutomaticStatusWithoutSwitch() {
+        var calls = 0
+        setDetails(onPermission = { _, _, _ -> calls++ }, permissions = listOf(
+            SpacePermissionRow("android.permission.READ_MEDIA_IMAGES", "圖片", app, true, true, true),
+            SpacePermissionRow("android.permission.READ_MEDIA_VIDEO", "影片", app, true, true, true),
+        ))
+        composeRule.onNodeWithText("按權限管理 App").performScrollTo().performClick()
+        composeRule.onAllNodesWithText("自動允許（此版本免設定）").assertCountEquals(2)
+        composeRule.onNodeWithTag("space-permission-android.permission.READ_MEDIA_IMAGES-${app.launchKey}").assertDoesNotExist()
+        composeRule.onNodeWithTag("space-permission-android.permission.READ_MEDIA_VIDEO-${app.launchKey}").assertDoesNotExist()
+        composeRule.runOnIdle { assertEquals(0, calls) }
+    }
+
     @Test fun permanentBackupDeleteRequiresConfirmationAndCancelKeepsFile() {
         var deleted: SpaceBackupEntry? = null
         setDetails(onDeleteBackup = { deleted = it })
@@ -72,10 +85,11 @@ class SpaceDetailsUiTest {
         onPermission: (GroupAppItem, String, Boolean) -> Unit = { _, _, _ -> },
         onDeleteBackup: (SpaceBackupEntry) -> Unit = {},
         onCreate: (SpaceBackupEntry) -> Unit = {},
+        permissions: List<SpacePermissionRow> = listOf(SpacePermissionRow(Manifest.permission.CAMERA, "相機", app, true, false)),
     ) {
         composeRule.setContent { AppTwinTheme {
             SpaceDetailsScreen(space, listOf("App 資料" to 1000L),
-                listOf(SpacePermissionRow(Manifest.permission.CAMERA, "相機", app, true, false)),
+                permissions,
                 emptyList(), emptyList(), listOf(backup), false, false, null, "content://test/global",
                 {}, onPermission, {}, {}, { _, _ -> }, onCreate, onDeleteBackup, {}, {}, {}, {}, {})
         } }

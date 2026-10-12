@@ -32,6 +32,18 @@ class SettingsPermissionUiTest {
     val composeRule = createComposeRule()
 
     @Test
+    fun platformExemptPermissionHasNoHostActionAndExplainsEffectiveGate() {
+        val exempt = internet.copy(permission = "android.permission.READ_MEDIA_IMAGES", label = "圖片",
+            virtualScope = ClonePermissionVirtualScope.PLATFORM_EXEMPT)
+        setContent(permissions = listOf(exempt))
+        composeRule.onNodeWithTag("settings-list").performScrollToNode(hasTestTag("permission-auto-section"))
+        composeRule.onNodeWithTag("permission-auto-section").performClick()
+        composeRule.onNodeWithText("自動允許（此版本免設定）").performScrollTo().assertIsDisplayed()
+        composeRule.onNodeWithText("實際存取仍遵守此版本的有效權限").performScrollTo().assertIsDisplayed()
+        composeRule.onNodeWithTag("permission-action-${exempt.permission}").assertDoesNotExist()
+    }
+
+    @Test
     fun settingsShowsAggregatedPermissionAndDispatchesItsAction() {
         var selected: ClonePermissionSummary? = null
         setContent(onPermissionAction = { selected = it })
@@ -143,13 +155,14 @@ class SettingsPermissionUiTest {
 
     private fun setContent(
         onPermissionAction: (ClonePermissionSummary) -> Unit = {},
+        permissions: List<ClonePermissionSummary> = listOf(camera, internet, unsupported),
     ) {
         composeRule.setContent {
             AppTwinTheme {
                 SettingsScreen(
                     state = MainUiState(
                         isRefreshing = false,
-                        clonePermissions = listOf(camera, internet, unsupported),
+                        clonePermissions = permissions,
                     ),
                     onOpenStorageSettings = {},
                     onExportDiagnostics = {},

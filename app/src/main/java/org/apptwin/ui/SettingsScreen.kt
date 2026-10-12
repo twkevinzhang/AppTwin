@@ -492,6 +492,7 @@ private fun PermissionRow(
 }
 
 private fun permissionStatus(permission: ClonePermissionSummary): String = when {
+    permission.virtualScope == ClonePermissionVirtualScope.PLATFORM_EXEMPT -> "自動允許（此版本免設定）"
     permission.category == ClonePermissionCategory.AUTOMATIC -> "系統自動授權"
     permission.category == ClonePermissionCategory.UNSUPPORTED -> "無法授權或尚未支援"
     permission.granted -> "已就緒"
@@ -501,6 +502,7 @@ private fun permissionStatus(permission: ClonePermissionSummary): String = when 
 private fun permissionScopeLabel(scope: ClonePermissionVirtualScope): String = when (scope) {
     ClonePermissionVirtualScope.SPACE_SCOPED -> "宿主授權；各分身可另行調整"
     ClonePermissionVirtualScope.HOST_SHARED -> "所有分身共用宿主系統授權"
+    ClonePermissionVirtualScope.PLATFORM_EXEMPT -> "實際存取仍遵守此版本的有效權限"
     ClonePermissionVirtualScope.NOT_SUPPORTED -> "AppTwin 尚未支援此宿主授權"
 }
 

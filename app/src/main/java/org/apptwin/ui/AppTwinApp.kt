@@ -325,9 +325,9 @@ fun AppTwinApp(
                                         backgroundRetrying = state.isSpaceBackgroundRetrying,
                                         onRetryBackground = viewModel::retrySpaceBackground,
                                         storage = details?.storage?.let { listOf("App 資料" to it.appDataBytes, "快取" to it.cacheBytes, "共用檔案" to it.sharedFilesBytes, "Google 服務資料" to it.googleDataBytes) }.orEmpty(),
-                                        permissions = details?.permissions.orEmpty().filter { it.controllable }.flatMap { permission ->
+                                        permissions = details?.permissions.orEmpty().filter { it.controllable || it.platformExempt }.flatMap { permission ->
                                             permission.apps.mapNotNull { target -> detailsGroup.apps.firstOrNull { it.app.packageName == target.packageName }?.let { app ->
-                                                SpacePermissionRow(permission.permission, permission.label, app, target.granted, permission.hostGranted)
+                                                SpacePermissionRow(permission.permission, permission.label, app, target.granted, permission.hostGranted, permission.platformExempt)
                                             } }
                                         },
                                         accounts = details?.accounts.orEmpty().map { SpaceAccountRow(it.name, it.type, it.syncAuthorities, it.syncStatus) },

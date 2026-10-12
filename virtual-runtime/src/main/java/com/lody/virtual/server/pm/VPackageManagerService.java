@@ -248,11 +248,20 @@ public class VPackageManagerService extends IPackageManager.Stub {
                 || "android.permission.INTERACT_ACROSS_USERS_FULL".equals(permName)) {
             return PackageManager.PERMISSION_DENIED;
         }
-        int hostDecision = VirtualCore.get().getPackageManager().checkPermission(
-                permName, VirtualCore.get().getHostPkg());
         if (!isPermissionRequestedByInstalledPackage(permName, pkgName, userId)) {
             return PackageManager.PERMISSION_DENIED;
         }
+        if (com.lody.virtual.helper.compat.PlatformPermissionCompatibility.isUnavailableOnPlatform(
+                VirtualCore.get().getPackageManager(), permName)) {
+            return PackageManager.PERMISSION_GRANTED;
+        }
+        try {
+            VirtualCore.get().getPackageManager().getPermissionInfo(permName, 0);
+        } catch (PackageManager.NameNotFoundException | RuntimeException unavailable) {
+            return PackageManager.PERMISSION_DENIED;
+        }
+        int hostDecision = VirtualCore.get().getPackageManager().checkPermission(
+                permName, VirtualCore.get().getHostPkg());
         if (hostDecision != PackageManager.PERMISSION_GRANTED
                 || !isSpaceControlledDangerousPermission(permName)) {
             return hostDecision;
@@ -267,8 +276,14 @@ public class VPackageManagerService extends IPackageManager.Stub {
                                                boolean granted) {
         enforceHostPermissionController();
         checkUserId(userId);
-        if (!isPermissionRequestedByInstalledPackage(permName, pkgName, userId)
-                || !isSpaceControlledDangerousPermission(permName)) {
+        if (!isPermissionRequestedByInstalledPackage(permName, pkgName, userId)) {
+            return false;
+        }
+        if (com.lody.virtual.helper.compat.PlatformPermissionCompatibility.isUnavailableOnPlatform(
+                VirtualCore.get().getPackageManager(), permName)) {
+            return granted;
+        }
+        if (!isSpaceControlledDangerousPermission(permName)) {
             return false;
         }
         if (granted && VirtualCore.get().getPackageManager().checkPermission(
@@ -335,7 +350,7 @@ public class VPackageManagerService extends IPackageManager.Stub {
                     .getPermissionInfo(permission, 0);
             return (info.protectionLevel & PermissionInfo.PROTECTION_MASK_BASE)
                     == PermissionInfo.PROTECTION_DANGEROUS;
-        } catch (PackageManager.NameNotFoundException missing) {
+        } catch (PackageManager.NameNotFoundException | RuntimeException missing) {
             return false;
         }
     }

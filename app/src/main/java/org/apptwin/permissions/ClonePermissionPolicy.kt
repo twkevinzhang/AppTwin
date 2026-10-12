@@ -21,6 +21,7 @@ enum class ClonePermissionVirtualScope {
     SPACE_SCOPED,
     HOST_SHARED,
     NOT_SUPPORTED,
+    PLATFORM_EXEMPT,
 }
 
 /** A cloned app affected by a permission declared in its package manifest. */

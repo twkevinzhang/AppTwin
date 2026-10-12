@@ -26,6 +26,13 @@ android {
             versionNameSuffix = "-1"
             buildConfigField("int", "FIXTURE_REVISION", "1")
         }
+        create("mediaCompat") {
+            dimension = "revision"
+            applicationId = "org.apptwin.fixture.mediacompat"
+            versionCode = 1
+            versionNameSuffix = "-media-compat"
+            buildConfigField("int", "FIXTURE_REVISION", "1")
+        }
         create("revisionTwo") {
             dimension = "revision"
             versionCode = 2

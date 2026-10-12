@@ -8,6 +8,22 @@ import org.junit.Test
 
 class ClonePermissionPolicyTest {
     @Test
+    fun `platform exemption never requests host permission while unsupported remains denied`() {
+        val clone = target("group-1", "工作", "com.example.chat", "Chat")
+        val summaries = ClonePermissionPolicy.aggregate(listOf(
+            requirement("android.permission.READ_MEDIA_IMAGES", clone,
+                category = ClonePermissionCategory.AUTOMATIC,
+                virtualScope = ClonePermissionVirtualScope.PLATFORM_EXEMPT,
+                hostGranted = false, canRequestRuntime = true),
+            requirement(UNSUPPORTED, clone, category = ClonePermissionCategory.UNSUPPORTED),
+        ))
+        val exempt = summaries.single { it.virtualScope == ClonePermissionVirtualScope.PLATFORM_EXEMPT }
+        assertTrue(exempt.granted)
+        assertEquals(ClonePermissionAction.NONE, exempt.action)
+        assertFalse(summaries.single { it.permission == UNSUPPORTED }.granted)
+    }
+
+    @Test
     fun `same permission is aggregated once and affected clones are deduplicated`() {
         val firstClone = target("group-1", "工作", "com.example.camera", "Camera")
         val secondClone = target("group-2", "個人", "com.example.chat", "Chat")
