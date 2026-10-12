@@ -836,6 +836,10 @@ public class VActivityManagerService extends IActivityManager.Stub
         }
     }
 
+    boolean isPreparedActivityLaunchPending(String launchId, int userId) {
+        return mPreparedActivityLaunches.isPending(launchId, userId);
+    }
+
     boolean registerPreparedActivityLaunch(String launchId, int userId, IBinder expectedToken) {
         synchronized (this) {
             if (!beginDaemonWorkloadAcquisition()) return false;
