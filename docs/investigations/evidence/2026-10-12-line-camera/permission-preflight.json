@@ -1,0 +1,26 @@
+{
+  "CAMERA": {
+    "hostGranted": true,
+    "LINEuser2ExplicitGranted": true
+  },
+  "RECORD_AUDIO": {
+    "hostGranted": true,
+    "LINEuser2ExplicitGranted": true
+  },
+  "READ_EXTERNAL_STORAGE": {
+    "hostGranted": true,
+    "LINEuser2ExplicitGranted": true
+  },
+  "WRITE_EXTERNAL_STORAGE": {
+    "hostGranted": false,
+    "LINEuser2ExplicitGranted": false
+  },
+  "READ_MEDIA_IMAGES": {
+    "hostGranted": false,
+    "LINEuser2ExplicitGranted": false
+  },
+  "READ_MEDIA_VIDEO": {
+    "hostGranted": false,
+    "LINEuser2ExplicitGranted": false
+  }
+}

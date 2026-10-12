@@ -827,7 +827,11 @@ class MethodProxies {
             String permName = (String) args[0];
             String pkgName = (String) args[1];
             int userId = VUserHandle.myUserId();
-            return VPackageManager.get().checkPermission(permName, pkgName, userId);
+            int decision = VPackageManager.get().checkPermission(permName, pkgName, userId);
+            if ("jp.naver.line.android".equals(pkgName)) {
+                com.lody.virtual.helper.compat.LinePermissionDiagnostics.record("PM", permName, decision);
+            }
+            return decision;
         }
 
         @Override

@@ -1,0 +1,5 @@
+10-12 23:50:00.997 21848 21848 I LinePermissionTrace: stage=AM permission=READ_EXTERNAL_STORAGE decision=0 pid=21848 user=2
+10-12 23:50:00.997 21848 21848 I LinePermissionTrace: stage=AM permission=WRITE_EXTERNAL_STORAGE decision=-1 pid=21848 user=2
+10-12 23:50:01.060 21848 21848 I LinePermissionTrace: stage=AM permission=CAMERA decision=0 pid=21848 user=2
+toast_observed=True
+property_final=0

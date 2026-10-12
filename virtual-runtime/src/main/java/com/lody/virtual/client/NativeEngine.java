@@ -184,7 +184,11 @@ public class NativeEngine {
 
     /** Called before native camera/audio identity is rewritten to the host. */
     public static boolean onCheckGuestPermission(String permission) {
-        return com.lody.virtual.client.hook.GuestPermissionPolicy.isGranted(permission);
+        boolean granted = com.lody.virtual.client.hook.GuestPermissionPolicy.isGranted(permission);
+        com.lody.virtual.helper.compat.LinePermissionDiagnostics.record("native", permission,
+                granted ? android.content.pm.PackageManager.PERMISSION_GRANTED
+                        : android.content.pm.PackageManager.PERMISSION_DENIED);
+        return granted;
     }
 
     public static int onGetCallingUid(int originUid) {

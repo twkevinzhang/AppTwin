@@ -1367,11 +1367,17 @@ class MethodProxies {
                 return PackageManager.PERMISSION_GRANTED;
             }
             if (com.lody.virtual.client.hook.GuestPermissionPolicy.isControlled(permission)) {
-                return VPackageManager.get().checkPermission(
+                int decision = VPackageManager.get().checkPermission(
                         permission, getAppPkg(), getAppUserId());
+                com.lody.virtual.helper.compat.LinePermissionDiagnostics.record("AM", permission, decision);
+                return decision;
             }
             args[args.length - 1] = getRealUid();
-            return method.invoke(who, args);
+            Object result = method.invoke(who, args);
+            if (result instanceof Integer) {
+                com.lody.virtual.helper.compat.LinePermissionDiagnostics.record("AM", permission, (Integer) result);
+            }
+            return result;
         }
 
         @Override

@@ -1,0 +1,2 @@
+fresh_restart_permission_toast_observed=True
+matching_event_count=1

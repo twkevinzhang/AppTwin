@@ -1,0 +1,4 @@
+10-12 23:48:36.275 21848 22292 I LinePermissionTrace: stage=native permission=CAMERA decision=0 pid=21848 user=2
+10-12 23:48:36.276 21848 22292 I LinePermissionTrace: stage=native permission=CAMERA decision=0 pid=21848 user=2
+10-12 23:48:36.279 21848 22292 I LinePermissionTrace: stage=native permission=CAMERA decision=0 pid=21848 user=2
+10-12 23:48:36.284 21848 22292 I LinePermissionTrace: stage=native permission=CAMERA decision=0 pid=21848 user=2
