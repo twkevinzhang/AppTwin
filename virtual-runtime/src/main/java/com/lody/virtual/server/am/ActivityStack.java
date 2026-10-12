@@ -241,6 +241,7 @@ import static android.content.pm.ActivityInfo.LAUNCH_SINGLE_TOP;
         ArrayList<ActivityManager.RecentTaskInfo> recentTask = new ArrayList<>(mAM.getRecentTasks(Integer.MAX_VALUE,
                 ActivityManager.RECENT_WITH_EXCLUDED | ActivityManager.RECENT_IGNORE_UNAVAILABLE));
         int N = mHistory.size();
+        List<ActivityManager.RecentTaskInfo> physicalTasks = null;
         while (N-- > 0) {
             TaskRecord task = mHistory.valueAt(N);
             ListIterator<ActivityManager.RecentTaskInfo> iterator = recentTask.listIterator();
@@ -254,9 +255,63 @@ import static android.content.pm.ActivityInfo.LAUNCH_SINGLE_TOP;
                 }
             }
             if (!taskAlive) {
+                // Some OEM recent-task snapshots omit a newly created/excluded guest task.
+                // Query host-owned physical tasks once, only when an omission needs checking.
+                if (physicalTasks == null) physicalTasks = snapshotPhysicalTasks();
+                if (hasEligibleTaskOwner(task)) {
+                    for (ActivityManager.RecentTaskInfo physical : physicalTasks) {
+                        ComponentName base = physical.baseActivity;
+                        ComponentName top = physical.topActivity;
+                        if (TaskHistoryRetentionPolicy.shouldRetain(task.taskId, physical.id,
+                                true, VirtualCore.get().getHostPkg(),
+                                base == null ? null : base.getPackageName(),
+                                base == null ? null : base.getClassName(),
+                                top == null ? null : top.getPackageName(),
+                                top == null ? null : top.getClassName(), VASettings.STUB_COUNT)) {
+                            taskAlive = true;
+                            break;
+                        }
+                    }
+                }
+            }
+            if (!taskAlive) {
                 mHistory.removeAt(N);
             }
         }
+    }
+
+    private List<ActivityManager.RecentTaskInfo> snapshotPhysicalTasks() {
+        List<ActivityManager.RecentTaskInfo> result = new ArrayList<>();
+        try {
+            List<ActivityManager.AppTask> tasks = mAM.getAppTasks();
+            if (tasks == null) return result;
+            for (ActivityManager.AppTask task : tasks) {
+                try {
+                    ActivityManager.RecentTaskInfo info = task.getTaskInfo();
+                    if (info != null) result.add(info);
+                } catch (RuntimeException unavailable) {
+                    // An unavailable task does not prove physical ownership.
+                }
+            }
+        } catch (RuntimeException unavailable) {
+            // Preserve existing cleanup behavior if the physical query cannot confirm a task.
+        }
+        return result;
+    }
+
+    private boolean hasEligibleTaskOwner(TaskRecord task) {
+        synchronized (task.activities) {
+            for (ActivityRecord activity : task.activities) {
+                ProcessRecord process = activity.process;
+                if (activity.task == task && process != null
+                        && TaskHistoryRetentionPolicy.hasEligibleOwner(task.taskId, task.userId,
+                                activity.task.taskId, activity.userId, process.userId,
+                                activity.marked, mService.isCurrentActivityProcessOwner(process))) {
+                    return true;
+                }
+            }
+        }
+        return false;
     }
 
     /** Reconciles virtual task state with Android before deciding whether the daemon may stop. */
