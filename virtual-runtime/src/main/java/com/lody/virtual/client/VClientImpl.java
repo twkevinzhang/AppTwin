@@ -785,10 +785,7 @@ public final class VClientImpl extends IVClient.Stub {
                     // white list, do not redirect
                     String whitePath = new File(storageRoot, whiteDir).getAbsolutePath();
                     // Broad shared-media paths must not bypass the per-space decision.
-                    boolean mediaGranted = com.lody.virtual.client.hook.GuestPermissionPolicy.isGranted(
-                            "android.permission.READ_EXTERNAL_STORAGE")
-                            || (com.lody.virtual.client.hook.GuestPermissionPolicy.isGranted("android.permission.READ_MEDIA_IMAGES")
-                            && com.lody.virtual.client.hook.GuestPermissionPolicy.isGranted("android.permission.READ_MEDIA_VIDEO"));
+                    boolean mediaGranted = com.lody.virtual.client.hook.GuestPermissionPolicy.canReadMedia(true, true);
                     if (mediaGranted) NativeEngine.whitelist(whitePath, true);
                 }
             }

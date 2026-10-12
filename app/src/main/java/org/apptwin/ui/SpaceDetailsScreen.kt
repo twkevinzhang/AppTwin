@@ -28,6 +28,7 @@ data class SpacePermissionRow(
     val app: GroupAppItem,
     val allowed: Boolean,
     val hostGranted: Boolean,
+    val platformExempt: Boolean = false,
 )
 data class SpaceAccountRow(val name: String, val type: String, val syncAuthorities: List<String>, val syncStatus: String)
 data class SpaceAuthenticatorRow(val type: String, val label: String)
@@ -128,9 +129,9 @@ fun SpaceDetailsScreen(
                         rows.forEach { row -> Row(Modifier.fillMaxWidth().padding(vertical = 8.dp)) {
                             Column(Modifier.weight(1f)) {
                                 Text(row.app.appLabel, fontWeight = FontWeight.SemiBold)
-                                Text(when { !row.allowed -> "此空間已拒絕"; !row.hostGranted -> "AppTwin 系統權限尚未允許"; else -> "允許存取" }, style = MaterialTheme.typography.bodySmall)
+                                Text(when { row.platformExempt -> "自動允許（此版本免設定）"; !row.allowed -> "此空間已拒絕"; !row.hostGranted -> "AppTwin 系統權限尚未允許"; else -> "允許存取" }, style = MaterialTheme.typography.bodySmall)
                             }
-                            Switch(checked = row.allowed, enabled = !busy,
+                            if (!row.platformExempt) Switch(checked = row.allowed, enabled = !busy,
                                 onCheckedChange = { onSetPermission(row.app, row.permission, it) },
                                 modifier = Modifier.testTag("space-permission-${row.permission}-${row.app.launchKey}"))
                         } }

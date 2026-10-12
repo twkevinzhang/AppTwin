@@ -3,6 +3,7 @@ package org.apptwin
 import com.lody.virtual.client.ipc.VAccountManager
 import com.lody.virtual.client.ipc.VActivityManager
 import com.lody.virtual.os.VEnvironment
+import com.lody.virtual.helper.compat.PlatformPermissionCompatibility
 import android.accounts.Account
 import org.apptwin.accounts.SpaceAccountSync
 import android.accounts.AccountManager
@@ -217,8 +218,9 @@ internal class AndroidMainOperations(private val application: Application) : Mai
             else { val cached = bytes(java.io.File(directory,"cache")) + bytes(java.io.File(directory,"code_cache")); cache += cached; data += size - cached }
         } }
         val permissions = ClonePermissionPolicy.aggregate(readClonePermissionRequirements(listOf(group), emptyList(), mutableListOf())).map { summary ->
-            SpacePermissionEntry(summary.permission, summary.label, summary.granted, summary.permission in SUPPORTED_RUNTIME_PERMISSIONS,
-                summary.affectedClones.map { SpacePermissionApp(it.packageName, it.appLabel, virtualPermissionGranted(summary.permission, it.packageName, userId)) })
+            SpacePermissionEntry(summary.permission, summary.label, summary.granted, summary.permission in SUPPORTED_RUNTIME_PERMISSIONS && summary.virtualScope != ClonePermissionVirtualScope.PLATFORM_EXEMPT,
+                summary.affectedClones.map { SpacePermissionApp(it.packageName, it.appLabel, virtualPermissionGranted(summary.permission, it.packageName, userId)) },
+                platformExempt = summary.virtualScope == ClonePermissionVirtualScope.PLATFORM_EXEMPT)
         }
         val manager = VAccountManager.get()
         return SpaceDetails(groupId, SpaceStorageBreakdown(data,cache,(VEnvironment.getVirtualStorageDir("",userId)?.let(::bytes) ?: 0),google), permissions,
@@ -662,6 +664,12 @@ internal class AndroidMainOperations(private val application: Application) : Mai
         if (group.health != GroupHealth.HEALTHY) return false
         val member = group.apps.firstOrNull { it.packageName == item.app.packageName } ?: return false
         val userId = group.environmentBinding?.internalId ?: return false
+        if (PlatformPermissionCompatibility.isUnavailableOnPlatform(application.packageManager, permission)) {
+            // Platform-exempt grants are idempotent and cannot revoke or restart the clone.
+            return granted && VPackageManager.get().setRuntimePermissionGranted(
+                permission, item.app.packageName, userId, true,
+            )
+        }
         runtimeController.preparePackageForPermissions(group, member)
         val changed = VPackageManager.get().setRuntimePermissionGranted(
             permission,
@@ -836,6 +844,7 @@ internal class AndroidMainOperations(private val application: Application) : Mai
         target: ClonePermissionTarget,
         hostPermissions: Set<String>,
     ): ClonePermissionRequirement {
+        val platformExempt = PlatformPermissionCompatibility.isUnavailableOnPlatform(application.packageManager, permission)
         val hostDeclared = permission in hostPermissions
         val hostGranted = application.checkSelfPermission(permission) ==
             PackageManager.PERMISSION_GRANTED
@@ -849,6 +858,7 @@ internal class AndroidMainOperations(private val application: Application) : Mai
         val baseProtection = permissionInfo?.protectionLevel
             ?.and(PermissionInfo.PROTECTION_MASK_BASE)
         val category = when {
+            platformExempt -> ClonePermissionCategory.AUTOMATIC
             !hostDeclared && !hostGranted -> ClonePermissionCategory.UNSUPPORTED
             special -> ClonePermissionCategory.SPECIAL
             baseProtection == PermissionInfo.PROTECTION_DANGEROUS ->
@@ -865,6 +875,7 @@ internal class AndroidMainOperations(private val application: Application) : Mai
             ClonePermissionCategory.UNSUPPORTED -> false
         }
         val virtualScope = when {
+            platformExempt -> ClonePermissionVirtualScope.PLATFORM_EXEMPT
             category == ClonePermissionCategory.UNSUPPORTED ->
                 ClonePermissionVirtualScope.NOT_SUPPORTED
             permission in SUPPORTED_RUNTIME_PERMISSIONS ->

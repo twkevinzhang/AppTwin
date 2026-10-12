@@ -29,6 +29,13 @@ public final class GuestPermissionPolicy {
             return false;
         }
     }
+    public static boolean canReadMedia(boolean images, boolean videos) {
+        return com.lody.virtual.helper.compat.PlatformPermissionCompatibility.canReadMedia(
+                android.os.Build.VERSION.SDK_INT,
+                isGranted("android.permission.READ_EXTERNAL_STORAGE"),
+                isGranted("android.permission.READ_MEDIA_IMAGES"),
+                isGranted("android.permission.READ_MEDIA_VIDEO"), images, videos);
+    }
     public static void require(String permission) {
         if (!isGranted(permission)) throw new SecurityException("Space permission denied: " + permission);
     }

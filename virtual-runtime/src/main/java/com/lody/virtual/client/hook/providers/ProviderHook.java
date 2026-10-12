@@ -158,16 +158,10 @@ public class ProviderHook implements InvocationHandler {
                     == android.content.pm.PackageManager.PERMISSION_GRANTED) return;
             String path = uri == null ? "" : uri.getPath();
             if (path != null && path.contains("/audio")) return;
-            String permission = path != null && path.contains("/video")
-                    ? "android.permission.READ_MEDIA_VIDEO" : "android.permission.READ_MEDIA_IMAGES";
-            boolean granted = com.lody.virtual.client.hook.GuestPermissionPolicy.isGranted(permission)
-                    || com.lody.virtual.client.hook.GuestPermissionPolicy.isGranted("android.permission.READ_EXTERNAL_STORAGE");
-            // A files query or provider call can expose either kind of media.
-            if (uri == null || path == null || !path.contains("/images") && !path.contains("/video")) {
-                granted = com.lody.virtual.client.hook.GuestPermissionPolicy.isGranted("android.permission.READ_EXTERNAL_STORAGE")
-                        || com.lody.virtual.client.hook.GuestPermissionPolicy.isGranted("android.permission.READ_MEDIA_IMAGES")
-                        && com.lody.virtual.client.hook.GuestPermissionPolicy.isGranted("android.permission.READ_MEDIA_VIDEO");
-            }
+            boolean onlyImages = path != null && path.contains("/images");
+            boolean onlyVideos = path != null && path.contains("/video");
+            boolean granted = com.lody.virtual.client.hook.GuestPermissionPolicy.canReadMedia(
+                    !onlyVideos, !onlyImages);
             if (!granted) throw new SecurityException("Space media permission denied");
         }
     }
