@@ -21,6 +21,54 @@ import java.util.concurrent.TimeUnit;
 public class TrustedGmsCloudMessagingSupervisorTest {
 
     @Test
+    public void freshTcpLossInvalidatesCachedConnectedAndRetryIsExactAndCoalesced() {
+        Fixture f = new Fixture();
+        f.runtime.installed.add(7);
+        f.runtime.installed.add(9);
+        f.runtime.processAlive = f.runtime.bindingAlive = true;
+        f.supervisor.ensureForUser(7);
+        f.supervisor.ensureForUser(9);
+        f.supervisor.onConnected(7);
+        f.runtime.tcpProbe = new long[]{TrustedGmsCloudMessagingState.TCP_DISCONNECTED, 0, 0};
+        assertEquals(TrustedGmsCloudMessagingState.PHASE_DEGRADED, f.supervisor.getState(7).phase);
+        f.runtime.startedUsers.clear();
+        assertTrue(f.supervisor.retryForUser(7));
+        assertFalse(f.supervisor.retryForUser(7));
+        assertEquals(java.util.Collections.singletonList(7), f.runtime.startedUsers);
+        assertTrue(f.runtime.stoppedUsers.isEmpty());
+        assertFalse(f.supervisor.retryForUser(11));
+    }
+
+    @Test
+    public void newSocketWithoutCurrentLoginCannotReuseConnectedState() {
+        Fixture f = new Fixture();
+        f.runtime.installed.add(7);
+        f.runtime.processAlive = f.runtime.bindingAlive = true;
+        f.supervisor.ensureForUser(7);
+        f.runtime.tcpProbe = new long[]{TrustedGmsCloudMessagingState.TCP_CONNECTED, 100, 1, 123};
+        f.supervisor.onConnected(7);
+        assertTrue(f.supervisor.getState(7).mcsSessionVerified);
+        f.runtime.tcpProbe = new long[]{TrustedGmsCloudMessagingState.TCP_CONNECTED, 101, 1, 456};
+        assertEquals(TrustedGmsCloudMessagingState.PHASE_DEGRADED, f.supervisor.getState(7).phase);
+    }
+
+    @Test
+    public void stopDuringProbeCannotRestoreHealthOrAllowRetry() {
+        Fixture f = new Fixture();
+        f.runtime.installed.add(7);
+        f.runtime.processAlive = f.runtime.bindingAlive = true;
+        f.supervisor.ensureForUser(7);
+        f.supervisor.onConnected(7);
+        f.runtime.onProbe = () -> f.supervisor.stopForUser(7);
+        TrustedGmsCloudMessagingState stopped = f.supervisor.getState(7);
+        assertEquals(TrustedGmsCloudMessagingState.PHASE_DISABLED, stopped.phase);
+        assertEquals(TrustedGmsCloudMessagingState.TCP_UNKNOWN, stopped.tcpState);
+        assertFalse(f.supervisor.retryForUser(7));
+        f.supervisor.suspendRuntime();
+        assertFalse(f.supervisor.retryForUser(9));
+    }
+
+    @Test
     public void localAuthorizationStopsStaleWorkWithoutWaitingForCurrentMessaging() {
         Fixture fixture = new Fixture();
         fixture.runtime.installed.add(7);
@@ -611,6 +659,12 @@ public class TrustedGmsCloudMessagingSupervisorTest {
     private static class FakeRuntime
             implements TrustedGmsCloudMessagingSupervisor.RuntimeOperations {
         final Set<Integer> installed = new HashSet<>();
+        long[] tcpProbe = new long[]{0, 0, 0};
+        Runnable onProbe;
+        @Override public long[] probeTcp(int userId) {
+            if (onProbe != null) onProbe.run();
+            return tcpProbe;
+        }
         boolean acceptStart = true;
         boolean processAlive;
         boolean bindingAlive;

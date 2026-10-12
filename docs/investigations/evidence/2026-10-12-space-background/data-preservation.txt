@@ -1,0 +1,4 @@
+Before update Space2=openinfo groupId9556e507-9308-438b-b5c7-d49ad7e4a4e3 internal2; LINE chat_history count328; global1
+LINE virtual baseAPK SHA256 before94c8056777654dbde7fe19d9599a285efb55f5827f9a99c385ff2f79be89a72f
+After update LINE virtual baseAPK 94c8056777654dbde7fe19d9599a285efb55f5827f9a99c385ff2f79be89a72f
+Original data retained; marker baseline0→1. Global final[1]

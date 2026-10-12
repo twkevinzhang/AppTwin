@@ -145,6 +145,19 @@ public final class VClientImpl extends IVClient.Stub {
         return deviceInfo;
     }
 
+    @Override
+    public long[] probeTrustedMcsTcp(int userId, long processGeneration) {
+        com.lody.virtual.server.VirtualUserAccessPolicy.enforceHost();
+        if (!isCurrentProcessGeneration(processGeneration)
+                || com.lody.virtual.os.VUserHandle.getUserId(getVUid()) != userId
+                || mBoundApplication == null
+                || !"com.google.android.gms".equals(mBoundApplication.appInfo.packageName)
+                || !"com.google.android.gms:persistent".equals(mBoundApplication.processName)
+                || mInitialApplication == null) return new long[]{0, 0, 0};
+        long[] result = TrustedMcsTcpProbe.read(mInitialApplication.getClassLoader());
+        return isCurrentProcessGeneration(processGeneration) ? result : new long[]{0, 0, 0};
+    }
+
     public Application getCurrentApplication() {
         return mInitialApplication;
     }

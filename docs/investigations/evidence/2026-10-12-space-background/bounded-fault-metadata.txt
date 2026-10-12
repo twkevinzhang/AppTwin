@@ -1,0 +1,4 @@
+10-12 20:24:54.353 30063 30105 I SpaceBackgroundCardE2E: fault_injected=false baseline_phase=2 baseline_tcp=1 baseline_session_verified=true
+10-12 20:24:54.363 30063 30105 I SpaceBackgroundCardE2E: exact_user=2 stop_result=1
+10-12 20:24:57.267 30063 30105 I SpaceBackgroundCardE2E: retry_exercised=true exact_user=2 terminal_connected=true session_verified=true
+other_user_generation_unchanged_assertion=PASS

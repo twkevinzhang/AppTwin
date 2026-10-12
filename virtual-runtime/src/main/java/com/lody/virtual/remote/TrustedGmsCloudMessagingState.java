@@ -16,6 +16,12 @@ public final class TrustedGmsCloudMessagingState implements Parcelable {
     public static final int PHASE_DEGRADED = 3;
     public static final int PHASE_UNKNOWN = 4;
 
+    public static final int TCP_UNKNOWN = 0;
+    public static final int TCP_CONNECTED = 1;
+    public static final int TCP_DISCONNECTED = 2;
+    public final boolean mcsSessionVerified;
+    public final int tcpState;
+    public final long observedAtMillis;
     public final int phase;
     public final boolean processAlive;
     public final boolean bindingAlive;
@@ -27,6 +33,16 @@ public final class TrustedGmsCloudMessagingState implements Parcelable {
     public TrustedGmsCloudMessagingState(int phase, boolean processAlive,
             boolean bindingAlive, long lastConnectedAtMillis, int retryAttempt,
             long generation, String failureCode) {
+        this(phase, processAlive, bindingAlive, lastConnectedAtMillis, retryAttempt,
+                generation, failureCode, TCP_UNKNOWN, 0L, false);
+    }
+
+    public TrustedGmsCloudMessagingState(int phase, boolean processAlive,
+            boolean bindingAlive, long lastConnectedAtMillis, int retryAttempt,
+            long generation, String failureCode, int tcpState, long observedAtMillis, boolean mcsSessionVerified) {
+        this.mcsSessionVerified = mcsSessionVerified;
+        this.tcpState = tcpState;
+        this.observedAtMillis = observedAtMillis;
         this.phase = phase;
         this.processAlive = processAlive;
         this.bindingAlive = bindingAlive;
@@ -44,6 +60,9 @@ public final class TrustedGmsCloudMessagingState implements Parcelable {
         retryAttempt = source.readInt();
         generation = source.readLong();
         failureCode = source.readString();
+        tcpState = source.readInt();
+        observedAtMillis = source.readLong();
+        mcsSessionVerified = source.readInt() != 0;
     }
 
     @Override
@@ -60,6 +79,9 @@ public final class TrustedGmsCloudMessagingState implements Parcelable {
         dest.writeInt(retryAttempt);
         dest.writeLong(generation);
         dest.writeString(failureCode);
+        dest.writeInt(tcpState);
+        dest.writeLong(observedAtMillis);
+        dest.writeInt(mcsSessionVerified ? 1 : 0);
     }
 
     public static final Creator<TrustedGmsCloudMessagingState> CREATOR =

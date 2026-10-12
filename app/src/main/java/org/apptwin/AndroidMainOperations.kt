@@ -189,6 +189,21 @@ internal class AndroidMainOperations(private val application: Application) : Mai
     )
 
     override suspend fun globalBackupLocation(): String? = archives.globalBackupLocation()
+    override suspend fun loadSpaceBackgroundHealth(groupId: String): SpaceBackgroundHealth {
+        val group = groupStore.find(groupId) ?: return SpaceBackgroundHealth(groupId, error = "空間不存在")
+        val userId = group.environmentBinding?.internalId
+            ?: return SpaceBackgroundHealth(groupId, error = "空間尚未綁定 runtime")
+        val state = VActivityManager.get().getTrustedGmsCloudMessagingState(userId)
+        return mapSpaceBackgroundHealth(groupId, state)
+    }
+    override suspend fun retrySpaceBackground(groupId: String): Boolean {
+        if (!com.lody.virtual.client.env.BackgroundExecutionSettings.isEnabled(application)) return false
+        val group = groupStore.find(groupId) ?: return false
+        if (group.health != GroupHealth.HEALTHY) return false
+        val userId = group.environmentBinding?.internalId ?: return false
+        return VActivityManager.get().retryTrustedGmsCloudMessagingForUser(userId)
+    }
+
     override suspend fun loadSpaceDetails(groupId: String): SpaceDetails? {
         val group = groupStore.find(groupId) ?: return null
         if (group.health == GroupHealth.HEALTHY) prepareAccountApps(groupId)

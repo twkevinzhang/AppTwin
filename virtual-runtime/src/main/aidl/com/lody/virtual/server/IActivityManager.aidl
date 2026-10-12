@@ -156,6 +156,7 @@ interface IActivityManager {
     boolean awaitDaemonWorkloadGateOpenAfter(long observedReopenEpoch, long timeoutMs);
 
     TrustedGmsCloudMessagingState getTrustedGmsCloudMessagingState(int userId);
+    boolean retryTrustedGmsCloudMessagingForUser(int userId);
     void setBackgroundExecutionEnabled(boolean enabled);
     boolean beginForegroundLaunch(String packageName, int userId);
     void cancelForegroundLaunch(String packageName, int userId);

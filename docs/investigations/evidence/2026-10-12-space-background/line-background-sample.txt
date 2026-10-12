@@ -1,0 +1,7 @@
+Sent20:14:04+0800 baseline marker0 microGcount17
+gcmstatus (18, 1791807245128)
+naver_line (1,)
+notification_marker_present True
+host_marker_bubble True
+Mon Oct 12 20:14:32 CST 2026
+AppTwin_notification_marker_match=True

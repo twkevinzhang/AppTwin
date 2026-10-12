@@ -1123,6 +1123,57 @@ class MainViewModelLifecycleTest {
         id, SpaceStorageBreakdown(), emptyList(), accounts, emptyList(), emptyList(), null,
     )
 
+    @Test
+    fun `background retry is exact space and duplicate calls are suppressed`() = runTest {
+        val dispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(dispatcher)
+        val gate = CompletableDeferred<Unit>()
+        val retried = mutableListOf<String>()
+        val operations = FakeOperations(groups = listOf(group())).apply {
+            detailsLoader = { details(it, emptyList()) }
+            backgroundLoader = { SpaceBackgroundHealth(it, SpaceBackgroundStatus.SUCCESS, SpaceBackgroundStatus.FAILED) }
+            backgroundRetry = { retried += it; gate.await(); true }
+        }
+        val model = viewModel(SavedStateHandle(), operations, dispatcher)
+        advanceUntilIdle()
+        model.openSpaceDetails(GROUP_ID)
+        advanceUntilIdle()
+        model.refreshSpaceBackgroundHealth()
+        advanceUntilIdle()
+        model.retrySpaceBackground()
+        model.retrySpaceBackground()
+        runCurrent()
+        assertEquals(listOf(GROUP_ID), retried)
+        assertTrue(model.uiState.isSpaceBackgroundRetrying)
+        gate.complete(Unit)
+        advanceUntilIdle()
+        assertFalse(model.uiState.isSpaceBackgroundRetrying)
+    }
+
+    @Test
+    fun `late background observation cannot overwrite another space`() = runTest {
+        val dispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(dispatcher)
+        val gate = CompletableDeferred<Unit>()
+        val second = "22222222-2222-2222-2222-222222222222"
+        val operations = FakeOperations(groups = listOf(group())).apply {
+            detailsLoader = { details(it, emptyList()) }
+            backgroundLoader = { id -> if (id == GROUP_ID) kotlinx.coroutines.withContext(kotlinx.coroutines.NonCancellable) { gate.await() }; SpaceBackgroundHealth(id) }
+        }
+        val model = viewModel(SavedStateHandle(), operations, dispatcher)
+        advanceUntilIdle()
+        model.openSpaceDetails(GROUP_ID)
+        advanceUntilIdle()
+        model.refreshSpaceBackgroundHealth()
+        runCurrent()
+        model.openSpaceDetails(second)
+        model.refreshSpaceBackgroundHealth()
+        runCurrent()
+        gate.complete(Unit)
+        advanceUntilIdle()
+        assertEquals(second, model.uiState.spaceBackgroundHealth?.groupId)
+    }
+
     private fun viewModel(
         savedState: SavedStateHandle,
         operations: MainOperations,
@@ -1165,6 +1216,10 @@ class MainViewModelLifecycleTest {
         private val deepLinkLaunchResult: RuntimeLaunchResult = RuntimeLaunchResult.Failed("unused"),
         private val expectedLaunchDispatcher: CoroutineDispatcher? = null,
     ) : MainOperations {
+        var backgroundLoader: suspend (String) -> SpaceBackgroundHealth = { SpaceBackgroundHealth(it) }
+        var backgroundRetry: suspend (String) -> Boolean = { false }
+        override suspend fun loadSpaceBackgroundHealth(groupId: String) = backgroundLoader(groupId)
+        override suspend fun retrySpaceBackground(groupId: String) = backgroundRetry(groupId)
         var detailsLoader: suspend (String) -> SpaceDetails? = { null }
         var accountAdder: suspend (String, String) -> Unit = { _, _ -> }
         override suspend fun loadSpaceDetails(groupId: String): SpaceDetails? = detailsLoader(groupId)

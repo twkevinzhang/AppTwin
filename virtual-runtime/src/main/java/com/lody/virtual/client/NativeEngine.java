@@ -240,6 +240,13 @@ public class NativeEngine {
 
     private static native void nativeConfigureUidOverride(int uidOverride);
 
+    public static int nativeTcpState(java.io.FileDescriptor descriptor) {
+        return nativeReadTcpState(descriptor);
+    }
+
+    // fbjni's raw jobject maps to java.lang.Object, not java.io.FileDescriptor.
+    private static native int nativeReadTcpState(Object descriptor);
+
     private static native int nativeReadUidForProbe();
 
     private static native int nativeCountProcMapsLeaksForProbe();

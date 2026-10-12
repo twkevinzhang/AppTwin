@@ -21,6 +21,7 @@ interface IVClient {
     IBinder getAppThread();
     IBinder getToken();
     String getDebugInfo();
+    long[] probeTrustedMcsTcp(int userId, long processGeneration);
     oneway void scheduleCreateService(in IBinder token, in ServiceInfo info, int processState,
             long processGeneration);
     oneway void scheduleBindService(in IBinder token, in IBinder bindToken, in Intent intent,

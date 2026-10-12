@@ -1,0 +1,8 @@
+F/libc    (16914): Fatal signal 6 (SIGABRT), code -1 (SI_QUEUE) in tid 16914 (org.apptwin), pid 16914 (org.apptwin)
+F/DEBUG   (16929): pid: 16914, tid: 16914, name: org.apptwin  >>> org.apptwin <<<
+F/DEBUG   (16929): signal 6 (SIGABRT), code -1 (SI_QUEUE), fault addr --------
+F/DEBUG   (16929): Abort message: 'JNI DETECTED ERROR IN APPLICATION: JNI NewGlobalRef called with pending exception java.lang.NoSuchMethodError: no static or non-static method "Lcom/lody/virtual/client/NativeEngine;.nativeTcpState(Ljava/lang/Object;)I"
+F/DEBUG   (16929):   at void com.lody.virtual.client.NativeEngine.<clinit>() (NativeEngine.java:41)
+F/DEBUG   (16929):   at void org.apptwin.AppTwinApplication.attachBaseContext(android.content.Context) (AppTwinApplication.kt:26)
+F/DEBUG   (16929):       #28 pc 000000000000fcfc  [anon:dalvik-classes8.dex extract...Q==/org.apptwin-gDqw22epB5rYhF8uUd2tSQ==/base.apk] (com.lody.virtual.client.NativeEngine.<clinit>+0)
+F/DEBUG   (16929):       #37 pc 00000000000132d8  [anon:dalvik-classes21.dex extrac...Q==/org.apptwin-gDqw22epB5rYhF8uUd2tSQ==/base.apk] (org.apptwin.AppTwinApplication.attachBaseContext+0)

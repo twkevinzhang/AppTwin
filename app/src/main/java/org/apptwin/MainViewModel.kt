@@ -88,6 +88,8 @@ data class MainUiState(
     val selectedSpaceId: String? = null,
     val spaceDetails: SpaceDetails? = null,
     val spaceDetailsError: String? = null,
+    val spaceBackgroundHealth: SpaceBackgroundHealth? = null,
+    val isSpaceBackgroundRetrying: Boolean = false,
     val isLoadingSpaceDetails: Boolean = false,
     val createSpaceError: String? = null,
     val isSpaceActionBusy: Boolean = false,
@@ -171,6 +173,8 @@ internal interface MainOperations {
     suspend fun refreshSnapshot(groups: MainGroupSnapshot): MainRefreshSnapshot
     suspend fun globalBackupLocation(): String? = null
     suspend fun loadSpaceDetails(groupId: String): SpaceDetails? = null
+    suspend fun loadSpaceBackgroundHealth(groupId: String): SpaceBackgroundHealth = SpaceBackgroundHealth(groupId)
+    suspend fun retrySpaceBackground(groupId: String): Boolean = false
     suspend fun addSpaceAccount(groupId: String, type: String) = Unit
     suspend fun synchronizeSpaceAccount(groupId: String, account: SpaceAccountEntry, authority: String): String = "同步未支援"
     suspend fun removeSpaceAccount(groupId: String, account: SpaceAccountEntry): AccountRemovalResult = AccountRemovalResult.REJECTED
@@ -268,6 +272,8 @@ class MainViewModel internal constructor(
     private var resolvingDeepLinkUri: String? = null
     private var resolvedDeepLinkIdentities: Set<Pair<String, String>>? = null
     private var spaceDetailsGeneration = 0L
+    private var backgroundGeneration = 0L
+    private var backgroundJob: kotlinx.coroutines.Job? = null
     private var refreshGeneration = 0L
     private var pickerRequestGeneration = 0L
     private var launchBlockedByRecovery = true
@@ -299,7 +305,7 @@ class MainViewModel internal constructor(
     fun openSpaceDetails(groupId: String) {
         savedStateHandle[SELECTED_SPACE_KEY] = groupId
         savedStateHandle[DESTINATION_KEY] = MainDestination.SPACE_DETAILS.name
-        uiState = uiState.copy(selectedSpaceId = groupId, destination = MainDestination.SPACE_DETAILS, spaceDetails = null, spaceDetailsError = null)
+        uiState = uiState.copy(selectedSpaceId = groupId, destination = MainDestination.SPACE_DETAILS, spaceDetails = null, spaceDetailsError = null, spaceBackgroundHealth = null, isSpaceBackgroundRetrying = false)
         refreshSpaceDetails()
     }
     fun refreshSpaceDetails() {
@@ -320,6 +326,51 @@ class MainViewModel internal constructor(
             result.onFailure { showMessage(it.userMessage()) }
         }
     }
+    fun refreshSpaceBackgroundHealth() {
+        val id = uiState.selectedSpaceId ?: return
+        if (uiState.destination != MainDestination.SPACE_DETAILS || uiState.isSpaceBackgroundRetrying) return
+        backgroundJob?.cancel()
+        val generation = ++backgroundGeneration
+        backgroundJob = viewModelScope.launch {
+            val result = runCatching { withContext(ioDispatcher) { operations.loadSpaceBackgroundHealth(id) } }
+            if (result.exceptionOrNull() is kotlinx.coroutines.CancellationException) throw result.exceptionOrNull()!!
+            if (generation != backgroundGeneration || uiState.selectedSpaceId != id || uiState.destination != MainDestination.SPACE_DETAILS) return@launch
+            uiState = uiState.copy(spaceBackgroundHealth = result.getOrElse { SpaceBackgroundHealth(id, error = "無法讀取背景服務狀態") })
+        }
+    }
+    fun stopSpaceBackgroundObservation() {
+        ++backgroundGeneration
+        backgroundJob?.cancel()
+        uiState = uiState.copy(isSpaceBackgroundRetrying = false)
+    }
+    fun retrySpaceBackground() {
+        val id = uiState.selectedSpaceId ?: return
+        if (uiState.destination != MainDestination.SPACE_DETAILS || uiState.isSpaceBackgroundRetrying) return
+        val health = uiState.spaceBackgroundHealth?.takeIf { it.groupId == id } ?: return
+        if (!health.retryable) return
+        backgroundJob?.cancel()
+        val generation = ++backgroundGeneration
+        uiState = uiState.copy(isSpaceBackgroundRetrying = true)
+        backgroundJob = viewModelScope.launch {
+            val result = runCatching { withContext(ioDispatcher) {
+                val accepted = operations.retrySpaceBackground(id)
+                var health = operations.loadSpaceBackgroundHealth(id)
+                if (accepted) {
+                    var checks = 0
+                    while ((health.microg == SpaceBackgroundStatus.STARTING || health.tcp == SpaceBackgroundStatus.STARTING) && checks++ < 20) {
+                        kotlinx.coroutines.delay(2_000L)
+                        health = operations.loadSpaceBackgroundHealth(id)
+                    }
+                    if (health.microg == SpaceBackgroundStatus.STARTING || health.tcp == SpaceBackgroundStatus.STARTING) health.copy(error = "連線尚未恢復，請稍後檢查") else health
+                } else health.copy(error = "重試未被接受，請確認背景服務已開啟")
+            } }
+            if (result.exceptionOrNull() is kotlinx.coroutines.CancellationException) throw result.exceptionOrNull()!!
+            if (generation != backgroundGeneration || uiState.selectedSpaceId != id || uiState.destination != MainDestination.SPACE_DETAILS) return@launch
+            uiState = uiState.copy(isSpaceBackgroundRetrying = false,
+                spaceBackgroundHealth = result.getOrElse { SpaceBackgroundHealth(id, error = "重試失敗，請再試一次") })
+        }
+    }
+
     fun addSpaceAccount(type: String) = spaceAction { id -> operations.addSpaceAccount(id, type) }
     fun synchronizeSpaceAccount(account: SpaceAccountEntry, authority: String) = spaceAction { id -> showMessage(operations.synchronizeSpaceAccount(id, account, authority)) }
     fun removeSpaceAccount(account: SpaceAccountEntry) = spaceAction { id ->
@@ -351,6 +402,8 @@ class MainViewModel internal constructor(
 
     fun navigate(destination: MainDestination) {
         spaceDetailsGeneration += 1
+        stopSpaceBackgroundObservation()
+        uiState = uiState.copy(isSpaceBackgroundRetrying = false)
         if (destination == MainDestination.SETTINGS) viewModelScope.launch {
             val location = withContext(ioDispatcher) { operations.globalBackupLocation() }
             uiState = uiState.copy(globalBackupLocation = location)

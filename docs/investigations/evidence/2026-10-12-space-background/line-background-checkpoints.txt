@@ -1,0 +1,13 @@
+10-12 20:14:05.133 19752 19820 I LinePushDelivery: stage=hook-entry user=2 sender=gms target=line action=c2dm method=with-feature
+10-12 20:14:05.136 19752 19820 I LinePushDelivery: stage=attestation-issued user=2 sender=gms target=line action=c2dm method=with-feature
+10-12 20:14:05.136 19752 19820 I LinePushDelivery: stage=redirected-wrapper-created user=2 sender=gms target=line action=c2dm method=with-feature
+10-12 20:14:05.137 19752 19820 I LinePushDelivery: stage=system-broadcast-invoke-result user=2 sender=gms target=line action=c2dm method=with-feature
+10-12 20:14:05.596 19583 19583 I LinePushDelivery: wrapper scope=allow user=2 target=line receiver=line
+10-12 20:14:05.596 19583 19583 I LinePushDelivery: trace=5 stage=entry user=2 target=line receiver=line
+10-12 20:14:05.598 19583 19583 I LinePushDelivery: trace=5 stage=gate-allow user=2 target=line receiver=line
+10-12 20:14:06.807 19583 19583 I LinePushDelivery: trace=5 stage=target-resolved user=2 user=2 target=line receiver=line
+10-12 20:14:06.807 19583 19583 I LinePushDelivery: trace=5 stage=dispatch-queued user=2 target=line receiver=line
+10-12 20:14:07.080 19583 19583 I LinePushDelivery: trace=5 stage=bootstrap-requested user=2 target=line receiver=line
+10-12 20:14:09.183 19583 19583 I LinePushDelivery: trace=5 stage=target-ready user=2 user=2 target=line receiver=line
+10-12 20:14:09.183 19583 19583 I LinePushDelivery: trace=5 stage=schedule-receiver user=2 target=line receiver=line
+10-12 20:14:10.253 19583 19583 I LinePushDelivery: trace=5 stage=finish reason=completed user=2 target=line receiver=line
