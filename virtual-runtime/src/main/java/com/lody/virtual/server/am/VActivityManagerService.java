@@ -2597,6 +2597,14 @@ public class VActivityManagerService extends IActivityManager.Stub
     }
 
     @Override
+    public boolean retryTrustedGmsCloudMessagingForUser(int userId) {
+        com.lody.virtual.server.VirtualUserAccessPolicy.enforceHost();
+        if (!backgroundEnabled() || !beginDaemonWorkloadAcquisition()) return false;
+        try { return mTrustedGmsCloudMessagingSupervisor.retryForUser(userId); }
+        finally { endDaemonWorkloadMutation(); }
+    }
+
+    @Override
     public TrustedGmsCloudMessagingState getTrustedGmsCloudMessagingState(int userId) {
         enforceCallerUserOrHost(userId);
         return mTrustedGmsCloudMessagingSupervisor.getState(userId);
@@ -3635,6 +3643,36 @@ public class VActivityManagerService extends IActivityManager.Stub
                 return isLogicalOwnerAlive(findProcessLocked(
                         TrustedGmsCloudMessagingSupervisor.GMS_PERSISTENT_PROCESS, vuid));
             }
+        }
+
+        @Override
+        public boolean retryCloudMessaging(int userId) {
+            // Teardown and create are enqueued in order on this exact guest main looper.
+            // Destroying McsService closes its static socket before a new CONNECT is processed.
+            stopCloudMessaging(userId);
+            return backgroundEnabled() && mTrustedGmsCloudMessagingSupervisor.isDesiredUser(userId)
+                    && startCloudMessaging(userId);
+        }
+
+        @Override
+        public long[] probeTcp(int userId) {
+            PackageSetting setting = PackageCacheManager.getSetting(
+                    TrustedGmsCloudMessagingSupervisor.GMS_PACKAGE);
+            if (setting == null || !setting.isInstalled(userId)) return new long[]{0, 0, 0};
+            final ProcessRecord owner;
+            synchronized (mProcessNames) {
+                owner = findProcessLocked(TrustedGmsCloudMessagingSupervisor.GMS_PERSISTENT_PROCESS,
+                        VUserHandle.getUid(userId, setting.appId));
+                if (!isLogicalOwnerAlive(owner) || owner.client == null) return new long[]{2, 0, 0};
+            }
+            try {
+                long[] result = BoundedMcsProbe.read(() -> owner.client.probeTrustedMcsTcp(userId, owner.generation));
+                synchronized (mProcessNames) {
+                    if (!isLogicalOwnerAlive(owner) || findProcessLocked(owner.processName,
+                            owner.vuid) != owner) return new long[]{0, 0, 0};
+                }
+                return result;
+            } catch (RuntimeException unavailable) { return new long[]{0, 0, 0}; }
         }
 
         @Override

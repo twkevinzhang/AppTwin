@@ -194,6 +194,11 @@ public class VActivityManager {
         }
     }
 
+    public boolean retryTrustedGmsCloudMessagingForUser(int userId) {
+        try { return getService().retryTrustedGmsCloudMessagingForUser(userId); }
+        catch (RemoteException error) { return VirtualRuntime.crash(error); }
+    }
+
     public TrustedGmsCloudMessagingState getTrustedGmsCloudMessagingState(int userId) {
         try {
             return getService().getTrustedGmsCloudMessagingState(userId);

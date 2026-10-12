@@ -8,6 +8,9 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.disabled
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
@@ -53,6 +56,10 @@ fun SpaceDetailsScreen(
     onRename: (String) -> Unit,
     onClearAllAppData: () -> Unit,
     onDeleteSpace: () -> Unit,
+    backgroundServiceState: org.apptwin.runtime.BackgroundServiceState = org.apptwin.runtime.BackgroundServiceState(),
+    backgroundHealth: org.apptwin.SpaceBackgroundHealth? = null,
+    backgroundRetrying: Boolean = false,
+    onRetryBackground: () -> Unit = {},
 ) {
     var section by rememberSaveable(group.groupId) { mutableStateOf("overview") }
     BackHandler(enabled = section != "overview") { section = "overview" }
@@ -82,6 +89,7 @@ fun SpaceDetailsScreen(
         }
         when (section) {
             "overview" -> {
+                item { SpaceBackgroundCard(backgroundServiceState, backgroundHealth, backgroundRetrying, onRetryBackground) }
                 item { DetailCard("儲存空間", "space-details-storage") {
                     Text(if (loading) "計算中…" else if (error != null) "無法取得使用量" else formatSpaceBytes(storage.sumOf { it.second }), style = MaterialTheme.typography.headlineMedium)
                     TextButton(onClick = { section = "storage" }) { Text("查看使用量") }
@@ -199,4 +207,47 @@ internal fun backupLocationLabel(location: String?): String? {
     val folder = documentId.substringAfter(':', "").trim('/')
     val storage = if (volume == "primary") "內部儲存空間" else "儲存裝置 $volume"
     return if (folder.isEmpty()) storage else "$storage / $folder"
+}
+
+@Composable
+internal fun SpaceBackgroundCard(
+    setting: org.apptwin.runtime.BackgroundServiceState,
+    health: org.apptwin.SpaceBackgroundHealth?,
+    retrying: Boolean,
+    retry: () -> Unit,
+) {
+    val enabled = setting.loaded && setting.enabled && !setting.busy
+    val recovering = retrying || health?.recovering == true
+    val off = setting.loaded && !setting.enabled
+    val alpha = if (enabled) 1f else 0.45f
+    Card(Modifier.fillMaxWidth().testTag("space-background-card").semantics { if (!enabled) disabled() }.graphicsLayer { this.alpha = alpha }) {
+        Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Row(Modifier.fillMaxWidth()) {
+                Text("背景服務", Modifier.weight(1f), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                Text(when { off -> "已停用"; !enabled -> "讀取中…"; recovering -> "恢復中…"; health?.healthy == true -> "正常"; health?.microg == org.apptwin.SpaceBackgroundStatus.SUCCESS && health.tcp == org.apptwin.SpaceBackgroundStatus.SUCCESS && !health.sessionVerified && health.error == null -> "尚未確認"; health?.retryable == true -> "異常"; else -> "尚未確認" }, Modifier.testTag("space-background-summary"))
+            }
+            fun label(status: org.apptwin.SpaceBackgroundStatus?, success: String, failure: String, starting: String): String = when {
+                off -> "已停用"
+                !enabled -> "尚未確認"
+                status == org.apptwin.SpaceBackgroundStatus.SUCCESS -> success
+                status == org.apptwin.SpaceBackgroundStatus.STARTING -> starting
+                status == org.apptwin.SpaceBackgroundStatus.FAILED -> failure
+                status == org.apptwin.SpaceBackgroundStatus.DISABLED -> "已停用"
+                else -> "尚未確認"
+            }
+            Row(Modifier.fillMaxWidth()) { Text("microG", Modifier.weight(1f)); Text(label(health?.microg, "已啟動", "啟動失敗", "啟動中…"), Modifier.testTag("space-background-microg")) }
+            Row(Modifier.fillMaxWidth()) { Text("TCP 連線", Modifier.weight(1f)); Text(if (recovering && enabled) "連線中…" else label(health?.tcp, "已連線", "已中斷", "連線中…"), Modifier.testTag("space-background-tcp")) }
+            if (off) Text("請至總設定開啟背景服務。", style = MaterialTheme.typography.bodySmall)
+            else if (enabled) {
+                health?.error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+                if (health?.tcp == org.apptwin.SpaceBackgroundStatus.SUCCESS && !health.sessionVerified && health.error == null) Text("TCP 已連線，推播登入尚未確認。", style = MaterialTheme.typography.bodySmall)
+                if ((health?.checkedAtMillis ?: 0) > 0) Text("最後檢查：${java.text.DateFormat.getTimeInstance().format(java.util.Date(health!!.checkedAtMillis))}", style = MaterialTheme.typography.bodySmall)
+            }
+            if (off || recovering || health?.retryable == true) TextButton(onClick = retry,
+                enabled = enabled && !recovering && health?.retryable == true,
+                modifier = Modifier.testTag("space-background-retry")) {
+                Text(if (recovering) "連線中…" else if (health?.microg == org.apptwin.SpaceBackgroundStatus.FAILED) "重新啟動" else "重新連線")
+            }
+        }
+    }
 }

@@ -114,6 +114,11 @@ final class IsolatedGuestClient extends IVClient.Stub
     }
 
     @Override
+    public long[] probeTrustedMcsTcp(int userId, long processGeneration) {
+        return new long[]{0, 0, 0}; // Isolated workers never own the trusted microG session.
+    }
+
+    @Override
     public void onServiceConnected(ComponentName name, IBinder service) {
         IIsolatedGuestWorker connected = IIsolatedGuestWorker.Stub.asInterface(service);
         ServiceInfo pendingInfo;

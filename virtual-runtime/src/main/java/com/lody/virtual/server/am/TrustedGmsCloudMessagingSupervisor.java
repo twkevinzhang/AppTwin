@@ -66,6 +66,10 @@ final class TrustedGmsCloudMessagingSupervisor {
         boolean isPersistentProcessAlive(int userId);
 
         boolean isPersistentBindingAlive(int userId);
+
+        default long[] probeTcp(int userId) { return new long[]{0, 0, 0}; }
+
+        default boolean retryCloudMessaging(int userId) { return startCloudMessaging(userId); }
     }
 
     interface Cancellable {
@@ -102,6 +106,11 @@ final class TrustedGmsCloudMessagingSupervisor {
         long processGeneration = -1L;
         long connectionEpoch;
         String failureCode;
+        int tcpState;
+        long observedAtMillis;
+        long authenticatedSessionIdentity;
+        long authenticatedSessionStart;
+        boolean mcsSessionVerified;
         Cancellable pendingWork;
         PendingKind pendingKind = PendingKind.NONE;
 
@@ -113,7 +122,7 @@ final class TrustedGmsCloudMessagingSupervisor {
                     lastConnectedAtMillis,
                     retryAttempt,
                     generation,
-                    failureCode);
+                    failureCode, tcpState, observedAtMillis, mcsSessionVerified);
         }
     }
 
@@ -295,6 +304,14 @@ final class TrustedGmsCloudMessagingSupervisor {
         boolean installed = runtime.isInstalled(userId);
         boolean processAlive = installed && runtime.isPersistentProcessAlive(userId);
         boolean bindingAlive = installed && runtime.isPersistentBindingAlive(userId);
+        final long generation;
+        final long epoch;
+        synchronized (this) {
+            UserState current = states.get(userId);
+            generation = current == null ? -1 : current.generation;
+            epoch = current == null ? -1 : current.connectionEpoch;
+        }
+        long[] probe = processAlive ? runtime.probeTcp(userId) : new long[]{2, 0, 0};
         synchronized (this) {
             UserState state = states.get(userId);
             if (state == null) {
@@ -308,10 +325,59 @@ final class TrustedGmsCloudMessagingSupervisor {
                         processAlive, bindingAlive,
                         0L, 0, 0L, null);
             }
+            if (state.generation != generation || state.connectionEpoch != epoch
+                    || runtimeSuspended || !state.desired) {
+                state.tcpState = TrustedGmsCloudMessagingState.TCP_UNKNOWN;
+                state.mcsSessionVerified = false;
+                state.observedAtMillis = 0;
+                return state.snapshot();
+            }
             state.processAlive = processAlive;
             state.bindingAlive = bindingAlive;
+            state.tcpState = probe != null && probe.length >= 3 && probe[0] >= 0 && probe[0] <= 2
+                    ? (int) probe[0] : TrustedGmsCloudMessagingState.TCP_UNKNOWN;
+            state.observedAtMillis = scheduler.currentTimeMillis();
+            state.mcsSessionVerified = state.phase == TrustedGmsCloudMessagingState.PHASE_CONNECTED
+                    && state.tcpState == TrustedGmsCloudMessagingState.TCP_CONNECTED
+                    && probe.length == 4 && probe[2] == 1
+                    && state.authenticatedSessionIdentity != 0
+                    && probe[3] == state.authenticatedSessionIdentity
+                    && probe[1] == state.authenticatedSessionStart;
+            if (state.phase == TrustedGmsCloudMessagingState.PHASE_CONNECTED
+                    && (state.tcpState == TrustedGmsCloudMessagingState.TCP_DISCONNECTED
+                    || (state.tcpState == TrustedGmsCloudMessagingState.TCP_CONNECTED
+                        && (probe[2] == 0 || (probe.length == 4 && state.authenticatedSessionIdentity != 0
+                                && (probe[3] != state.authenticatedSessionIdentity
+                                || probe[1] != state.authenticatedSessionStart)))))) {
+                state.phase = TrustedGmsCloudMessagingState.PHASE_DEGRADED;
+                state.failureCode = "MCS_HEALTH_LOST";
+            }
             return state.snapshot();
         }
+    }
+
+    /** Manual recovery only for an already authorized exact user; never grants desired status. */
+    boolean retryForUser(int userId) {
+        final long generation;
+        final long epoch;
+        synchronized (this) {
+            UserState state = states.get(userId);
+            if (runtimeSuspended || userId <= 0 || !durableDesiredUsers.contains(userId)
+                    || state == null || !state.desired
+                    || state.phase == TrustedGmsCloudMessagingState.PHASE_STARTING) return false;
+            cancelPending(state);
+            state.tcpState = TrustedGmsCloudMessagingState.TCP_UNKNOWN;
+            state.observedAtMillis = 0;
+            state.phase = TrustedGmsCloudMessagingState.PHASE_STARTING;
+            state.lastConnectedAtMillis = 0;
+            state.authenticatedSessionIdentity = 0;
+            state.mcsSessionVerified = false;
+            state.retryAttempt = 0;
+            state.failureCode = null;
+            generation = state.generation;
+            epoch = ++state.connectionEpoch;
+        }
+        return attemptStart(userId, generation, epoch, true);
     }
 
     int desiredUserCount() {
@@ -424,9 +490,22 @@ final class TrustedGmsCloudMessagingSupervisor {
         boolean installed = runtime.isInstalled(userId);
         boolean processAlive = installed && runtime.isPersistentProcessAlive(userId);
         boolean bindingAlive = installed && runtime.isPersistentBindingAlive(userId);
+        final long generation;
+        final long epoch;
+        final long processGeneration;
+        synchronized (this) {
+            UserState current = states.get(userId);
+            if (current == null || !current.desired || runtimeSuspended) return;
+            generation = current.generation;
+            epoch = current.connectionEpoch;
+            processGeneration = current.processGeneration;
+        }
+        long[] loginProbe = processAlive ? runtime.probeTcp(userId) : null;
         synchronized (this) {
             UserState state = states.get(userId);
-            if (state == null || !state.desired || !installed) return;
+            if (state == null || !state.desired || !installed || runtimeSuspended
+                    || state.generation != generation || state.connectionEpoch != epoch
+                    || state.processGeneration != processGeneration) return;
             state.processAlive = processAlive;
             state.bindingAlive = bindingAlive;
             // The CONNECTED broadcast is accepted only while its per-user persistent process and
@@ -437,6 +516,10 @@ final class TrustedGmsCloudMessagingSupervisor {
             state.connectionEpoch++;
             state.phase = TrustedGmsCloudMessagingState.PHASE_CONNECTED;
             state.lastConnectedAtMillis = scheduler.currentTimeMillis();
+            state.authenticatedSessionIdentity = loginProbe != null && loginProbe.length == 4
+                    && loginProbe[0] == 1 && loginProbe[2] == 1 ? loginProbe[3] : 0;
+            state.authenticatedSessionStart = loginProbe != null && loginProbe.length == 4
+                    ? loginProbe[1] : 0;
             state.retryAttempt = 0;
             state.failureCode = null;
         }
@@ -563,6 +646,10 @@ final class TrustedGmsCloudMessagingSupervisor {
 
     /** Performs all runtime calls outside the supervisor monitor, then commits by generation. */
     private boolean attemptStart(int userId, long generation, long connectionEpoch) {
+        return attemptStart(userId, generation, connectionEpoch, false);
+    }
+
+    private boolean attemptStart(int userId, long generation, long connectionEpoch, boolean manual) {
         synchronized (this) {
             UserState state = states.get(userId);
             if (runtimeSuspended || state == null || !state.desired || state.generation != generation
@@ -580,7 +667,8 @@ final class TrustedGmsCloudMessagingSupervisor {
         }
         boolean accepted;
         try {
-            accepted = !runtimeSuspended && runtime.startCloudMessaging(userId);
+            accepted = !runtimeSuspended && (manual ? runtime.retryCloudMessaging(userId)
+                    : runtime.startCloudMessaging(userId));
         } catch (RuntimeException error) {
             VLog.e(TAG, "Unable to start trusted Cloud Messaging user=" + userId
                     + " error=" + error);
@@ -630,6 +718,10 @@ final class TrustedGmsCloudMessagingSupervisor {
             state.retryAttempt = 0;
             state.failureCode = FAILURE_NOT_INSTALLED;
             state.processGeneration = -1L;
+            state.tcpState = TrustedGmsCloudMessagingState.TCP_UNKNOWN;
+            state.observedAtMillis = 0;
+            state.authenticatedSessionIdentity = 0;
+            state.mcsSessionVerified = false;
         }
     }
 
@@ -659,6 +751,10 @@ final class TrustedGmsCloudMessagingSupervisor {
         state.retryAttempt = 0;
         state.failureCode = failureCode;
         state.processGeneration = -1L;
+        state.tcpState = TrustedGmsCloudMessagingState.TCP_UNKNOWN;
+        state.observedAtMillis = 0;
+        state.authenticatedSessionIdentity = 0;
+        state.mcsSessionVerified = false;
     }
 
     private UserState stateFor(int userId) {

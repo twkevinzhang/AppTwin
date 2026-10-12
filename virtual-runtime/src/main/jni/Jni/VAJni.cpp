@@ -6,9 +6,27 @@
 #include <fb/include/fb/ALog.h>
 #include <fb/include/fb/fbjni.h>
 #include <ctime>
+#include <sys/socket.h>
+#include <netinet/in.h>
+#include <netinet/tcp.h>
 #include "VAJni.h"
 
 using namespace facebook::jni;
+
+// Sanitized kernel TCP state only; no addresses, tokens or packet data cross Binder.
+static jint jni_nativeTcpState(alias_ref<jclass>, jobject descriptor) {
+    if (!descriptor) return 0;
+    JNIEnv* env = Environment::current();
+    jclass cls = env->GetObjectClass(descriptor);
+    jfieldID field = env->GetFieldID(cls, "descriptor", "I");
+    env->DeleteLocalRef(cls);
+    if (!field) { env->ExceptionClear(); return 0; }
+    int fd = env->GetIntField(descriptor, field);
+    struct tcp_info info = {};
+    socklen_t size = sizeof(info);
+    if (getsockopt(fd, IPPROTO_TCP, TCP_INFO, &info, &size) != 0) return 0;
+    return info.tcpi_state == TCP_ESTABLISHED ? 1 : 2;
+}
 
 static void jni_nativeLaunchEngine(alias_ref<jclass> clazz, JArrayClass<jobject> javaMethods,
                                    jstring packageName,
@@ -98,6 +116,7 @@ JNIEXPORT jint JNICALL JNI_OnLoad(JavaVM *vm, void *) {
     return initialize(vm, [] {
         nativeEngineClass = findClassStatic("com/lody/virtual/client/NativeEngine");
         nativeEngineClass->registerNatives({
+                        makeNativeMethod("nativeReadTcpState", jni_nativeTcpState),
                         makeNativeMethod("nativeEnableIORedirect",
                                          jni_nativeEnableIORedirect),
                         makeNativeMethod("nativeConfigureUidOverride",

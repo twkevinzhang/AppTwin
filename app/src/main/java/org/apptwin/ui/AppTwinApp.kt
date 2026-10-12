@@ -46,6 +46,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.Composable
+import androidx.lifecycle.repeatOnLifecycle
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -85,6 +86,19 @@ fun AppTwinApp(
 ) {
     val state = viewModel.uiState
     val backgroundServiceState by BackgroundServiceController.state.collectAsState()
+    val lifecycleOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
+    LaunchedEffect(state.destination, state.selectedSpaceId, backgroundServiceState.enabled, backgroundServiceState.loaded, lifecycleOwner) {
+        if (state.destination == MainDestination.SPACE_DETAILS && state.selectedSpaceId != null) {
+            lifecycleOwner.lifecycle.repeatOnLifecycle(androidx.lifecycle.Lifecycle.State.RESUMED) {
+                try {
+                    while (true) {
+                        viewModel.refreshSpaceBackgroundHealth()
+                        kotlinx.coroutines.delay(10_000L)
+                    }
+                } finally { viewModel.stopSpaceBackgroundObservation() }
+            }
+        }
+    }
     val snackbarHostState = remember { SnackbarHostState() }
     var showCreateGroup by rememberSaveable { mutableStateOf(false) }
     var pendingPermissionAppKey by rememberSaveable { mutableStateOf<String?>(null) }
@@ -306,6 +320,10 @@ fun AppTwinApp(
                                     val details = state.spaceDetails?.takeIf { it.groupId == detailsGroup.groupId }
                                     SpaceDetailsScreen(
                                         group = detailsGroup,
+                                        backgroundServiceState = backgroundServiceState,
+                                        backgroundHealth = state.spaceBackgroundHealth?.takeIf { it.groupId == detailsGroup.groupId },
+                                        backgroundRetrying = state.isSpaceBackgroundRetrying,
+                                        onRetryBackground = viewModel::retrySpaceBackground,
                                         storage = details?.storage?.let { listOf("App 資料" to it.appDataBytes, "快取" to it.cacheBytes, "共用檔案" to it.sharedFilesBytes, "Google 服務資料" to it.googleDataBytes) }.orEmpty(),
                                         permissions = details?.permissions.orEmpty().filter { it.controllable }.flatMap { permission ->
                                             permission.apps.mapNotNull { target -> detailsGroup.apps.firstOrNull { it.app.packageName == target.packageName }?.let { app ->
