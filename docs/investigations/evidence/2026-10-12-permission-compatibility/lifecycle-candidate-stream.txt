@@ -1,0 +1,11 @@
+10-12 23:33:31.207  8968  9019 I AppTwinRuntime: daemon-launch-fast-path
+10-12 23:33:36.826  9052  9565 W VActivityManagerService: process-lifecycle-cleanup pid=9335 generation=6 reason=process-died services=0
+10-12 23:33:41.991  9052  9067 W VActivityManagerService: process-lifecycle-cleanup pid=9568 generation=9 reason=process-died services=0
+10-12 23:33:42.177  8968  9019 I AppTwinRuntime: daemon-launch-fast-path
+10-12 23:33:44.991  8968  9019 I AppTwinRuntime: daemon-launch-fast-path
+10-12 23:33:45.445  9052  9095 W VActivityManagerService: process-lifecycle-cleanup pid=10117 generation=11 reason=user-stop services=0
+10-12 23:33:45.449  9052  9095 W VActivityManagerService: process-lifecycle-cleanup pid=9354 generation=7 reason=user-stop services=0
+10-12 23:33:45.452  9052  9095 W VActivityManagerService: process-lifecycle-cleanup pid=9313 generation=5 reason=user-stop services=0
+10-12 23:33:45.565  9052  9066 W VActivityManagerService: process-lifecycle-cleanup pid=10404 generation=12 reason=user-stop services=0
+10-12 23:33:45.569  9052  9066 W VActivityManagerService: process-lifecycle-cleanup pid=9826 generation=10 reason=user-stop services=0
+10-12 23:33:45.573  9052  9066 W VActivityManagerService: process-lifecycle-cleanup pid=9394 generation=8 reason=user-stop services=1

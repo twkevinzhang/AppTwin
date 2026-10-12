@@ -1,0 +1,50 @@
+[
+  {
+    "phase": "allowed-A",
+    "READ_EXTERNAL_STORAGE": true,
+    "READ_MEDIA_IMAGES": true,
+    "READ_MEDIA_VIDEO": true,
+    "imageQuery": "allowed",
+    "imageOpen": "allowed",
+    "imageDirect": "allowed",
+    "videoQuery": "allowed",
+    "videoOpen": "allowed",
+    "videoDirect": "allowed"
+  },
+  {
+    "phase": "denied-B",
+    "READ_EXTERNAL_STORAGE": false,
+    "READ_MEDIA_IMAGES": true,
+    "READ_MEDIA_VIDEO": true,
+    "imageQuery": "blocked:SecurityException",
+    "imageOpen": "blocked:SecurityException",
+    "imageDirect": "blocked:FileNotFoundException",
+    "videoQuery": "blocked:SecurityException",
+    "videoOpen": "blocked:SecurityException",
+    "videoDirect": "blocked:FileNotFoundException"
+  },
+  {
+    "phase": "revoked-A",
+    "READ_EXTERNAL_STORAGE": false,
+    "READ_MEDIA_IMAGES": true,
+    "READ_MEDIA_VIDEO": true,
+    "imageQuery": "blocked:SecurityException",
+    "imageOpen": "blocked:SecurityException",
+    "imageDirect": "blocked:FileNotFoundException",
+    "videoQuery": "blocked:SecurityException",
+    "videoOpen": "blocked:SecurityException",
+    "videoDirect": "blocked:FileNotFoundException"
+  },
+  {
+    "phase": "allowed-B",
+    "READ_EXTERNAL_STORAGE": true,
+    "READ_MEDIA_IMAGES": true,
+    "READ_MEDIA_VIDEO": true,
+    "imageQuery": "allowed",
+    "imageOpen": "allowed",
+    "imageDirect": "allowed",
+    "videoQuery": "allowed",
+    "videoOpen": "allowed",
+    "videoDirect": "allowed"
+  }
+]

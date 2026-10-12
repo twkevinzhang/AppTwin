@@ -1,0 +1,22 @@
+{
+  "phase": "revoked-A",
+  "groupId": "e74550b9-9e9b-407e-b33d-65cba90cf43b",
+  "user": 3,
+  "launch": "Failed(reason=\u7fa4\u7d44 App \u555f\u52d5\u5931\u6557\uff1aExpected Group activity did not resume, error=java.lang.IllegalStateException: \u7fa4\u7d44 App \u555f\u52d5\u5931\u6557\uff1aExpected Group activity did not resume)",
+  "foregroundFixture": false,
+  "host": "lifecycle=RESUMED, focus=true, registrySame=true, registryNull=false, interactive=true, keyguard=false",
+  "exactPhaseResult": {
+    "phase": "revoked-A",
+    "pid": 1767,
+    "taskId": 1565,
+    "READ_MEDIA_IMAGES": true,
+    "READ_MEDIA_VIDEO": true,
+    "READ_EXTERNAL_STORAGE": false,
+    "imageQuery": "blocked:SecurityException",
+    "imageOpen": "blocked:SecurityException",
+    "imageDirect": "blocked:FileNotFoundException",
+    "videoQuery": "blocked:SecurityException",
+    "videoOpen": "blocked:SecurityException",
+    "videoDirect": "blocked:FileNotFoundException"
+  }
+}

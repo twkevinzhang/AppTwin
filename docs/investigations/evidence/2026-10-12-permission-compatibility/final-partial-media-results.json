@@ -1,0 +1,61 @@
+[
+  {
+    "event": "permission-process-stop",
+    "groupId": "e74550b9-9e9b-407e-b33d-65cba90cf43b",
+    "user": 3,
+    "legacyGranted": true,
+    "processAbsent": true
+  },
+  {
+    "event": "permission-process-stop",
+    "groupId": "7f501a3e-2d11-4df4-a532-70e18dd802ab",
+    "user": 4,
+    "legacyGranted": false,
+    "processAbsent": true
+  },
+  {
+    "phase": "allowed-A",
+    "pid": 32321,
+    "taskId": 1563,
+    "READ_EXTERNAL_STORAGE": true,
+    "READ_MEDIA_IMAGES": true,
+    "READ_MEDIA_VIDEO": true,
+    "imageQuery": "allowed",
+    "imageOpen": "allowed",
+    "imageDirect": "allowed",
+    "videoQuery": "allowed",
+    "videoOpen": "allowed",
+    "videoDirect": "allowed",
+    "phaseCompleted": true,
+    "closingFixture": true,
+    "foregroundFixture": true,
+    "foregroundRootNull": false,
+    "hostBeforeClose": "lifecycle=STARTED, focus=false, registrySame=false, registryNull=true, interactive=true, keyguard=false"
+  },
+  {
+    "phase": "denied-B",
+    "pid": 32689,
+    "taskId": 1564,
+    "READ_EXTERNAL_STORAGE": false,
+    "READ_MEDIA_IMAGES": true,
+    "READ_MEDIA_VIDEO": true,
+    "imageQuery": "blocked:SecurityException",
+    "imageOpen": "blocked:SecurityException",
+    "imageDirect": "blocked:FileNotFoundException",
+    "videoQuery": "blocked:SecurityException",
+    "videoOpen": "blocked:SecurityException",
+    "videoDirect": "blocked:FileNotFoundException",
+    "phaseCompleted": true,
+    "closingFixture": true,
+    "foregroundFixture": true,
+    "foregroundRootNull": false,
+    "hostBeforeClose": "lifecycle=STARTED, focus=false, registrySame=false, registryNull=true, interactive=true, keyguard=false"
+  },
+  {
+    "event": "permission-process-stop",
+    "groupId": "e74550b9-9e9b-407e-b33d-65cba90cf43b",
+    "user": 3,
+    "legacyGranted": false,
+    "processAbsent": true
+  }
+]

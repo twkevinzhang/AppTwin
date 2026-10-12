@@ -1,0 +1,7 @@
+10-12 22:08:06.321 18819 18848 W VActivityManagerService: process-lifecycle-cleanup pid=19101 generation=5 reason=process-died services=0
+10-12 22:08:10.711 18819 19100 W VActivityManagerService: process-lifecycle-cleanup pid=19257 generation=11 reason=user-stop services=0
+10-12 22:08:10.714 18819 19100 W VActivityManagerService: process-lifecycle-cleanup pid=19147 generation=7 reason=user-stop services=0
+10-12 22:08:10.718 18819 19100 W VActivityManagerService: process-lifecycle-cleanup pid=19124 generation=6 reason=user-stop services=2
+10-12 22:08:10.853 18819 18830 W VActivityManagerService: process-lifecycle-cleanup pid=19235 generation=10 reason=user-stop services=0
+10-12 22:08:10.857 18819 18830 W VActivityManagerService: process-lifecycle-cleanup pid=19186 generation=9 reason=user-stop services=2
+10-12 22:08:10.859 18819 18830 W VActivityManagerService: process-lifecycle-cleanup pid=19170 generation=8 reason=user-stop services=0

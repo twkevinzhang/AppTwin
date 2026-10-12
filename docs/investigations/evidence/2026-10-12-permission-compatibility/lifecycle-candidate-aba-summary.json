@@ -1,0 +1,50 @@
+[
+  {
+    "phase": "A-first",
+    "groupId": "d7b089ba-8b17-4fa2-a4e9-45db375d4b81",
+    "user": 3,
+    "launch": "Started",
+    "foregroundFixture": true,
+    "host": {
+      "lifecycle": "STARTED",
+      "focus": false,
+      "registrySame": false,
+      "registryNull": true,
+      "interactive": true,
+      "keyguard": false
+    },
+    "closingFixture": true
+  },
+  {
+    "phase": "B-first",
+    "groupId": "4f9d4e80-226b-4fed-957f-b31784f86b69",
+    "user": 4,
+    "launch": "Started",
+    "foregroundFixture": true,
+    "host": {
+      "lifecycle": "STARTED",
+      "focus": false,
+      "registrySame": false,
+      "registryNull": true,
+      "interactive": true,
+      "keyguard": false
+    },
+    "closingFixture": true
+  },
+  {
+    "phase": "A-restart",
+    "groupId": "d7b089ba-8b17-4fa2-a4e9-45db375d4b81",
+    "user": 3,
+    "launch": "Started",
+    "foregroundFixture": true,
+    "host": {
+      "lifecycle": "STARTED",
+      "focus": false,
+      "registrySame": false,
+      "registryNull": true,
+      "interactive": true,
+      "keyguard": false
+    },
+    "closingFixture": true
+  }
+]

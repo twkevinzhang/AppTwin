@@ -1,0 +1,11 @@
+10-12 22:16:35.050 27593 27678 I AppTwinRuntime: daemon-launch-fast-path
+10-12 22:16:38.887 27711 27745 W VActivityManagerService: process-lifecycle-cleanup pid=28996 generation=6 reason=process-died services=0
+10-12 22:16:41.063 27711 27754 W VActivityManagerService: process-lifecycle-cleanup pid=29110 generation=10 reason=process-died services=1
+10-12 22:16:41.090 27711 27711 I VActivityManagerService: Removed orphan StubActivity task=1560 reason=process-death-full virtualTasks=0
+10-12 22:16:42.759 27593 27678 E AppTwinRuntime: GroupApp launch failed for org.apptwin.fixture.mediacompat/4862085f-a295-4089-b831-ee6632fad925
+10-12 22:16:42.793 27711 27745 W VActivityManagerService: process-lifecycle-cleanup pid=29189 generation=11 reason=user-stop services=0
+10-12 22:16:42.797 27711 27745 W VActivityManagerService: process-lifecycle-cleanup pid=29014 generation=7 reason=user-stop services=0
+10-12 22:16:42.800 27711 27745 W VActivityManagerService: process-lifecycle-cleanup pid=28983 generation=5 reason=user-stop services=1
+10-12 22:16:42.923 27711 27722 W VActivityManagerService: process-lifecycle-cleanup pid=29262 generation=12 reason=user-stop services=0
+10-12 22:16:42.925 27711 27722 W VActivityManagerService: process-lifecycle-cleanup pid=29086 generation=9 reason=user-stop services=0
+10-12 22:16:42.933 27711 27722 W VActivityManagerService: process-lifecycle-cleanup pid=29052 generation=8 reason=user-stop services=1

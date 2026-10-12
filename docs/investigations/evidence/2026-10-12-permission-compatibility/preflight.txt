@@ -1,0 +1,15 @@
+get-state => device
+shell getprop ro.build.version.sdk => 31
+shell pm list packages org.apptwin.fixture.mediacompat =>
+versionCode=1005 minSdk=26 targetSdk=28
+versionName=0.1.5-space-background
+android.permission.READ_EXTERNAL_STORAGE: granted=true, flags=[ USER_SET|USER_SENSITIVE_WHEN_GRANTED|USER_SENSITIVE_WHEN_DENIED|RESTRICTION_INSTALLER_EXEMPT]
+android.permission.READ_EXTERNAL_STORAGE: granted=false, flags=[ RESTRICTION_INSTALLER_EXEMPT]
+global=[1]
+group ['name=test', 'environmentBindingId=1', 'id=1b9fb1b0-a800-4825-a0b8-e0d29ec24111']
+group ['name=openinfo', 'environmentBindingId=2', 'id=9556e507-9308-438b-b5c7-d49ad7e4a4e3']
+94c8056777654dbde7fe19d9599a285efb55f5827f9a99c385ff2f79be89a72f  virtual/data/app/jp.naver.line.android/base.apk
+26ae3c06095a7533154dc39f637a6bd0d092cf65be814472f0d0e3ebef5719c2  virtual/data/app/jp.naver.line.android/split_config.arm64_v8a.apk
+5ad82153b14e5ae0e3afc03b19dbc1c475f39628922463c0453ee8194a2eec2c  virtual/data/app/jp.naver.line.android/split_config.xxhdpi.apk
+runtime_file_valid=True
+openinfo_LINE_legacy_media_explicit_granted=True
