@@ -6,6 +6,7 @@ plugins {
 android {
     namespace = "org.apptwin.fixture"
     compileSdk = 36
+    ndkVersion = "29.0.13846066"
 
     buildFeatures {
         buildConfig = true
@@ -16,6 +17,11 @@ android {
         minSdk = 26
         targetSdk = 28
         versionName = "fixture"
+        ndk { abiFilters += "arm64-v8a" }
+    }
+
+    externalNativeBuild {
+        ndkBuild { path = file("src/mediaCompat/jni/Android.mk") }
     }
 
     flavorDimensions += "revision"

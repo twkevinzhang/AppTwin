@@ -9,6 +9,9 @@ import com.lody.virtual.os.VUserHandle;
 public final class GuestPermissionPolicy {
     private GuestPermissionPolicy() {}
     public static boolean isControlled(String permission) {
+        return isControlled(permission, android.os.Build.VERSION.SDK_INT);
+    }
+    static boolean isControlled(String permission, int sdk) {
         return "android.permission.CAMERA".equals(permission)
                 || "android.permission.RECORD_AUDIO".equals(permission)
                 || "android.permission.ACCESS_FINE_LOCATION".equals(permission)
@@ -17,6 +20,7 @@ public final class GuestPermissionPolicy {
                 || "android.permission.READ_CONTACTS".equals(permission)
                 || "android.permission.WRITE_CONTACTS".equals(permission)
                 || "android.permission.READ_EXTERNAL_STORAGE".equals(permission)
+                || (sdk <= 32 && "android.permission.WRITE_EXTERNAL_STORAGE".equals(permission))
                 || "android.permission.READ_MEDIA_IMAGES".equals(permission)
                 || "android.permission.READ_MEDIA_VIDEO".equals(permission);
     }

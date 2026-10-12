@@ -8,6 +8,24 @@ import org.junit.Test
 
 class ClonePermissionPolicyTest {
     @Test
+    fun `legacy storage write remains independent from an allowed read grant`() {
+        val clone = target("group-1", "工作", "com.example.chat", "Chat")
+        val summaries = ClonePermissionPolicy.aggregate(listOf(
+            requirement("android.permission.READ_EXTERNAL_STORAGE", clone, hostGranted = true,
+                virtualScope = ClonePermissionVirtualScope.SPACE_SCOPED),
+            requirement("android.permission.WRITE_EXTERNAL_STORAGE", clone, hostGranted = false,
+                virtualScope = ClonePermissionVirtualScope.SPACE_SCOPED, canRequestRuntime = true),
+        ))
+        val read = summaries.single { it.permission == "android.permission.READ_EXTERNAL_STORAGE" }
+        val write = summaries.single { it.permission == "android.permission.WRITE_EXTERNAL_STORAGE" }
+        assertTrue(read.granted)
+        assertFalse(write.granted)
+        assertEquals(ClonePermissionCategory.RUNTIME, write.category)
+        assertEquals(ClonePermissionAction.REQUEST_RUNTIME, write.action)
+        assertEquals(ClonePermissionVirtualScope.SPACE_SCOPED, write.virtualScope)
+    }
+
+    @Test
     fun `platform exemption never requests host permission while unsupported remains denied`() {
         val clone = target("group-1", "工作", "com.example.chat", "Chat")
         val summaries = ClonePermissionPolicy.aggregate(listOf(

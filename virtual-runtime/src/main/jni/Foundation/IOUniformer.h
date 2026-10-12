@@ -19,7 +19,7 @@
 #include "Jni/Helper.h"
 
 
-#define HOOK_SYMBOL(handle, func) hook_function(handle, #func, (void*) new_##func, (void**) &orig_##func)
+#define HOOK_SYMBOL(handle, func) do { if (orig_##func == nullptr) hook_function(handle, #func, (void*) new_##func, (void**) &orig_##func); } while (0)
 #define HOOK_DEF(ret, func, ...) \
   ret (*orig_##func)(__VA_ARGS__); \
   ret new_##func(__VA_ARGS__)
@@ -35,6 +35,9 @@ namespace IOUniformer {
     void redirect(const char *orig_path, const char *new_path);
 
     void whitelist(const char *path);
+
+    bool sharedMediaAccess(const char *path, bool read, bool write);
+    bool sharedMediaHooksReady();
 
     const char *query(const char *orig_path);
 

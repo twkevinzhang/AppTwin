@@ -87,6 +87,8 @@ public class PackageParserEx {
         UnsupportedCompanionComponents.removeFrom(result);
         result.mRealSignatures = realSignatures;
         result.trustedPackageProvenance = provenance;
+        LegacyWriteManifestCompatibility.augment(result,
+                packageFile.isFile() ? packageFile : new File(p.baseCodePath));
         return result;
     }
 
@@ -218,8 +220,12 @@ public class PackageParserEx {
             pkg.mSignatures = cloneSignatures(rebuilt.mSignatures);
             pkg.mRealSignatures = cloneSignatures(rebuilt.mRealSignatures);
             pkg.signingInfo = rebuilt.signingInfo;
+            LegacyWriteManifestCompatibility.synchronizeWriteMembership(
+                    pkg.requestedPermissions, rebuilt.requestedPermissions, Build.VERSION.SDK_INT);
             writeSignatureCacheAtomic(pkg, signatureFile);
         } catch (Throwable failure) {
+            LegacyWriteManifestCompatibility.synchronizeWriteMembership(
+                    pkg.requestedPermissions, null, Build.VERSION.SDK_INT);
             pkg.mSignatures = null;
             pkg.mRealSignatures = null;
             pkg.signingInfo = null;

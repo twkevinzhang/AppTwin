@@ -144,25 +144,59 @@ public class ProviderHook implements InvocationHandler {
         }
         if (authority.endsWith(".documents") || authority.contains("photopicker")) {
             Uri selected = null;
-            if (args != null) for (Object arg : args) if (arg instanceof Uri) { selected = (Uri) arg; break; }
+            String documentMode = null;
+            boolean afterUri = false;
+            if (args != null) for (Object arg : args) {
+                if (arg instanceof Uri) { selected = (Uri) arg; afterUri = true; continue; }
+                if (afterUri && arg instanceof String && documentMode == null) documentMode = (String) arg;
+            }
             if (!com.lody.virtual.client.hook.GuestSelectedUriGrants.hasRead(selected)) {
                 throw new SecurityException("URI was not selected for this space");
+            }
+            if (MediaProviderAccessPolicy.usesLegacyWriteCapability(Build.VERSION.SDK_INT)
+                    && MediaProviderAccessPolicy.requiresWrite(method, documentMode)) {
+                com.lody.virtual.client.hook.GuestPermissionPolicy.require("android.permission.WRITE_EXTERNAL_STORAGE");
+                if (selected == null || VirtualCore.get().getContext().checkUriPermission(selected,
+                        android.os.Process.myPid(), android.os.Process.myUid(),
+                        android.content.Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
+                        != android.content.pm.PackageManager.PERMISSION_GRANTED) {
+                    throw new SecurityException("Selected URI has no write grant for this space");
+                }
             }
         }
         if (ProviderAuthorityPolicy.contains(authority, "media") || "media".equals(operationAuthority)) {
             Uri uri = null;
             if (args != null) for (Object arg : args) if (arg instanceof Uri) { uri = (Uri) arg; break; }
-            if (com.lody.virtual.client.hook.GuestSelectedUriGrants.hasRead(uri) && VirtualCore.get().getContext().checkUriPermission(uri,
+            String mode = null;
+            if ("openFile".equals(method) || "openAssetFile".equals(method)) {
+                boolean afterUri = false;
+                if (args != null) for (Object arg : args) {
+                    if (arg instanceof Uri) { afterUri = true; continue; }
+                    if (afterUri && arg instanceof String) { mode = (String) arg; break; }
+                }
+            }
+            boolean selectedReadGranted = com.lody.virtual.client.hook.GuestSelectedUriGrants.hasRead(uri)
+                    && VirtualCore.get().getContext().checkUriPermission(uri,
                     android.os.Process.myPid(), android.os.Process.myUid(),
                     android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                    == android.content.pm.PackageManager.PERMISSION_GRANTED) return;
+                    == android.content.pm.PackageManager.PERMISSION_GRANTED;
             String path = uri == null ? "" : uri.getPath();
-            if (path != null && path.contains("/audio")) return;
             boolean onlyImages = path != null && path.contains("/images");
             boolean onlyVideos = path != null && path.contains("/video");
-            boolean granted = com.lody.virtual.client.hook.GuestPermissionPolicy.canReadMedia(
+            // Preserve the existing audio read behavior; audio mutations still need WRITE.
+            boolean readGranted = path != null && path.contains("/audio")
+                    || com.lody.virtual.client.hook.GuestPermissionPolicy.canReadMedia(
                     !onlyVideos, !onlyImages);
-            if (!granted) throw new SecurityException("Space media permission denied");
+            if (!MediaProviderAccessPolicy.usesLegacyWriteCapability(Build.VERSION.SDK_INT)) {
+                // Preserve modern scoped-storage behavior; the platform still checks the operation.
+                if (selectedReadGranted || readGranted) return;
+                throw new SecurityException("Space media permission denied");
+            }
+            boolean writeGranted = com.lody.virtual.client.hook.GuestPermissionPolicy.isGranted(
+                    "android.permission.WRITE_EXTERNAL_STORAGE");
+            if (!MediaProviderAccessPolicy.allows(method, mode, readGranted, writeGranted, selectedReadGranted)) {
+                throw new SecurityException("Space media permission denied");
+            }
         }
     }
 

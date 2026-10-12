@@ -15,6 +15,7 @@ public final class SpaceAppOpPermission {
             case 26: return "android.permission.CAMERA";
             case 27: return "android.permission.RECORD_AUDIO";
             case 59: return "android.permission.READ_EXTERNAL_STORAGE";
+            case 60: return sdk <= 32 ? "android.permission.WRITE_EXTERNAL_STORAGE" : null;
             case 85: return sdk >= 33 ? "android.permission.READ_MEDIA_IMAGES" : "android.permission.READ_EXTERNAL_STORAGE";
             case 83: return sdk >= 33 ? "android.permission.READ_MEDIA_VIDEO" : "android.permission.READ_EXTERNAL_STORAGE";
             default: return null;

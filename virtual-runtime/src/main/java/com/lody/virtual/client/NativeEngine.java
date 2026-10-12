@@ -122,6 +122,21 @@ public class NativeEngine {
         }
     }
 
+    /** Registers the directional boundary before exposing a real shared directory. */
+    public static boolean sharedMediaAccess(String path, boolean readAllowed, boolean writeAllowed) {
+        if (path == null || !path.startsWith("/") || (!readAllowed && !writeAllowed)) return false;
+        if (!path.endsWith("/")) path += "/";
+        try {
+            return nativeIOSharedMediaAccess(path, readAllowed, writeAllowed);
+        } catch (Throwable unavailable) {
+            // Failed registration must never create an unrestricted native whitelist.
+            return false;
+        }
+    }
+
+    private static native boolean nativeIOSharedMediaAccess(String path, boolean readAllowed,
+                                                           boolean writeAllowed);
+
     public static void whitelist(String path, boolean directory) {
         if (directory && !path.endsWith("/")) {
             path = path + "/";
@@ -146,19 +161,21 @@ public class NativeEngine {
         }
     }
 
-    public static void enableIORedirect(String guestProcessName) {
+    public static boolean enableIORedirect(String guestProcessName) {
         try {
             String soPath = VirtualCore.get().getContext().getApplicationInfo().nativeLibraryDir + File.separator + "lib" + LIB_NAME + ".so";
             if (!new File(soPath).exists()) {
                 throw new RuntimeException("io redirect failed.");
             }
             redirectDirectory(VESCAPE, "/");
-            nativeEnableIORedirect(soPath, VirtualCore.get().getHostPkg(), guestProcessName,
-                    Build.VERSION.SDK_INT, BuildCompat.getPreviewSDKInt());
+            if (!nativeEnableIORedirect(soPath, VirtualCore.get().getHostPkg(), guestProcessName,
+                    Build.VERSION.SDK_INT, BuildCompat.getPreviewSDKInt())) return false;
             VLog.i(TAG, "proc-maps-sanitizer host=%s remainingLeaks=%d",
                     VirtualCore.get().getHostPkg(), nativeCountProcMapsLeaksForProbe());
+            return true;
         } catch (Throwable e) {
             VLog.e(TAG, VLog.getStackTraceString(e));
+            return false;
         }
     }
 
@@ -238,7 +255,7 @@ public class NativeEngine {
 
     private static native void nativeIOForbid(String path);
 
-    private static native void nativeEnableIORedirect(String selfSoPath, String hostPackageName,
+    private static native boolean nativeEnableIORedirect(String selfSoPath, String hostPackageName,
                                                        String guestProcessName, int apiLevel,
                                                        int previewApiLevel);
 
