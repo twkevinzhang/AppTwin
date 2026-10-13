@@ -87,3 +87,5 @@ v1015 原 READ 五階段再次嚴格 PASS，43.14秒。真實 openinfo 權限頁
 使用者解除卡榫後，原入口已取得三個 configured output streams；兩秒內 frameCount 4881→4944、capture requests 4884→4947，且 exact user2 LINE PID24362 相符，確認真正持續預覽。補充 CAMERA deny 亦取得 exact PID30906/user2 native CAMERA decision=-1、active clients=0。
 
 恢復操作遭工具與外部狀態阻擋：legacy uiautomator 的 idle timeout 留下舊XML，因此改成 shell-only helper 直接取得 UiAutomation window root，不輸出聊天／XML、不重新啟動 AppTwin／guest。fresh root 隨後確認手機自動鎖屏（SystemUI／Keyguard secure）；當時 CAMERA 仍false，WRITE／READ仍true。所有 logger 與 debug property 已停止／復原，未以僅獲安裝授權的 PIN 擅自解鎖；等待使用者解鎖或明確允許沿用 PIN。恢復重試仍未完成，不能把已通過的預覽／deny 等同整輪完成。
+
+2026-10-13 使用者已明確授權以先前提供的 PIN 自行解鎖驗收，後續本輪不再需要另問解鎖授權。然而重試時 ADB devices 與 mDNS 均為空，macOS USB inventory 亦沒有 ASUS／Android 裝置。單輪 start-server preflight 未 kill server、未新啟 tcpip／配對或掃描 LAN。尚未執行解鎖或修改授權；CAMERA 最後已知仍false，須手機 USB 資料線重連後優先透過真實 UI 恢復，再完成原入口重試。
