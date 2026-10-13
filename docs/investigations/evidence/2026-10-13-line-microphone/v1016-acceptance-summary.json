@@ -1,0 +1,13 @@
+{
+  "voicePanelOpened": true,
+  "cancelRestoredMicrophone": true,
+  "repeatVoicePanelOpened": true,
+  "repeatCancelRestoredMicrophone": true,
+  "newCrashAfter1723": [],
+  "recordStartButtonPressed": false,
+  "audioPlayedOrSent": false,
+  "activeGuestProcessMetadata": [
+    "app=ProcessRecord{6c72b09 18312:org.apptwin:p4/u0a305}",
+    "app=ProcessRecord{6c72b09 18312:org.apptwin:p4/u0a305}"
+  ]
+}

@@ -36,6 +36,30 @@ public final class TelecomManagerStub extends BinderInvocationProxy {
         addMethodProxy(new RewritePhoneAccountArgs("unregisterPhoneAccount"));
         addMethodProxy(new RewritePhoneAccountArgs("addNewIncomingCall"));
         addMethodProxy(new RewritePhoneAccountArgs("addNewUnknownCall"));
+        addMethodProxy(new GetCallStateUsingPackage());
+    }
+
+    static final class GetCallStateUsingPackage extends StaticMethodProxy {
+        private final String hostPackage;
+
+        GetCallStateUsingPackage() {
+            this(null);
+        }
+
+        GetCallStateUsingPackage(String hostPackage) {
+            super("getCallStateUsingPackage");
+            this.hostPackage = hostPackage;
+        }
+
+        @Override
+        public boolean beforeCall(Object who, Method method, Object... args) {
+            // Telecom validates the caller package against the physical Binder UID.
+            // The second string is an attribution tag, not another package identity.
+            if (args != null && args.length > 0 && args[0] instanceof String) {
+                args[0] = hostPackage == null ? getHostPkg() : hostPackage;
+            }
+            return super.beforeCall(who, method, args);
+        }
     }
 
     private static final class RewritePhoneAccountArgs extends StaticMethodProxy {

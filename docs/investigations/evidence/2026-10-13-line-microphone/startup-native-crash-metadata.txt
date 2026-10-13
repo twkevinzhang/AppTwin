@@ -1,0 +1,7 @@
+10-13 17:20:09.871 16100 16102 F libc    : Fatal signal 4 (SIGILL), code 1 (ILL_ILLOPC), fault addr 0x7b51637cf8 in tid 16102 (perfetto_hprof_), pid 16100 (er.line.android)
+10-13 17:20:10.937 17224 17224 F DEBUG   : pid: 16100, tid: 16102, name: perfetto_hprof_  >>> jp.naver.line.android <<<
+10-13 17:20:10.937 17224 17224 F DEBUG   : backtrace:
+10-13 17:20:10.937 17224 17224 F DEBUG   :       #00 pc 00000000000a1cf8  /apex/com.android.runtime/lib64/bionic/libc.so!libc.so (read+8) (BuildId: 35c247de3bc12550437d791ecc197c4c)
+10-13 17:20:10.937 17224 17224 F DEBUG   :       #01 pc 00000000000345c0  /apex/com.android.art/lib64/libperfetto_hprof.so (void* std::__1::__thread_proxy[abi:nn220000]<std::__1::tuple<std::__1::unique_ptr<std::__1::__thread_struct, std::__1::default_delete<std::__1::__thread_struct> >, ArtPlugin_Initialize::$_7> >(void*)+272) (BuildId: 6c98b0315056646421acb85048973f61)
+10-13 17:20:10.937 17224 17224 F DEBUG   :       #02 pc 00000000000b6d34  /apex/com.android.runtime/lib64/bionic/libc.so!libc.so (__pthread_start(void*)+264) (BuildId: 35c247de3bc12550437d791ecc197c4c)
+10-13 17:20:10.937 17224 17224 F DEBUG   :       #03 pc 00000000000535c4  /apex/com.android.runtime/lib64/bionic/libc.so!libc.so (__start_thread+68) (BuildId: 35c247de3bc12550437d791ecc197c4c)

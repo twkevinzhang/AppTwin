@@ -1,0 +1,7 @@
+SAFE package=org.apptwin
+SAFE inputAction=取消
+SAFE known=取消 bounds=[964,1560][1059,1655]
+SAFE role=jp.naver.line.android:id/voice_record_animation_view clickable=false bounds=[0,1675][1080,2358]
+SAFE role=jp.naver.line.android:id/record_background_view clickable=true bounds=[375,1867][706,2198]
+SAFE role=jp.naver.line.android:id/record_icon_image_view clickable=false bounds=[488,1980][593,2085]
+SAFE role=jp.naver.line.android:id/voice_record_guide clickable=false bounds=[404,1759][677,1812]
