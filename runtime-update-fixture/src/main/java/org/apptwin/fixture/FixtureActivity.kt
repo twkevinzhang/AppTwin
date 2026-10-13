@@ -15,6 +15,7 @@ import java.io.File
 
 /** A deliberately tiny guest whose files prove that a runtime code update preserves private data. */
 class FixtureActivity : Activity() {
+    private val lifecycleProbe by lazy { FixtureLifecycleProbe(this) }
     private var selectedUriProbe: SelectedUriProbe? = null
     private var permissionProbeStarted = false
     @Volatile private var probeResumed = false
@@ -34,6 +35,7 @@ class FixtureActivity : Activity() {
             ?.plus(1)
             ?: 1
         countFile.writeText(launchCount.toString())
+        lifecycleProbe.created(savedInstanceState != null, launchCount)
         File(filesDir, PERMISSION_STATE_FILE).writeText(
             buildString {
                 append("camera=")
@@ -75,7 +77,9 @@ class FixtureActivity : Activity() {
     override fun onResume() {
         super.onResume()
         probeResumed = true
-        if (File(filesDir, "enable-permission-probe").exists()) {
+        lifecycleProbe.resumed()
+        if (File(filesDir, "enable-permission-probe").exists() ||
+            File(filesDir, CameraMicrophoneProbe.ENABLE_FILE).exists()) {
             window.addFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
             if (probeReadinessDeadline == 0L) {
                 probeReadinessDeadline = android.os.SystemClock.elapsedRealtime() + 20_000
@@ -86,23 +90,38 @@ class FixtureActivity : Activity() {
 
     override fun onPause() {
         probeResumed = false
+        lifecycleProbe.paused()
         super.onPause()
     }
 
+
     override fun onWindowFocusChanged(hasFocus: Boolean) {
         super.onWindowFocusChanged(hasFocus)
+        lifecycleProbe.focus(hasFocus)
         if (hasFocus) window.decorView.post { startProbeWhenForeground() }
     }
 
+    override fun onStop() {
+        lifecycleProbe.stopped()
+        super.onStop()
+    }
+
+    override fun onDestroy() {
+        lifecycleProbe.destroyed()
+        super.onDestroy()
+    }
+
     private fun startProbeWhenForeground() {
-        if (permissionProbeStarted || !File(filesDir, "enable-permission-probe").exists()) return
+        val cameraRequest = File(filesDir, CameraMicrophoneProbe.ENABLE_FILE)
+        val cameraOnly = cameraRequest.exists()
+        if (permissionProbeStarted || (!cameraOnly && !File(filesDir, "enable-permission-probe").exists())) return
         if (!probeResumed || !hasWindowFocus() || isFinishing) {
             if (probeReadinessDeadline == 0L) return
             if (android.os.SystemClock.elapsedRealtime() < probeReadinessDeadline) {
                 window.decorView.postDelayed({ startProbeWhenForeground() }, 100)
             } else {
                 permissionProbeStarted = true
-                File(filesDir, PermissionEnforcementProbe.RESULT_FILE).writeText(
+                File(filesDir, if (cameraOnly) CameraMicrophoneProbe.RESULT_FILE else PermissionEnforcementProbe.RESULT_FILE).writeText(
                     org.json.JSONObject().put("readiness", "foreground-timeout")
                         .put("resumed", probeResumed).put("hasWindowFocus", hasWindowFocus())
                         .put("isFinishing", isFinishing).toString(),
@@ -112,12 +131,14 @@ class FixtureActivity : Activity() {
         }
         permissionProbeStarted = true
         Thread {
-            val result = PermissionEnforcementProbe.collect(this) {
+            val result = if (cameraOnly) CameraMicrophoneProbe.collect(this, cameraRequest.readText().trim())
+            else PermissionEnforcementProbe.collect(this) {
                 org.json.JSONObject().put("resumed", probeResumed)
                     .put("hasWindowFocus", hasWindowFocus()).put("isFinishing", isFinishing)
                     .put("elapsedRealtime", android.os.SystemClock.elapsedRealtime())
             }
-            File(filesDir, PermissionEnforcementProbe.RESULT_FILE).writeText(result.toString())
+            File(filesDir, if (cameraOnly) CameraMicrophoneProbe.RESULT_FILE else PermissionEnforcementProbe.RESULT_FILE)
+                .writeText(result.toString())
         }.start()
     }
 

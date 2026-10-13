@@ -12,6 +12,13 @@ android {
         buildConfig = true
     }
 
+    lint {
+        // This sideload-only fixture deliberately exercises legacy target behavior. It is not
+        // distributed through Play; upgrading its target would invalidate compatibility tests.
+        // Keep permission, API, security and all other Lint checks enabled.
+        disable += "ExpiredTargetSdkVersion"
+    }
+
     defaultConfig {
         applicationId = "org.apptwin.fixture"
         minSdk = 26

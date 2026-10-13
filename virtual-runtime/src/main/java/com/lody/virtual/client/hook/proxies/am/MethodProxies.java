@@ -1368,6 +1368,9 @@ class MethodProxies {
 
         @Override
         public Object call(Object who, Method method, Object... args) throws Throwable {
+            if (args == null || args.length == 0 || !(args[0] instanceof String)) {
+                return PackageManager.PERMISSION_DENIED;
+            }
             String permission = (String) args[0];
             if (DynamicReceiverPermissionCompat.isSyntheticPermission(permission)) {
                 // AndroidX generates this permission from Context.getPackageName(). The guest
@@ -1379,18 +1382,23 @@ class MethodProxies {
             if (SpecialComponentList.isWhitePermission(permission)) {
                 return PackageManager.PERMISSION_GRANTED;
             }
-            if (com.lody.virtual.client.hook.GuestPermissionPolicy.isControlled(permission)) {
-                int decision = VPackageManager.get().checkPermission(
-                        permission, getAppPkg(), getAppUserId());
-                com.lody.virtual.helper.compat.LinePermissionDiagnostics.record("AM", permission, decision);
-                return decision;
-            }
-            args[args.length - 1] = getRealUid();
-            Object result = method.invoke(who, args);
-            if (result instanceof Integer) {
-                com.lody.virtual.helper.compat.LinePermissionDiagnostics.record("AM", permission, (Integer) result);
-            }
-            return result;
+            return GuestPermissionCheck.dispatch(getMethodName(), args,
+                    com.lody.virtual.client.hook.GuestPermissionPolicy.isControlled(permission),
+                    getAppPkg(), getAppUserId(), getRealUid(),
+                    (requestedPermission, packageName, userId) -> {
+                        int decision = VPackageManager.get().checkPermission(
+                                requestedPermission, packageName, userId);
+                        com.lody.virtual.helper.compat.LinePermissionDiagnostics.record(
+                                "AM", requestedPermission, decision);
+                        return decision;
+                    }, forwardedArgs -> {
+                        Object result = method.invoke(who, forwardedArgs);
+                        if (result instanceof Integer) {
+                            com.lody.virtual.helper.compat.LinePermissionDiagnostics.record(
+                                    "AM", permission, (Integer) result);
+                        }
+                        return result;
+                    });
         }
 
         @Override
@@ -1398,6 +1406,14 @@ class MethodProxies {
             return isAppProcess();
         }
 
+    }
+
+    /** Modern Context permission queries add a device id after the caller UID. */
+    static class CheckPermissionForDevice extends CheckPermission {
+        @Override
+        public String getMethodName() {
+            return "checkPermissionForDevice";
+        }
     }
 
     static class GetHistoricalProcessExitReasons extends MethodProxy {

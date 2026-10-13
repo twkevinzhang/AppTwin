@@ -10,6 +10,8 @@ import com.lody.virtual.client.ipc.VActivityManager
 import com.lody.virtual.os.VEnvironment
 import java.io.File
 import java.io.FileInputStream
+import org.json.JSONObject
+import org.json.JSONArray
 import kotlinx.coroutines.runBlocking
 import org.apptwin.AndroidMainOperations
 import org.apptwin.GroupAppItem
@@ -70,13 +72,29 @@ class AddCloneFirstLaunchE2eTest {
             assertEquals(GroupAppState.ADDED, addedApp.state)
             assertNoActiveOperation(operationStore, group.id)
 
-            ActivityScenario.launch(MainActivity::class.java).use { scenario ->
-                scenario.onActivity(mainActivityLaunchHosts::onResumed)
+            ActivityScenario.launch(MainActivity::class.java).useForegroundAcceptanceHost { scenario ->
+                val history = JSONArray()
+                fun observe(stage: String, value: JSONObject): JSONObject {
+                    history.put(JSONObject().put("stage", stage).put("lifecycle", JSONObject(value.toString())))
+                    return value
+                }
+                fun observeLaunch(stage: String, value: RuntimeLaunchResult) {
+                    val summary = JSONObject().put("stage", stage).put("result", value.javaClass.simpleName)
+                    if (value is RuntimeLaunchResult.Started) {
+                        summary.put("package", value.packageName).put("processPrefix", value.processPrefix)
+                            .put("dataDirectoryMatches", value.dataDirectory == VEnvironment.getDataUserPackageDirectory(
+                                added.environmentId(), FIXTURE_PACKAGE).absolutePath)
+                    }
+                    history.put(summary)
+                }
+                try {
+                scenario.awaitRealForegroundHost()
                 val launched = operations.launchGroupApp(added.fixtureItem())
-                assertTrue(
-                    "expected exact fixture clone to start but was $launched",
-                    launched is RuntimeLaunchResult.Started,
-                )
+                observeLaunch("firstLaunch", launched)
+                if (launched !is RuntimeLaunchResult.Started) {
+                    throw AssertionError("expected exact fixture clone to start but was $launched; " +
+                        "metadata=${captureLaunchFailureMetadata(added.environmentId())}")
+                }
                 launched as RuntimeLaunchResult.Started
                 assertEquals(FIXTURE_PACKAGE, launched.packageName)
                 assertEquals(
@@ -89,27 +107,35 @@ class AddCloneFirstLaunchE2eTest {
 
                 awaitGuestLaunchCount(added.environmentId(), expected = "1")
                 awaitExactCloneInForeground(added.environmentId())
+                val originalLifecycle = observe("firstForeground", awaitGuestLifecycle(added.environmentId(), foreground = true))
                 executeShellCommand("logcat -c")
 
-                scenario.onActivity(mainActivityLaunchHosts::onResumed)
+                scenario.awaitRealForegroundHost()
+                assertLifecycleIdentity(originalLifecycle, observe("warm1Before", awaitGuestLifecycle(added.environmentId(), foreground = false)))
                 val relaunched = operations.launchGroupApp(added.fixtureItem())
-                assertTrue(
-                    "expected verified fixture clone to relaunch but was $relaunched",
-                    relaunched is RuntimeLaunchResult.Started,
-                )
+                observeLaunch("warm1Launch", relaunched)
+                if (relaunched !is RuntimeLaunchResult.Started) {
+                    throw AssertionError("expected verified fixture clone to relaunch but was $relaunched; " +
+                        "metadata=${captureLaunchFailureMetadata(added.environmentId())}")
+                }
                 // A foreground fixture task is reused rather than recreated, so its onCreate
                 // counter remains one.
                 awaitGuestLaunchCount(added.environmentId(), expected = "1")
                 awaitExactCloneInForeground(added.environmentId())
 
-                scenario.onActivity(mainActivityLaunchHosts::onResumed)
+                assertLifecycleIdentity(originalLifecycle, observe("warm1After", awaitGuestLifecycle(added.environmentId(), foreground = true)))
+                scenario.awaitRealForegroundHost()
+                assertLifecycleIdentity(originalLifecycle, observe("warm2Before", awaitGuestLifecycle(added.environmentId(), foreground = false)))
                 val sessionRelaunched = operations.launchGroupApp(added.fixtureItem())
-                assertTrue(
-                    "expected stable daemon session to relaunch fixture but was $sessionRelaunched",
-                    sessionRelaunched is RuntimeLaunchResult.Started,
-                )
+                observeLaunch("warm2Launch", sessionRelaunched)
+                if (sessionRelaunched !is RuntimeLaunchResult.Started) {
+                    throw AssertionError("expected stable daemon session to relaunch fixture but was $sessionRelaunched; " +
+                        "metadata=${captureLaunchFailureMetadata(added.environmentId())}")
+                }
                 awaitGuestLaunchCount(added.environmentId(), expected = "1")
                 awaitExactCloneInForeground(added.environmentId())
+
+                assertLifecycleIdentity(originalLifecycle, observe("warm2After", awaitGuestLifecycle(added.environmentId(), foreground = true)))
 
                 val runtimeLog = executeShellCommand(
                     "logcat -d -v brief -s AppTwinRuntime:I '*:S'",
@@ -122,6 +148,15 @@ class AddCloneFirstLaunchE2eTest {
                     "stable daemon session fast path was not observed:\n$runtimeLog",
                     runtimeLog.contains("daemon-launch-fast-path"),
                 )
+                } catch (failure: Throwable) {
+                    // Capture before the scenario/owned-space cleanup can erase task evidence.
+                    runCatching {
+                        val diagnostic = JSONObject().put("history", history)
+                            .put("current", JSONObject(captureLaunchFailureMetadata(added.environmentId())))
+                        failure.addSuppressed(AssertionError("Owned warm-launch history=$diagnostic"))
+                    }.exceptionOrNull()?.let(failure::addSuppressed)
+                    throw failure
+                }
             }
 
             val persisted = requireNotNull(groupStore.find(group.id))
@@ -182,7 +217,7 @@ class AddCloneFirstLaunchE2eTest {
         }
         error(
             "fixture Activity launch count did not reach $expected: " +
-                "${file.absolutePath} (actual=$actual)",
+                "${file.absolutePath} (actual=$actual) metadata=${captureLaunchFailureMetadata(environmentId)}",
         )
     }
 
@@ -204,8 +239,35 @@ class AddCloneFirstLaunchE2eTest {
         error(
             "exact fixture clone did not remain foreground: " +
                 "expectedPackage=$FIXTURE_PACKAGE expectedEnvironmentId=$environmentId " +
-                "actualPackage=$actualPackage actualEnvironmentId=$actualEnvironmentId",
+                "actualPackage=$actualPackage actualEnvironmentId=$actualEnvironmentId " +
+                "metadata=${captureLaunchFailureMetadata(environmentId)}",
         )
+    }
+
+    private fun awaitGuestLifecycle(environmentId: Int, foreground: Boolean): JSONObject {
+        val file = File(VEnvironment.getDataUserPackageDirectory(environmentId, FIXTURE_PACKAGE),
+            "files/fixture-lifecycle.json")
+        var latest: JSONObject? = null
+        repeat(POLL_ATTEMPTS) {
+            latest = runCatching { JSONObject(file.readText()) }.getOrNull()
+            val current = latest
+            if (current != null) {
+                val phase = current.optString("phase")
+                val ready = if (foreground) phase == "RESUMED" && current.optBoolean("resumed") && current.optBoolean("focused")
+                else phase in setOf("PAUSED", "STOPPED") && !current.optBoolean("resumed")
+                if (ready && !current.optBoolean("finishing") && !current.optBoolean("changingConfigurations")) return current
+            }
+            Thread.sleep(POLL_INTERVAL_MILLIS)
+        }
+        error("Guest lifecycle precondition failed foreground=$foreground metadata=$latest " +
+            "failure=${captureLaunchFailureMetadata(environmentId)}")
+    }
+
+    private fun assertLifecycleIdentity(expected: JSONObject, actual: JSONObject) {
+        listOf("instance", "pid", "task", "launchCount", "orientation", "density", "uiMode", "savedInstance").forEach { key ->
+            assertEquals("Warm guest identity/configuration changed: $key; actual=$actual", expected.get(key), actual.get(key))
+        }
+        assertEquals("Warm Activity must retain its first creation", 1, actual.getInt("launchCount"))
     }
 
     private fun isFixtureInstalled(): Boolean = runCatching {

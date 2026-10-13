@@ -35,6 +35,9 @@ class HostActivityLaunchAdapterTest {
             dispatchToMain = ::runImmediately,
             isMainThread = { false },
             awaitAcknowledgement = { _, _ -> true },
+            hasExpectedGuestActivity = { pkg, user, prepared ->
+                pkg == "com.example.guest" && user == 2 && prepared.taskId == 73
+            },
             cancelAcknowledgement = {},
         )
         assertTrue(adapter.launch(Intent("test"), "com.example.guest", 2).isSuccess)
@@ -100,6 +103,9 @@ class HostActivityLaunchAdapterTest {
             dispatchToMain = ::runImmediately,
             isMainThread = { false },
             awaitAcknowledgement = { launchId, _ -> launchId == "ready-session" },
+            hasExpectedGuestActivity = { pkg, user, prepared ->
+                pkg == "com.example.guest" && user == 2 && prepared.taskId == 73
+            },
             cancelAcknowledgement = { error("successful launch must not cancel") },
         )
 
@@ -209,6 +215,9 @@ class HostActivityLaunchAdapterTest {
             dispatchToMain = ::runImmediately,
             isMainThread = { false },
             awaitAcknowledgement = { launchId, _ -> launchId == "user-2-reuse" },
+            hasExpectedGuestActivity = { pkg, user, prepared ->
+                pkg == "com.example.guest" && user == 2 && prepared.taskId == movedTask
+            },
             cancelAcknowledgement = { error("successful reuse must not cancel") },
         )
 
@@ -217,6 +226,67 @@ class HostActivityLaunchAdapterTest {
         assertTrue(result.isReused)
         assertEquals(73, movedTask)
     }
+
+    @Test
+    fun `reused ACK cannot report success while host remains physical foreground`() {
+        var cancelled: String? = null
+        val adapter = reusedConfirmationAdapter(
+            acknowledged = true,
+            physicalConfirmation = { _, _, _ -> false },
+            cancel = { cancelled = it },
+        )
+        val result = adapter.launch(Intent("test.request"), "com.example.guest", 2)
+        assertFalse(result.isSuccess)
+        assertEquals("Expected Group activity did not resume", result.failureReason)
+        assertEquals("exact-reuse", cancelled)
+    }
+
+    @Test
+    fun `reused ACK rejects physical task with wrong user package or task identity`() {
+        data class Observed(val user: Int, val pkg: String, val task: Int)
+        for (observed in listOf(
+            Observed(3, "com.example.guest", 73),
+            Observed(2, "other.guest", 73),
+            Observed(2, "com.example.guest", 74),
+        )) {
+            var cancelled = false
+            val adapter = reusedConfirmationAdapter(true, { pkg, user, prepared ->
+                matchesExpectedGuestActivity(pkg, user, observed.user, observed.pkg,
+                    prepared.taskId, requireNotNull(prepared.launchId), observed.task, null)
+            }, { cancelled = true })
+            assertFalse(adapter.launch(Intent("test.request"), "com.example.guest", 2).isSuccess)
+            assertTrue(cancelled)
+        }
+    }
+
+    @Test
+    fun `exact physical reused task succeeds with or without ACK`() {
+        for (ack in listOf(true, false)) {
+            val adapter = reusedConfirmationAdapter(ack, { pkg, user, prepared ->
+                matchesExpectedGuestActivity(pkg, user, 2, "com.example.guest",
+                    prepared.taskId, requireNotNull(prepared.launchId), 73, null)
+            }, {})
+            assertTrue(adapter.launch(Intent("test.request"), "com.example.guest", 2).isReused)
+        }
+    }
+
+    private fun reusedConfirmationAdapter(
+        acknowledged: Boolean,
+        physicalConfirmation: (String, Int, PreparedActivityLaunch) -> Boolean,
+        cancel: (String) -> Unit,
+    ) = HostActivityLaunchAdapter(
+        prepareActivity = { _, _, _ -> PreparedActivityLaunch.reused(73, "exact-reuse") },
+        resumedHost = { "visible-host" },
+        startActivity = { _, _ -> error("Reused launch must not create a replacement") },
+        moveTaskToFront = { _, task -> assertEquals(73, task) },
+        reuseVisibleDaemonSession = { true },
+        dispatchToMain = ::runImmediately,
+        isMainThread = { false },
+        awaitAcknowledgement = { _, _ -> acknowledged },
+        hasExpectedGuestActivity = physicalConfirmation,
+        cancelAcknowledgement = cancel,
+        activityConfirmationTimeoutMs = 0L,
+    )
 
     @Test
     fun `exact guest task confirms launch when startup transition misses ACK`() {

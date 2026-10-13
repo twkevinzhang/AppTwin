@@ -76,7 +76,21 @@ public class GuestIpcFreezeSafetySourceTest {
         assertTrue(stack.contains("if (r.process == record)"));
         assertTrue(vams.contains("scheduleOrphanedStubTaskReconciliation(null, \"engine-startup\")"));
         assertTrue(vams.contains("am.getAppTasks()"));
-        assertTrue(vams.contains("mMainStack.hasLiveTaskOwnership(taskInfo.id)"));
+        int reconciliationStart = vams.indexOf("private void reconcileOrphanedStubTasks");
+        int reconciliationEnd = vams.indexOf("static boolean shouldScheduleInitialGmsReconciliation", reconciliationStart);
+        String reconciliation = vams.substring(reconciliationStart, reconciliationEnd);
+        int canonical = reconciliation.indexOf("int physicalTaskId = PhysicalTaskSnapshot.canonicalTaskId(taskInfo)");
+        int unknownSkip = reconciliation.indexOf("if (physicalTaskId < 0", canonical);
+        int candidateScope = reconciliation.indexOf("candidateTaskIds.contains(physicalTaskId)", unknownSkip);
+        int firstOwner = reconciliation.indexOf("mMainStack.hasLiveTaskOwnership(physicalTaskId)");
+        int exactPolicy = reconciliation.indexOf("OrphanStubTaskPolicy.shouldRemove", firstOwner);
+        int secondOwner = reconciliation.indexOf("mMainStack.hasLiveTaskOwnership(physicalTaskId)", firstOwner + 1);
+        int removal = reconciliation.indexOf("appTask.finishAndRemoveTask()");
+        assertTrue(canonical >= 0);
+        assertTrue(unknownSkip > canonical && candidateScope > unknownSkip);
+        assertTrue(firstOwner > candidateScope && exactPolicy > firstOwner);
+        assertTrue(secondOwner > exactPolicy && removal > secondOwner);
+        assertFalse(reconciliation.contains("taskInfo.id"));
         assertTrue(vams.contains("appTask.finishAndRemoveTask()"));
         assertTrue(vams.contains("state != ProcessLifecycle.State.STARTING"
                 + " && state != ProcessLifecycle.State.READY"));

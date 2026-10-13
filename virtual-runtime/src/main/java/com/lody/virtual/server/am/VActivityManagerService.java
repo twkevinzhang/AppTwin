@@ -723,11 +723,12 @@ public class VActivityManagerService extends IActivityManager.Stub
             } catch (RuntimeException unavailable) {
                 continue;
             }
-            if (taskInfo == null
-                    || (candidateTaskIds != null && !candidateTaskIds.contains(taskInfo.id))) {
+            int physicalTaskId = PhysicalTaskSnapshot.canonicalTaskId(taskInfo);
+            if (physicalTaskId < 0
+                    || (candidateTaskIds != null && !candidateTaskIds.contains(physicalTaskId))) {
                 continue;
             }
-            boolean liveOwnership = mMainStack.hasLiveTaskOwnership(taskInfo.id);
+            boolean liveOwnership = mMainStack.hasLiveTaskOwnership(physicalTaskId);
             if (!OrphanStubTaskPolicy.shouldRemove(hostPackage,
                     taskInfo.baseActivity, taskInfo.topActivity,
                     liveOwnership, VASettings.STUB_COUNT)) {
@@ -735,13 +736,13 @@ public class VActivityManagerService extends IActivityManager.Stub
             }
             // Close the race with an activity callback that repopulated this physical task after
             // the first snapshot. Never remove a task once a live generation owns it again.
-            if (mMainStack.hasLiveTaskOwnership(taskInfo.id)) continue;
+            if (mMainStack.hasLiveTaskOwnership(physicalTaskId)) continue;
             try {
                 appTask.finishAndRemoveTask();
-                VLog.i(TAG, "Removed orphan StubActivity task=" + taskInfo.id
+                VLog.i(TAG, "Removed orphan StubActivity task=" + physicalTaskId
                         + " reason=" + reason);
             } catch (RuntimeException error) {
-                VLog.w(TAG, "Unable to remove orphan StubActivity task=" + taskInfo.id);
+                VLog.w(TAG, "Unable to remove orphan StubActivity task=" + physicalTaskId);
             }
         }
     }
@@ -2371,7 +2372,7 @@ public class VActivityManagerService extends IActivityManager.Stub
 
 
     private String getProcessName(int pid) {
-        List<ActivityManager.RunningAppProcessInfo> processes = am.getRunningAppProcesses();
+        List<ActivityManager.RunningAppProcessInfo> processes = RawSystemProcessAuthority.rawProcessSnapshot();
         if (processes == null) {
             return null;
         }
@@ -3005,7 +3006,7 @@ public class VActivityManagerService extends IActivityManager.Stub
      * start an empty Stub as a side effect of reconciliation.
      */
     private void reconcileRunningStubProcessesLocked() {
-        List<ActivityManager.RunningAppProcessInfo> processes = am.getRunningAppProcesses();
+        List<ActivityManager.RunningAppProcessInfo> processes = RawSystemProcessAuthority.rawProcessSnapshot();
         if (processes == null) {
             return;
         }
@@ -3118,7 +3119,7 @@ public class VActivityManagerService extends IActivityManager.Stub
             return false;
         }
         String expectedName = VirtualCore.get().getHostPkg() + ":p" + vpid;
-        List<ActivityManager.RunningAppProcessInfo> processes = am.getRunningAppProcesses();
+        List<ActivityManager.RunningAppProcessInfo> processes = RawSystemProcessAuthority.rawProcessSnapshot();
         if (processes == null) {
             return false;
         }

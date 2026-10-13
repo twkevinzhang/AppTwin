@@ -43,7 +43,10 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
-        mainViewModel = ViewModelProvider(this)[MainViewModel::class.java]
+        mainViewModel = ViewModelProvider(
+            this,
+            (application as AppTwinApplication).mainContainer.viewModelFactory,
+        )[MainViewModel::class.java]
         setContent {
             AppTwinApp(
                 viewModel = mainViewModel,

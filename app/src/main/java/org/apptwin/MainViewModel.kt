@@ -1,22 +1,17 @@
 package org.apptwin
 
-import android.app.Application
-import android.content.Context
 import android.net.Uri
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
-import androidx.lifecycle.AndroidViewModel
+import androidx.lifecycle.ViewModel
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.CoroutineDispatcher
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.withContext
 import org.apptwin.archive.ArchiveExportSettingsStore
-import org.apptwin.archive.SharedPreferencesArchiveExportSettingsStore
 import org.apptwin.archive.SpaceArchiveCompression
 import org.apptwin.groups.Group
 import org.apptwin.compatibility.CompatibilityLevel
@@ -125,130 +120,8 @@ data class MainUiState(
     val messageId: Long = 0,
 )
 
-internal data class StorageStatus(
-    val granted: Boolean,
-    val downloadCount: Int,
-    val photoCount: Int,
-)
-
-internal data class MainRefreshSnapshot(
-    val storage: StorageStatus,
-    val entries: List<InstalledAppEntry>,
-    val groups: List<Group>,
-    val activeRevisions: Map<String, ActiveRevisionSummary?>,
-    val dataWarnings: List<String>,
-    val operations: List<OperationRecord> = emptyList(),
-    val permissions: Map<String, ClonePermissionState> = emptyMap(),
-    val clonePermissions: List<ClonePermissionSummary> = emptyList(),
-    val gmsCompatibility: Map<String, GmsGroupProductState> = emptyMap(),
-)
-
-/** The durable data needed to draw the space cards without starting the virtual runtime. */
-internal data class MainGroupSnapshot(
-    val groups: List<Group>,
-    val operations: List<OperationRecord>,
-    val dataWarnings: List<String>,
-)
-
-internal sealed interface DeleteGroupResult {
-    data object NotFound : DeleteGroupResult
-    data class Deleted(
-        val group: Group,
-        val cleanupWarning: String? = null,
-    ) : DeleteGroupResult
-}
-
-internal data class SpaceArchiveExportResult(
-    val groupName: String,
-    val bytesWritten: Long,
-)
-
-internal data class CreateSpaceFromBackupResult(
-    val group: Group,
-)
-
-/** Blocking application operations. MainViewModel always invokes these on its IO dispatcher. */
-internal interface MainOperations {
-    suspend fun loadGroupSnapshot(): MainGroupSnapshot
-    suspend fun refreshSnapshot(groups: MainGroupSnapshot): MainRefreshSnapshot
-    suspend fun globalBackupLocation(): String? = null
-    suspend fun loadSpaceDetails(groupId: String): SpaceDetails? = null
-    suspend fun loadSpaceBackgroundHealth(groupId: String): SpaceBackgroundHealth = SpaceBackgroundHealth(groupId)
-    suspend fun retrySpaceBackground(groupId: String): Boolean = false
-    suspend fun addSpaceAccount(groupId: String, type: String) = Unit
-    suspend fun synchronizeSpaceAccount(groupId: String, account: SpaceAccountEntry, authority: String): String = "同步未支援"
-    suspend fun removeSpaceAccount(groupId: String, account: SpaceAccountEntry): AccountRemovalResult = AccountRemovalResult.REJECTED
-    suspend fun deleteBackup(id: String) = Unit
-    suspend fun setGlobalBackupLocation(uri: Uri) = Unit
-    suspend fun exportToGlobalLocation(groupId: String, compression: SpaceArchiveCompression): SpaceArchiveExportResult = error("尚未設定備份位置")
-    suspend fun findGroup(groupId: String): Group?
-    suspend fun createGroup(name: String): Group
-    suspend fun renameGroup(groupId: String, name: String): Group?
-    suspend fun deleteGroup(groupId: String): DeleteGroupResult
-    suspend fun exportSpace(
-        groupId: String,
-        destination: Uri,
-        compression: SpaceArchiveCompression,
-    ): SpaceArchiveExportResult
-    suspend fun createSpaceFromBackup(source: Uri): CreateSpaceFromBackupResult
-    suspend fun addAppToGroup(groupId: String, packageName: String): Group
-    suspend fun launchGroupApp(item: GroupAppItem): RuntimeLaunchResult
-    suspend fun uninstallGroupApp(item: GroupAppItem): GroupAppRemovalResult
-    suspend fun clearGroupAppStorage(item: GroupAppItem): ClearCloneStorageResult
-    suspend fun clearGroupStorage(groupId: String): ClearSpaceStorageResult
-    suspend fun createShortcut(item: GroupAppItem): ShortcutCreationResult
-    suspend fun exportDiagnostics(): String
-    suspend fun repairClone(item: GroupAppItem): RepairExecutionResult
-    suspend fun setClonePermission(
-        item: GroupAppItem,
-        permission: String,
-        granted: Boolean,
-    ): Boolean
-    suspend fun resolveDeepLink(uri: String): List<Pair<String, String>>
-    suspend fun launchDeepLink(item: GroupAppItem, uri: String): RuntimeLaunchResult
-    suspend fun reconcileGroups(): GroupReconciliationResult
-    suspend fun reconcileAppRemovals()
-    suspend fun reconcileApplicationOperations()
-    suspend fun reconcileGms(): GmsStartupResult
-}
-
-internal interface OnboardingStore {
-    fun isCompleted(): Boolean
-    fun markCompleted()
-}
-
-internal data class ClonePermissionState(
-    val cameraGranted: Boolean,
-    val microphoneGranted: Boolean,
-)
-
-private class AndroidOnboardingStore(application: Application) : OnboardingStore {
-    private val preferences = application.getSharedPreferences(PREFERENCES_NAME, Context.MODE_PRIVATE)
-
-    override fun isCompleted(): Boolean = preferences.getBoolean(COMPLETED_KEY, false)
-
-    override fun markCompleted() {
-        preferences.edit().putBoolean(COMPLETED_KEY, true).apply()
-    }
-
-    private companion object {
-        const val PREFERENCES_NAME = "product-onboarding"
-        const val COMPLETED_KEY = "completed"
-    }
-}
-
-private object CompletedOnboardingStore : OnboardingStore {
-    override fun isCompleted(): Boolean = true
-    override fun markCompleted() = Unit
-}
-
-private object DefaultArchiveExportSettingsStore : ArchiveExportSettingsStore {
-    override fun load(): SpaceArchiveCompression = SpaceArchiveCompression.MEDIUM
-    override fun save(compression: SpaceArchiveCompression) = Unit
-}
 
 class MainViewModel internal constructor(
-    application: Application,
     private val savedStateHandle: SavedStateHandle,
     private val operations: MainOperations,
     private val ioDispatcher: CoroutineDispatcher,
@@ -256,18 +129,7 @@ class MainViewModel internal constructor(
     private val archiveExportSettingsStore: ArchiveExportSettingsStore =
         DefaultArchiveExportSettingsStore,
     private val launchDispatcher: CoroutineDispatcher = ioDispatcher,
-) : AndroidViewModel(application) {
-    @OptIn(ExperimentalCoroutinesApi::class)
-    constructor(application: Application, savedStateHandle: SavedStateHandle) : this(
-        application = application,
-        savedStateHandle = savedStateHandle,
-        operations = AndroidMainOperations(application),
-        ioDispatcher = Dispatchers.IO.limitedParallelism(1),
-        launchDispatcher = Dispatchers.IO.limitedParallelism(1),
-        onboardingStore = AndroidOnboardingStore(application),
-        archiveExportSettingsStore = SharedPreferencesArchiveExportSettingsStore(application),
-    )
-
+) : ViewModel() {
     private var pendingLaunch: PendingLaunch? = null
     private var resolvingDeepLinkUri: String? = null
     private var resolvedDeepLinkIdentities: Set<Pair<String, String>>? = null

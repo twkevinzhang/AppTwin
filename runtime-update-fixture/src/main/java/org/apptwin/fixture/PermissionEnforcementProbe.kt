@@ -73,7 +73,8 @@ object PermissionEnforcementProbe {
             try {
                 manager.requestLocationUpdates(LocationManager.GPS_PROVIDER, 1000L, 0f, listener, Looper.getMainLooper())
                 true
-            } finally { manager.removeUpdates(listener) }
+            } catch (denied: SecurityException) { throw denied }
+            finally { manager.removeUpdates(listener) }
         }
         probe("coarseLocationSubscription") {
             val manager = context.getSystemService(Context.LOCATION_SERVICE) as LocationManager
@@ -81,11 +82,13 @@ object PermissionEnforcementProbe {
             try {
                 manager.requestLocationUpdates(LocationManager.NETWORK_PROVIDER, 1000L, 0f, listener, Looper.getMainLooper())
                 true
-            } finally { manager.removeUpdates(listener) }
+            } catch (denied: SecurityException) { throw denied }
+            finally { manager.removeUpdates(listener) }
         }
         probe("locationRead") {
             val manager = context.getSystemService(Context.LOCATION_SERVICE) as LocationManager
-            manager.getLastKnownLocation(LocationManager.GPS_PROVIDER) != null
+            try { manager.getLastKnownLocation(LocationManager.GPS_PROVIDER) != null }
+            catch (denied: SecurityException) { throw denied }
         }
         probe("cameraOpen") {
             @Suppress("DEPRECATION")
@@ -95,8 +98,8 @@ object PermissionEnforcementProbe {
         }
         probe("microphoneRead") {
             val minimum = AudioRecord.getMinBufferSize(8000, AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT)
-            val recorder = AudioRecord(MediaRecorder.AudioSource.MIC, 8000, AudioFormat.CHANNEL_IN_MONO,
-                AudioFormat.ENCODING_PCM_16BIT, maxOf(minimum, 2048))
+            val recorder = try { AudioRecord(MediaRecorder.AudioSource.MIC, 8000, AudioFormat.CHANNEL_IN_MONO,
+                AudioFormat.ENCODING_PCM_16BIT, maxOf(minimum, 2048)) } catch (denied: SecurityException) { throw denied }
             try {
                 recorder.startRecording()
                 val deadline = android.os.SystemClock.elapsedRealtime() + 1500
