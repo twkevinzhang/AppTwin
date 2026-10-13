@@ -41,7 +41,9 @@ class MediaCompatibilityActivity : Activity() {
             fun probe(key: String, operation: () -> Boolean) {
                 result.put(key, try { if (operation()) "allowed" else "empty" } catch (failure: Exception) { "blocked:${failure.javaClass.simpleName}" })
             }
-            if (config.optString("mode") == "shared-write") {
+            if (config.optString("mode") == "selected-file-isolation") {
+                collectSelectedFileIsolation(config, result)
+            } else if (config.optString("mode") == "shared-write") {
                 logSharedStage("probe-start")
                 collectSharedWrites(config, result)
             } else listOf("image", "video").forEach { kind ->
@@ -66,6 +68,26 @@ class MediaCompatibilityActivity : Activity() {
             check(temporary.renameTo(File(filesDir, "media-compat-result.json")))
             logSharedStage("probe-end")
         }.start()
+    }
+    private fun collectSelectedFileIsolation(config: JSONObject, result: JSONObject) {
+        require(config.getString("name") == "apptwin-file-probe-20261013.txt")
+        val uri = android.net.Uri.parse(config.getString("uri"))
+        require(uri.scheme == "content")
+        fun rejected(key: String, operation: () -> Unit) {
+            try {
+                operation()
+                result.put("${key}Rejected", false).put("${key}Exception", "none")
+            } catch (failure: Exception) {
+                result.put("${key}Rejected", failure is SecurityException)
+                    .put("${key}Exception", failure.javaClass.simpleName)
+            }
+        }
+        rejected("query") {
+            contentResolver.query(uri, arrayOf(android.provider.OpenableColumns.DISPLAY_NAME), null, null, null)?.use { it.moveToFirst() }
+        }
+        rejected("open") {
+            contentResolver.openInputStream(uri)?.use { it.read() }
+        }
     }
     private fun collectSharedWrites(config: JSONObject, result: JSONObject) {
         val expected = android.util.Base64.decode(config.getString("original"), android.util.Base64.NO_WRAP)

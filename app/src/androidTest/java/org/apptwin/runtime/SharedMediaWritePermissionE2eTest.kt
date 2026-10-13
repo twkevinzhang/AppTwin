@@ -240,5 +240,15 @@ class SharedMediaWritePermissionE2eTest {
             else if (failures.isNotEmpty()) throw AssertionError("Owned cleanup incomplete groups=${groups.map { it.id }}, media=$media, paths=${paths.map { it.name }}").apply { failures.forEach(::addSuppressed) }
         }
     }
-    private companion object { const val PACKAGE = "org.apptwin.fixture.mediacompat" }
+    private companion object {
+        val PACKAGE: String
+            get() {
+                val selected = InstrumentationRegistry.getArguments().getString("sharedWriteFixturePackage")
+                    ?: "org.apptwin.fixture.mediacompat"
+                require(selected == "org.apptwin.fixture.mediacompat" || selected == "org.apptwin.fixture.fileisolation") {
+                    "Unsupported shared-write fixture package"
+                }
+                return selected
+            }
+    }
 }

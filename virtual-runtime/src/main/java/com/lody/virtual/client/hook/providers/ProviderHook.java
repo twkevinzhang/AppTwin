@@ -151,6 +151,7 @@ public class ProviderHook implements InvocationHandler {
                 if (afterUri && arg instanceof String && documentMode == null) documentMode = (String) arg;
             }
             if (!com.lody.virtual.client.hook.GuestSelectedUriGrants.hasRead(selected)) {
+                com.lody.virtual.helper.compat.FilePickerDiagnostics.denied(method, selected != null);
                 throw new SecurityException("URI was not selected for this space");
             }
             if (MediaProviderAccessPolicy.usesLegacyWriteCapability(Build.VERSION.SDK_INT)

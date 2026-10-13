@@ -504,7 +504,14 @@ class MethodProxies {
             IBinder resultTo = resultToIndex >= 0 ? (IBinder) args[resultToIndex] : null;
             int userId = VUserHandle.myUserId();
 
-            if (ComponentUtils.isStubComponent(intent)) {
+            int diagnosticRequestCode = resultToIndex >= 0 && resultToIndex + 2 < args.length
+                    && args[resultToIndex + 2] instanceof Integer ? (Integer) args[resultToIndex + 2] : -1;
+            boolean diagnosticHostComponent = ComponentUtils.isStubComponent(intent);
+            com.lody.virtual.helper.compat.FilePickerDiagnostics.launch("ENTRY", method.getName(),
+                    intent, resultTo != null, diagnosticRequestCode, diagnosticHostComponent);
+            if (diagnosticHostComponent) {
+                com.lody.virtual.helper.compat.FilePickerDiagnostics.launch("STUB", method.getName(),
+                        intent, resultTo != null, diagnosticRequestCode, true);
                 return method.invoke(who, args);
             }
 
@@ -534,21 +541,25 @@ class MethodProxies {
                 resultWho = (String) args[resultToIndex + 1];
                 requestCode = (int) args[resultToIndex + 2];
             }
-            if (resultTo != null && (Intent.ACTION_OPEN_DOCUMENT.equals(intent.getAction())
-                    || Intent.ACTION_GET_CONTENT.equals(intent.getAction())
-                    || "android.provider.action.PICK_IMAGES".equals(intent.getAction()))) {
+            Intent pickerRequest = com.lody.virtual.helper.compat.UriPickerRequestPolicy.extract(
+                    intent, getHostPkg());
+            if (resultTo != null && pickerRequest != null) {
+                com.lody.virtual.helper.compat.FilePickerDiagnostics.launch("TRUSTED", method.getName(),
+                        intent, true, requestCode, diagnosticHostComponent);
                 String session = VActivityManager.get().prepareUriPicker(intent, resultTo);
                 Intent bridge = new Intent();
                 bridge.setComponent(new ComponentName(getHostContext(),
                         com.lody.virtual.client.stub.TrustedUriPickerActivity.class));
                 bridge.putExtra(com.lody.virtual.client.stub.TrustedUriPickerActivity.SESSION, session);
-                args[intentIndex] = bridge;
-                args[intentIndex + 1] = null;
+                com.lody.virtual.helper.compat.UriPickerRequestPolicy.replaceLaunchIntent(
+                        args, intentIndex, bridge);
                 MethodParameterUtils.replaceFirstAppPkg(args);
                 return method.invoke(who, args);
             }
             // chooser
             if (ChooserActivity.check(intent)) {
+                com.lody.virtual.helper.compat.FilePickerDiagnostics.launch("CHOOSER", method.getName(),
+                        intent, resultTo != null, requestCode, diagnosticHostComponent);
                 intent.setComponent(new ComponentName(getHostContext(), ChooserActivity.class));
                 intent.putExtra(Constants.EXTRA_USER_HANDLE, userId);
                 intent.putExtra(ChooserActivity.EXTRA_DATA, options);
@@ -573,6 +584,8 @@ class MethodProxies {
 
             ActivityInfo activityInfo = VirtualCore.get().resolveActivityInfo(intent, userId);
             if (activityInfo == null) {
+                com.lody.virtual.helper.compat.FilePickerDiagnostics.launch("EXTERNAL", method.getName(),
+                        intent, resultTo != null, requestCode, diagnosticHostComponent);
                 VLog.e("VActivityManager", "Unable to resolve activityInfo : %s", intent);
                 if (intent.getPackage() != null && isAppPkg(intent.getPackage())) {
                     return ActivityManagerCompat.START_INTENT_NOT_RESOLVED;
