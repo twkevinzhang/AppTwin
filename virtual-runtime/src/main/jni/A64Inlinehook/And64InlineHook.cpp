@@ -33,8 +33,17 @@
 #include <string.h>
 #include <stdlib.h>
 #include <sys/mman.h>
+#include <unistd.h>
+#include <sys/syscall.h>
+#include <time.h>
+#include <mutex>
+#include <atomic>
+#include <fcntl.h>
+#include <android/log.h>
 #include "And64InlineHook.hpp"
 #include "A64FarJumpPatch.h"
+#include "A64NearBranch.h"
+#include "A64IndirectIsland.h"
 #define   A64_MAX_INSTRUCTIONS 5
 #define   A64_MAX_REFERENCES   (A64_MAX_INSTRUCTIONS * 2)
 #define   A64_NOP              0xd503201fu
@@ -500,48 +509,199 @@ static uint32_t *FastAllocateTrampoline()
 
 //-------------------------------------------------------------------------
 
+namespace {
+struct BranchIsland {
+    void *entry;
+    unsigned page_index, slot_index;
+    BranchIsland(void *address = nullptr, unsigned page = A64NearBranch::kMaximumPages,
+                 unsigned slot = A64IndirectIsland::kSlotsPerPage) : entry(address), page_index(page), slot_index(slot) {}
+};
+struct IslandPage {
+    void *entry;
+    size_t size;
+    A64IndirectIsland::Slots slots;
+    IslandPage() : entry(nullptr), size(0), slots() {}
+};
+static std::mutex island_mutex;
+static unsigned island_pages = 0;
+static IslandPage island_pool[A64NearBranch::kMaximumPages];
+// Exactly 64 KiB of stable writable target data, separate from immutable RX code.
+alignas(8) static uint64_t island_targets[A64NearBranch::kMaximumPages][A64IndirectIsland::kSlotsPerPage];
+static uint64_t island_now_ns() {
+    struct timespec time = {};
+    if (syscall(__NR_clock_gettime, CLOCK_MONOTONIC, &time) != 0) return 0;
+    return static_cast<uint64_t>(time.tv_sec) * 1000000000ULL + time.tv_nsec;
+}
+static void release_island(BranchIsland island) {
+    if (!island.entry) return;
+    std::lock_guard<std::mutex> lock(island_mutex);
+    if (island.page_index < A64NearBranch::kMaximumPages)
+        island_pool[island.page_index].slots.release(island.slot_index);
+}
+static void publish_island(BranchIsland island) {
+    if (!island.entry) return;
+    std::lock_guard<std::mutex> lock(island_mutex);
+    if (island.page_index < A64NearBranch::kMaximumPages)
+        island_pool[island.page_index].slots.publish(island.slot_index);
+}
+static BranchIsland reserve_island_slot(unsigned page, uintptr_t origin, uintptr_t destination) {
+    IslandPage &record = island_pool[page];
+    if (!record.entry) return {};
+    for (unsigned slot = 0; slot < A64IndirectIsland::kSlotsPerPage; ++slot) {
+        void *entry = static_cast<unsigned char *>(record.entry) + slot * A64IndirectIsland::kStubSize;
+        uint32_t branch;
+        if (A64NearBranch::encode(origin, reinterpret_cast<uintptr_t>(entry), &branch) &&
+            record.slots.reserve(slot, destination)) return {entry, page, slot};
+    }
+    return {};
+}
+static void island_failure(const char *reason, int error, unsigned attempts, unsigned pages) {
+    static std::atomic<unsigned> messages(0);
+    if (messages.fetch_add(1, std::memory_order_relaxed) < 8) {
+        __android_log_print(ANDROID_LOG_WARN, "A64NearHook",
+                            "reason=%s errno=%d attempts=%u pages=%u", reason, error, attempts, pages);
+    }
+}
+static bool island_maps(uint64_t started, std::vector<A64NearBranch::MapRange> *ranges,
+                        const char **reason, int *error) {
+    int descriptor = static_cast<int>(syscall(__NR_openat, AT_FDCWD, "/proc/self/maps", O_RDONLY | O_CLOEXEC, 0));
+    if (descriptor < 0) { *reason = "maps-open"; *error = errno; return false; }
+    std::vector<char> text(A64NearBranch::kMaximumMapBytes);
+    size_t used = 0;
+    bool complete = false;
+    *reason = "maps-read-quota";
+    for (unsigned reads = 0; reads < 128; ++reads) {
+        uint64_t now = island_now_ns();
+        if (!now || now < started || now - started >= A64NearBranch::kAllocationDeadlineNs) {
+            *reason = "deadline"; break;
+        }
+        if (used == text.size()) { *reason = "maps-byte-limit"; break; }
+        ssize_t count = static_cast<ssize_t>(syscall(__NR_read, descriptor, text.data() + used, text.size() - used));
+        if (count == 0) { complete = true; break; }
+        if (count < 0) {
+            *error = errno;
+            if (errno == EINTR) continue;
+            *reason = "maps-read"; break;
+        }
+        used += static_cast<size_t>(count);
+    }
+    syscall(__NR_close, descriptor);
+    if (!complete) return false;
+    if (!A64NearBranch::parseMaps(text.data(), used, ranges)) { *reason = "maps-format-limit"; return false; }
+    return true;
+}
+static BranchIsland allocate_island(uintptr_t origin, uintptr_t destination) {
+    std::lock_guard<std::mutex> lock(island_mutex);
+    unsigned attempts = 0;
+    const char *reason = "no-gap";
+    int error = 0;
+    unsigned available = A64NearBranch::kMaximumPages;
+    for (unsigned page = 0; page < A64NearBranch::kMaximumPages; ++page) {
+        BranchIsland slot = reserve_island_slot(page, origin, destination);
+        if (slot.entry) return slot;
+        if (!island_pool[page].entry && available == A64NearBranch::kMaximumPages) available = page;
+    }
+    if (island_pages >= A64NearBranch::kMaximumPages || available == A64NearBranch::kMaximumPages) {
+        island_failure("page-quota", 0, 0, island_pages); return {};
+    }
+    long queried = sysconf(_SC_PAGESIZE);
+    if (queried <= 0) { island_failure("page-size", errno, 0, island_pages); return {}; }
+    size_t page_size = static_cast<size_t>(queried);
+    if (page_size < A64IndirectIsland::kSlotsPerPage * A64IndirectIsland::kStubSize) {
+        island_failure("page-size", 0, 0, island_pages); return {};
+    }
+    uint64_t started = island_now_ns();
+    if (!started) { island_failure("clock", errno, 0, island_pages); return {}; }
+    std::vector<A64NearBranch::MapRange> ranges;
+    if (!island_maps(started, &ranges, &reason, &error)) {
+        island_failure(reason, error, attempts, island_pages); return {};
+    }
+    std::vector<uintptr_t> candidates;
+    if (!A64NearBranch::gapCandidates(ranges, origin, page_size, &candidates)) {
+        island_failure("no-gap", 0, 0, island_pages); return {};
+    }
+    // Never use MAP_FIXED. Actual free intervals replace sparse guesses; racing
+    // allocations remain protected by NOREPLACE and exact-return verification.
+    constexpr int no_replace = 0x100000;
+    for (uintptr_t candidate : candidates) {
+        uint64_t now = island_now_ns();
+        if (!now || now < started || now - started >= A64NearBranch::kAllocationDeadlineNs) { reason = "deadline"; break; }
+        if (attempts >= A64NearBranch::kMaximumAttempts) { reason = "attempt-quota"; break; }
+        ++attempts;
+        void *page = reinterpret_cast<void *>(syscall(__NR_mmap, reinterpret_cast<void *>(candidate),
+                              page_size, PROT_READ | PROT_WRITE,
+                              MAP_PRIVATE | MAP_ANONYMOUS | no_replace, -1, 0));
+        if (page == MAP_FAILED) { reason = "map"; error = errno; continue; }
+        ++island_pages;
+        uint32_t branch;
+        if (reinterpret_cast<uintptr_t>(page) != candidate ||
+            !A64NearBranch::encode(origin, reinterpret_cast<uintptr_t>(page), &branch)) {
+            reason = "map-address";
+            if (syscall(__NR_munmap, page, page_size) == 0) --island_pages;
+            else { reason = "cleanup"; error = errno; }
+            if (island_pages >= A64NearBranch::kMaximumPages) break;
+            continue;
+        }
+        // Prepare every stub once while unpublished. No RX instruction is ever
+        // rewritten when later hooks reserve another slot on this page.
+        for (unsigned slot = 0; slot < A64IndirectIsland::kSlotsPerPage; ++slot) {
+            A64IndirectIsland::encode(static_cast<unsigned char *>(page) + slot * A64IndirectIsland::kStubSize,
+                                      &island_targets[available][slot]);
+        }
+        __flush_cache(page, A64IndirectIsland::kSlotsPerPage * A64IndirectIsland::kStubSize);
+        if (syscall(__NR_mprotect, page, page_size, PROT_READ | PROT_EXEC) != 0) {
+            reason = "protect"; error = errno;
+            if (syscall(__NR_munmap, page, page_size) == 0) --island_pages;
+            else { reason = "cleanup"; error = errno; }
+            if (island_pages >= A64NearBranch::kMaximumPages) break;
+            continue;
+        }
+        IslandPage &record = island_pool[available];
+        record.entry = page;
+        record.size = page_size;
+        if (!record.slots.prepare(island_targets[available])) {
+            island_failure("slot-state", 0, attempts, island_pages); return {};
+        }
+        return reserve_island_slot(available, origin, destination);
+    }
+    island_failure(reason, error, attempts, island_pages);
+    return {};
+}
+}
+
 A64_JNIEXPORT void *A64HookFunctionV(void *const symbol, void *const replace,
                                      void *const rwx, const uintptr_t rwx_size)
 {
-    static constexpr uint_fast64_t mask = 0x03ffffffu; // 0b00000011111111111111111111111111
-
-    uint32_t *trampoline = static_cast<uint32_t *>(rwx), *original = static_cast<uint32_t *>(symbol);
-
-    static_assert(A64_MAX_INSTRUCTIONS >= 5, "please fix A64_MAX_INSTRUCTIONS!");
-    auto pc_offset = static_cast<int64_t>(__intval(replace) - __intval(symbol)) >> 2;
-    if (llabs(pc_offset) >= (mask >>1)) {
-        constexpr int32_t count = A64FarJump::kInstructionCount;
-        if (trampoline) {
-            if (rwx_size < count * 10u) {
-                return NULL;
-            } //if
-            __fix_instructions(original, count, trampoline);
-        } //if
-
-        if (__make_rwx(original, A64FarJump::kSize) == 0) {
-            A64FarJump::encode(original, static_cast<uint64_t>(__intval(replace)));
-            __flush_cache(symbol, A64FarJump::kSize);
-
-        } else {
-            trampoline = NULL;
-        } //if
-    } else {
-        if (trampoline) {
-            if (rwx_size < 1u * 10u) {
-                return NULL;
-            } //if
-            __fix_instructions(original, 1, trampoline);
-        } //if
-
-        if (__make_rwx(original, 1 * sizeof(uint32_t)) == 0) {
-            __sync_cmpswap(original, *original, 0x14000000u | (pc_offset & mask)); // "B" ADDR_PCREL26
-            __flush_cache(symbol, 1 * sizeof(uint32_t));
-
-        } else {
-            trampoline = NULL;
-        } //if
-    } //if
-
+    if (!symbol || !replace || (reinterpret_cast<uintptr_t>(symbol) & 3u)) return NULL;
+    uint32_t *original = static_cast<uint32_t *>(symbol);
+    uint32_t *trampoline = static_cast<uint32_t *>(rwx);
+    uint32_t branch;
+    BranchIsland island;
+    if (!A64NearBranch::encode(reinterpret_cast<uintptr_t>(symbol),
+                               reinterpret_cast<uintptr_t>(replace), &branch)) {
+        island = allocate_island(reinterpret_cast<uintptr_t>(symbol), reinterpret_cast<uintptr_t>(replace));
+        if (!island.entry || !A64NearBranch::encode(reinterpret_cast<uintptr_t>(symbol),
+                                                    reinterpret_cast<uintptr_t>(island.entry), &branch)) {
+            release_island(island);
+            return NULL; // No unsafe multi-instruction origin fallback.
+        }
+    }
+    const uint32_t expected = __atomic_load_n(original, __ATOMIC_SEQ_CST);
+    if (trampoline) {
+        if (rwx_size < 10u * sizeof(uint32_t)) { release_island(island); return NULL; }
+        __fix_instructions(original, 1, trampoline);
+    }
+    // Other threads already beyond the entry retain every remaining instruction.
+    // The island and trampoline are complete and cache-flushed before publication.
+    if (__make_rwx(original, sizeof(uint32_t)) != 0 ||
+        !A64NearBranch::publish(original, expected, branch)) {
+        release_island(island);
+        return NULL;
+    }
+    __flush_cache(symbol, sizeof(uint32_t));
+    publish_island(island);
+    // Published RX island lives until process exit; it cannot be unmapped while
+    // any thread may still execute or fetch it. Allocation count and bytes are bounded.
     return trampoline;
 }
 

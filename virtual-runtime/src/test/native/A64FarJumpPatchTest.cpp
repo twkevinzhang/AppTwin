@@ -4,9 +4,9 @@
 #include <cstring>
 #include <cstdint>
 int main() {
-    static_assert(A64FarJump::kSize == 16, "must fit a 16-byte libc veneer");
-    static_assert(A64FarJump::kInstructionCount == 4, "relocate exactly patched instructions");
-    // Test both entry alignments, retaining adjacent open-like PAC instruction.
+    static_assert(A64FarJump::kSize == 16, "fixed island stub size");
+    static_assert(A64FarJump::kInstructionCount == 4, "fixed island instruction footprint");
+    // Test unpublished stub buffers at both alignments, preserving adjacent bytes.
     for (std::size_t offset : {std::size_t(0), std::size_t(4)}) {
         alignas(8) std::array<unsigned char, 36> bytes;
         bytes.fill(0xA5);
