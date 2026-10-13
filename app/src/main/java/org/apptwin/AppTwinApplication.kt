@@ -13,6 +13,8 @@ import org.apptwin.crash.CrashReporting
 
 /** Boots the GPL virtual runtime before Android creates any host or guest component. */
 class AppTwinApplication : Application() {
+    internal val mainContainer: MainApplicationContainer by lazy { MainApplicationContainer(this) }
+
     private var isolatedWorker = false
 
     override fun attachBaseContext(base: Context) {

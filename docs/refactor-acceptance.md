@@ -20,7 +20,7 @@
 | 階段 | 產物與完成條件 | 驗收證據要求 | 狀態 |
 | --- | --- | --- | --- |
 | 固定契約 | 盤點操作與狀態；補缺少的 characterization 測試；建立本契約 | 基線與新增測試、build、Lint；狀態 UI 在實體裝置執行 | 通過：本機與正式 Pixel 10a 驗收 |
-| 拆操作與組裝 | 細分操作介面與實際 Android adapter 實作；手動 composition root；共享 coordinator | 操作語意、復原與重複操作回歸；build、Lint、相關 unit／整合測試 | 未開始 |
+| 拆操作與組裝 | 細分操作介面與實際 Android adapter 實作；手動 composition root；共享 coordinator | 操作語意、復原與重複操作回歸；build、Lint、相關 unit／整合測試 | 通過：本機與正式 Pixel 10a 驗收 |
 | 拆畫面狀態 | Home／Picker／Details／Settings 責任與狀態持有者實際分離；保持 UI 與 navigation 契約 | SavedState、切換／晚到結果、操作進度及畫面狀態回歸；build、Lint、unit／UI | 未開始 |
 | 整理 Lifecycle／權限／背景觀察 | 平台邊界提供觀察與權限能力，UI 停止時釋放 observer；操作前重新查權限 | Lifecycle 重建／停止／返回設定、權限撤銷、背景 retry／stop fences；build、Lint、unit／實機 | 未開始 |
 | 小範圍整理 runtime | 明確限定一條現有 runtime 路徑，抽取可測 policy／helper | exact scope、非法 caller／Intent、失敗／取消／重複事件與版本差異；build、Lint、unit／實機整合 | 未開始 |
@@ -71,3 +71,16 @@ UI fixture 測試不等於真實資料操作驗收。執行 connected tests 前�
 - 非作者審查完成；production、依賴與 AGENTS 未變更。Compose saved-state restoration 的證據不等於完整 Activity/process-death E2E。
 - 使用者已明確允許本次以 Pixel 10a 正式驗收。授權後重新執行正式六組 UI suites：34/34 通過，0 failure/skipped；build、Lint、app unit gate 再次成功。第一階段 gate 通過，後續四階段仍須逐一實作與驗收。
 
+
+### 第二階段：操作與組裝拆分，正式驗收通過
+
+- 實際 48 個操作/helper 分入八個 focused Android adapter；Application 持有單一 composition graph、stores、journals、runtime 與 GMS 狀態。MainViewModel 改為注入依賴的 plain ViewModel，production factory 以 pinned Lifecycle 2.8.7 的 CreationExtras 建立 SavedStateHandle。保留既有 dispatcher、mutex、generation fence 與依賴版本。
+- 非作者審查確認操作語意、共享 graph／factory 身分及嚴格驗收斷言。完整 Gradle build、app 190 個與 runtime 791 個 unit tests 通過，零 failure/error/skip；Lint 保留既有 baseline，app 30 warnings、runtime 133 warnings/2 hints、fixture 17 warnings，無未過濾 error/fatal。
+- 正式 Pixel 10a/API 37/host target 28 共 46 個測試執行全部通過：五輪 add/first-launch＋兩次 warm reuse（同 instance/PID/task/count=1）；雙空間跨 host force-stop 的兩段隔離；八組實際 camera/audio grant/restart/revoke probes（1 個 test）；factory 2、備份/帳號 2、UI 契約 34。沒有以 body 通過取代 teardown，也沒有 skip 或人工 resumed 設定。已核對安裝 APK SHA-256，owned state/空間已清理，既有 public group/membership/environment 結構由測試確認保留。
+- 驗收揭露並修正三類 prerequisite：現代 `checkPermissionForDevice` 的 exact guest policy 路由；API 29+ canonical taskId 與 running/nonempty retention，orphan 清理保留雙 owner 查詢；reused ACK 必須確認實際 exact guest task。沒有放寬 permission、owner、generation、stub、workload gate、timeout 或新增依賴。
+- warm reuse 歷史失敗的直接原因證據為 engine 主動對原 fixture PID 發送 SIG9，kill callsite 明確為 `attach-running-stub-mismatch`。server 已裝 AM hook，guest-facing GetRunningAppProcesses 會投影已註冊 PID 的 name/UID；VAMS 卻用此投影驗證 host stub。三個權威 consumer 已改用 pre-hook raw AM，回傳 detached identity 並保留原 PID/hostUID/exactslot/generation 條件。修正後上述五輪及完整正式 gate 通過；暫時 runtime task-drop/kill 診斷已移除。所有歷史失敗與診斷樣本保留於 [stage2.json](refactor-evidence/stage2.json)，不計為正式通過。
+- failure-only 測試 metadata 僅保存 synthetic fixture lifecycle、allowlisted task/window 與固定身分欄位；不記訊息、帳號、token、Intent extras、UI text、聲音或影像。camera/audio probe 為 opt-in，麥克風讀取有界且即時丟棄，不更動 host sensor grants。
+- 僅 sideload-only fixture 停用 ExpiredTargetSdkVersion，以保留既有 target 28 相容性契約；其他 Lint detector 與 app/runtime baseline 不變，這不代表 Play 上架合規。SavedState fresh-owner 測試不等於真實 UI process-death；舊 Android 分支有 unit/官方文件核對，實機證據限 API 37。沒有宣稱 LINE ingress/通知問題已修復。
+- 官方核對：[PermissionManager](https://android.googlesource.com/platform/frameworks/base/+/android16-qpr2-release/core/java/android/permission/PermissionManager.java)、[IActivityManager](https://android.googlesource.com/platform/frameworks/base/+/android16-qpr2-release/core/java/android/app/IActivityManager.aidl)、[RecentTaskInfo](https://developer.android.com/reference/android/app/ActivityManager.RecentTaskInfo)、[TaskInfo](https://developer.android.com/reference/android/app/TaskInfo)、[AppTask.moveToFront](https://developer.android.com/reference/android/app/ActivityManager.AppTask#moveToFront()).
+
+可靠度分數：96%。驗證方式：比對正式 APK hashes、JUnit terminal status/零 skip、實機 lifecycle/有效能力及 exact public baseline assertions，並在後續階段重新執行原始路徑；新失敗需回到對應 gate，不能用歷史成功替代。

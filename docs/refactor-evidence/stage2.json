@@ -1,0 +1,285 @@
+{
+  "stage": 2,
+  "overall_gate": "passed",
+  "base_commit": "2ec3c54",
+  "device": "physical Pixel 10a, API 37, user-authorized for this five-stage refactor",
+  "host_target_sdk": 28,
+  "dependencies_changed": false,
+  "build_logs": [
+    "/tmp/apptwin-stage2-raw-process-authority-build.log",
+    "/tmp/apptwin-stage2-final-format-build.log"
+  ],
+  "app_unit": {
+    "tests": 190,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0
+  },
+  "runtime_unit": {
+    "tests": 791,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0
+  },
+  "lint": {
+    "app_warnings": 30,
+    "fixture_warnings": 17,
+    "runtime_warnings": 133,
+    "runtime_hints": 2,
+    "unfiltered_errors": 0,
+    "unfiltered_fatal": 0,
+    "existing_runtime_baseline_filtered_errors": 13,
+    "existing_runtime_baseline_filtered_warnings": 358,
+    "baseline_changed": false,
+    "fixture_policy": "Only sideload-only fixture ExpiredTargetSdkVersion disabled to preserve existing target 28 compatibility contract."
+  },
+  "device_runs": [
+    {
+      "name": "warm-reuse-round-1",
+      "log": "/tmp/apptwin-stage2-raw-process-authority-reuse-0.log",
+      "tests": 1,
+      "negative_status_codes": [],
+      "passed": true
+    },
+    {
+      "name": "warm-reuse-round-2",
+      "log": "/tmp/apptwin-stage2-raw-process-authority-reuse-1.log",
+      "tests": 1,
+      "negative_status_codes": [],
+      "passed": true
+    },
+    {
+      "name": "warm-reuse-round-3",
+      "log": "/tmp/apptwin-stage2-raw-process-authority-reuse-2.log",
+      "tests": 1,
+      "negative_status_codes": [],
+      "passed": true
+    },
+    {
+      "name": "warm-reuse-round-4",
+      "log": "/tmp/apptwin-stage2-raw-process-authority-reuse-3.log",
+      "tests": 1,
+      "negative_status_codes": [],
+      "passed": true
+    },
+    {
+      "name": "warm-reuse-round-5",
+      "log": "/tmp/apptwin-stage2-raw-process-authority-reuse-4.log",
+      "tests": 1,
+      "negative_status_codes": [],
+      "passed": true
+    },
+    {
+      "name": "isolation-phase1",
+      "log": "/tmp/apptwin-stage2-raw-final-isolation-phase1.log",
+      "tests": 1,
+      "negative_status_codes": [],
+      "passed": true
+    },
+    {
+      "name": "isolation-phase2",
+      "log": "/tmp/apptwin-stage2-raw-final-isolation-phase2.log",
+      "tests": 1,
+      "negative_status_codes": [],
+      "passed": true
+    },
+    {
+      "name": "sensors",
+      "log": "/tmp/apptwin-stage2-raw-final-sensors.log",
+      "tests": 1,
+      "negative_status_codes": [],
+      "passed": true
+    },
+    {
+      "name": "regression",
+      "log": "/tmp/apptwin-stage2-raw-final-regression.log",
+      "tests": 38,
+      "negative_status_codes": [],
+      "passed": true
+    }
+  ],
+  "device_test_executions": 46,
+  "sensor_capability_probes": 8,
+  "apk_hashes": {
+    "org.apptwin": {
+      "sha256": "bc5a07a70a85715afc0932a834e4b92517fd06449190f35c7a34cef426583013",
+      "installed_hash_matches": true
+    },
+    "org.apptwin.test": {
+      "sha256": "3beda83993eb227e93aab4570ab31bb113c42a5cc366697c3fb94d6f48b5323c",
+      "installed_hash_matches": true
+    }
+  },
+  "cleanup": {
+    "owned_restart_statefiles_remaining": 0,
+    "failure_cache_removed": true,
+    "owned_groups_removed_and_existing_public_structure_verified_by_tests": true,
+    "target_data_cleared": false,
+    "target_uninstalled": false
+  },
+  "review": "Independent non-author reviews accepted 48 operation bodies, factory/graph identity, guest permission routing, canonical task policy, raw authority and unchanged strict physical assertions.",
+  "resolved_prerequisites": [
+    "Modern checkPermissionForDevice maps to the same exact guest package/user permission policy with correct UID/deviceId positions.",
+    "Task history and orphan cleanup share API-aware canonical identity, with separate running/nonempty requirements for retention.",
+    "Reused launch ACK cannot bypass exact physical foreground task/user/package confirmation.",
+    "VAMS identity consumers use pre-hook raw process snapshots, avoiding guest-facing name/UID projection that triggered attach-running-stub-mismatch SIG9."
+  ],
+  "causal_evidence_logs": [
+    "/tmp/apptwin-stage2-guest-process-death.log",
+    "/tmp/apptwin-stage2-kill-decision-events-2.log",
+    "/tmp/apptwin-stage2-kill-decision-diagnostic-2.log"
+  ],
+  "historical_runs": [
+    {
+      "name": "ui",
+      "log": "/tmp/apptwin-stage2-ui.log",
+      "passed": true,
+      "tests": 34,
+      "negative_status_codes": []
+    },
+    {
+      "name": "launch",
+      "log": "/tmp/apptwin-stage2-launch.log",
+      "passed": true,
+      "tests": 1,
+      "negative_status_codes": []
+    },
+    {
+      "name": "factory-final",
+      "log": "/tmp/apptwin-stage2-factory-final.log",
+      "passed": true,
+      "tests": 2,
+      "negative_status_codes": []
+    },
+    {
+      "name": "backup-account",
+      "log": "/tmp/apptwin-stage2-backup-account.log",
+      "passed": true,
+      "tests": 2,
+      "negative_status_codes": []
+    },
+    {
+      "name": "isolation-phase1",
+      "log": "/tmp/apptwin-stage2-isolation-phase1.log",
+      "passed": false,
+      "tests": null,
+      "negative_status_codes": [
+        "-2"
+      ]
+    },
+    {
+      "name": "isolation-phase1-final",
+      "log": "/tmp/apptwin-stage2-isolation-phase1-final.log",
+      "passed": false,
+      "tests": null,
+      "negative_status_codes": [
+        "-2"
+      ]
+    },
+    {
+      "name": "factory",
+      "log": "/tmp/apptwin-stage2-factory.log",
+      "passed": false,
+      "tests": null,
+      "negative_status_codes": [
+        "-2"
+      ]
+    },
+    {
+      "name": "final-regression-before-task-identity",
+      "log": "/tmp/apptwin-stage2-final-regression.log",
+      "passed": true,
+      "tests": 38,
+      "negative_status_codes": []
+    },
+    {
+      "name": "strict-reuse-no-diagnostics",
+      "logs": [
+        "/tmp/apptwin-stage2-final-reuse-0.log",
+        "/tmp/apptwin-stage2-final-reuse-1.log",
+        "/tmp/apptwin-stage2-final-reuse-2.log",
+        "/tmp/apptwin-stage2-final-reuse-3.log"
+      ],
+      "passed": false,
+      "passed_rounds": 3,
+      "failed_round": 4,
+      "failure": "first warm relaunch recreated fixture; launch count 2"
+    },
+    {
+      "name": "strict-reuse-after-canonical-task-identity",
+      "logs": [
+        "/tmp/apptwin-stage2-task-identity-reuse-0.log",
+        "/tmp/apptwin-stage2-task-identity-reuse-1.log"
+      ],
+      "passed": false,
+      "passed_rounds": 1,
+      "failed_round": 2,
+      "failure": "same fixture instance/task/PID/count remained RESUMED but focused=false after first warm relaunch"
+    },
+    {
+      "name": "external-window-diagnostic-support-only",
+      "log": "/tmp/apptwin-stage2-focus-diagnostic-instrument.log",
+      "passed": true,
+      "tests": 1,
+      "counts_toward_final_gate": false
+    },
+    {
+      "name": "strict-reuse-after-truthful-foreground-confirmation",
+      "logs": [
+        "/tmp/apptwin-stage2-foreground-sync-reuse-0.log",
+        "/tmp/apptwin-stage2-foreground-sync-reuse-1.log",
+        "/tmp/apptwin-stage2-foreground-sync-reuse-2.log",
+        "/tmp/apptwin-stage2-foreground-sync-reuse-3.log"
+      ],
+      "passed": false,
+      "passed_rounds": 3,
+      "failed_round": 4,
+      "failure": "first warm launch correctly failed physical foreground confirmation"
+    },
+    {
+      "name": "strict-reuse-after-orphan-identity",
+      "logs": [
+        "/tmp/apptwin-stage2-orphan-identity-reuse-0.log",
+        "/tmp/apptwin-stage2-orphan-identity-reuse-1.log",
+        "/tmp/apptwin-stage2-orphan-identity-reuse-2.log",
+        "/tmp/apptwin-stage2-orphan-identity-reuse-3.log"
+      ],
+      "passed": false,
+      "passed_rounds": 3,
+      "failed_round": 4,
+      "failure": "first warm relaunch created a new fixture task; launch count 2"
+    },
+    {
+      "name": "bounded-task-drop-diagnostics",
+      "logs": [
+        "/tmp/apptwin-stage2-task-drop-diagnostic-0.log",
+        "/tmp/apptwin-stage2-task-drop-diagnostic-1.log",
+        "/tmp/apptwin-stage2-task-drop-diagnostic-2.log",
+        "/tmp/apptwin-stage2-task-drop-diagnostic-3.log",
+        "/tmp/apptwin-stage2-task-drop-diagnostic-4.log"
+      ],
+      "passed": true,
+      "tests": 5,
+      "counts_toward_final_gate": false
+    },
+    {
+      "name": "bounded-post-drop-only-diagnostics",
+      "logs": [
+        "/tmp/apptwin-stage2-post-drop-diagnostic-0.log",
+        "/tmp/apptwin-stage2-post-drop-diagnostic-1.log",
+        "/tmp/apptwin-stage2-post-drop-diagnostic-2.log"
+      ],
+      "passed": true,
+      "tests": 3,
+      "counts_toward_final_gate": false
+    }
+  ],
+  "pending": [],
+  "limitations": [
+    "Formal physical acceptance covers Pixel 10a/API 37 and host target 28; older Android API branches have unit/official-document coverage rather than physical-device coverage.",
+    "Activity recreation and fresh SavedState owner restoration are not a real process-death UI restoration test. Owned isolation separately force-stops the host between phases.",
+    "No LINE upstream message ingress or actual LINE notification fix is claimed.",
+    "Sideload fixture Lint exception does not establish Play distribution compliance.",
+    "Temporary runtime TaskDropProbe and KillDecisionProbe diagnostics were removed before final build and all formal gate runs. Test failure-only sanitized metadata remains."
+  ]
+}

@@ -67,7 +67,21 @@ public class UntrackedProcessAuthorityTest {
                 "scheduleOrphanedStubTaskReconciliation(null,"));
         assertEquals(false, cleanupSource.contains("if (!emptiedTaskIds.isEmpty())"));
         assertEquals(true, source.contains("OrphanStubTaskPolicy.shouldRemove"));
-        assertEquals(true, source.contains("mMainStack.hasLiveTaskOwnership(taskInfo.id)"));
+        int reconciliationStart = source.indexOf("private void reconcileOrphanedStubTasks");
+        int reconciliationEnd = source.indexOf("static boolean shouldScheduleInitialGmsReconciliation", reconciliationStart);
+        String reconciliation = source.substring(reconciliationStart, reconciliationEnd);
+        int canonical = reconciliation.indexOf("int physicalTaskId = PhysicalTaskSnapshot.canonicalTaskId(taskInfo)");
+        int unknownSkip = reconciliation.indexOf("if (physicalTaskId < 0", canonical);
+        int candidateScope = reconciliation.indexOf("candidateTaskIds.contains(physicalTaskId)", unknownSkip);
+        int firstOwner = reconciliation.indexOf("mMainStack.hasLiveTaskOwnership(physicalTaskId)");
+        int exactPolicy = reconciliation.indexOf("OrphanStubTaskPolicy.shouldRemove", firstOwner);
+        int secondOwner = reconciliation.indexOf("mMainStack.hasLiveTaskOwnership(physicalTaskId)", firstOwner + 1);
+        int removal = reconciliation.indexOf("appTask.finishAndRemoveTask()");
+        assertEquals(true, canonical >= 0);
+        assertEquals(true, unknownSkip > canonical && candidateScope > unknownSkip);
+        assertEquals(true, firstOwner > candidateScope && exactPolicy > firstOwner);
+        assertEquals(true, secondOwner > exactPolicy && removal > secondOwner);
+        assertEquals(false, reconciliation.contains("taskInfo.id"));
     }
 
     @Test

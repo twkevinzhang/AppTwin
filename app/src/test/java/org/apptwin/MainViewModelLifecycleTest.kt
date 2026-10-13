@@ -1,6 +1,5 @@
 package org.apptwin
 
-import android.app.Application
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModelStore
 import kotlinx.coroutines.CompletableDeferred
@@ -90,7 +89,6 @@ class MainViewModelLifecycleTest {
         val onboarding = FakeOnboardingStore()
         val operations = FakeOperations()
         val first = MainViewModel(
-            Application(),
             SavedStateHandle(),
             operations,
             dispatcher,
@@ -105,7 +103,6 @@ class MainViewModelLifecycleTest {
         assertTrue(onboarding.completed)
 
         val recreated = MainViewModel(
-            Application(),
             SavedStateHandle(),
             operations,
             dispatcher,
@@ -124,7 +121,6 @@ class MainViewModelLifecycleTest {
         )
         val operations = FakeOperations()
         val first = MainViewModel(
-            application = Application(),
             savedStateHandle = SavedStateHandle(),
             operations = operations,
             ioDispatcher = dispatcher,
@@ -139,7 +135,6 @@ class MainViewModelLifecycleTest {
         first.setArchiveCompression(org.apptwin.archive.SpaceArchiveCompression.LOW)
 
         val recreated = MainViewModel(
-            application = Application(),
             savedStateHandle = SavedStateHandle(),
             operations = operations,
             ioDispatcher = dispatcher,
@@ -1256,7 +1251,6 @@ class MainViewModelLifecycleTest {
         ioDispatcher: CoroutineDispatcher,
         launchDispatcher: CoroutineDispatcher = ioDispatcher,
     ) = MainViewModel(
-        application = Application(),
         savedStateHandle = savedState,
         operations = operations,
         ioDispatcher = ioDispatcher,

@@ -271,7 +271,7 @@ import static android.content.pm.ActivityInfo.LAUNCH_SINGLE_TOP;
             boolean taskAlive = false;
             while (iterator.hasNext()) {
                 ActivityManager.RecentTaskInfo info = iterator.next();
-                if (info.id == task.taskId) {
+                if (physicalRunningTaskId(info) == task.taskId) {
                     taskAlive = true;
                     iterator.remove();
                     break;
@@ -285,7 +285,7 @@ import static android.content.pm.ActivityInfo.LAUNCH_SINGLE_TOP;
                     for (ActivityManager.RecentTaskInfo physical : physicalTasks) {
                         ComponentName base = physical.baseActivity;
                         ComponentName top = physical.topActivity;
-                        if (TaskHistoryRetentionPolicy.shouldRetain(task.taskId, physical.id,
+                        if (TaskHistoryRetentionPolicy.shouldRetain(task.taskId, physicalRunningTaskId(physical),
                                 true, VirtualCore.get().getHostPkg(),
                                 base == null ? null : base.getPackageName(),
                                 base == null ? null : base.getClassName(),
@@ -301,6 +301,10 @@ import static android.content.pm.ActivityInfo.LAUNCH_SINGLE_TOP;
                 mHistory.removeAt(N);
             }
         }
+    }
+
+    private static int physicalRunningTaskId(ActivityManager.RecentTaskInfo info) {
+        return PhysicalTaskSnapshot.runningTaskId(info);
     }
 
     private List<ActivityManager.RecentTaskInfo> snapshotPhysicalTasks() {
@@ -996,7 +1000,7 @@ import static android.content.pm.ActivityInfo.LAUNCH_SINGLE_TOP;
         prunePendingTaskOwners(now);
         if (mPendingTaskOwners.isEmpty()) return false;
         for (ActivityManager.RecentTaskInfo physical : snapshotPhysicalTasks()) {
-            if (physical.id != taskId || physical.baseIntent == null) continue;
+            if (physicalRunningTaskId(physical) != taskId || physical.baseIntent == null) continue;
             try {
                 StubActivityRecord launch = new StubActivityRecord(physical.baseIntent);
                 PendingTaskOwner owner = mPendingTaskOwners.get(launch.preparedLaunchId);
@@ -1010,7 +1014,7 @@ import static android.content.pm.ActivityInfo.LAUNCH_SINGLE_TOP;
                         || !owner.stub.equals(physical.baseIntent.getComponent())
                         || (!owner.stub.equals(physical.baseActivity)
                             && !owner.stub.equals(physical.topActivity))) continue;
-                if (TaskHistoryRetentionPolicy.shouldRetain(taskId, physical.id,
+                if (TaskHistoryRetentionPolicy.shouldRetain(taskId, physicalRunningTaskId(physical),
                         mService.isPreparedActivityLaunchPending(launch.preparedLaunchId, owner.userId)
                             && TaskHistoryRetentionPolicy.isPendingOwnerValid(
                                 SystemClock.elapsedRealtime(), owner.preparedAt,

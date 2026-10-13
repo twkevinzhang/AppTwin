@@ -706,11 +706,13 @@ internal class HostActivityLaunchAdapter<Host : Any>(
                     )
                 } else {
                     acknowledged = awaitAcknowledgement(launchId, acknowledgementTimeoutMs)
-                    val guestActivityStarted = acknowledged || awaitExpectedGuestActivity(
-                        expectedPackage,
-                        userId,
-                        prepared,
-                    )
+                    // A reused activity can acknowledge onResume before its task becomes the
+                    // physical foreground task. Preserve exact task/user/package confirmation.
+                    val guestActivityStarted = if (prepared.isReused) {
+                        awaitExpectedGuestActivity(expectedPackage, userId, prepared)
+                    } else {
+                        acknowledged || awaitExpectedGuestActivity(expectedPackage, userId, prepared)
+                    }
                     if (guestActivityStarted) {
                         prepared
                     } else {
@@ -724,7 +726,7 @@ internal class HostActivityLaunchAdapter<Host : Any>(
                     error.message ?: "Unable to start guest activity",
                 )
             }
-            if (!acknowledged) {
+            if (!acknowledged || !result.isSuccess) {
                 try {
                     cancelAcknowledgement(launchId)
                 } catch (_: Throwable) {
