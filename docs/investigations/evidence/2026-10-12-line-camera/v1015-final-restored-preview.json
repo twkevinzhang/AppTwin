@@ -1,0 +1,25 @@
+{
+  "originalChatCameraEntry": true,
+  "previewResourceIdsVerified": true,
+  "manualGuestRestart": false,
+  "sampleIntervalSeconds": 2,
+  "samples": [
+    {
+      "clientPid": 31059,
+      "hostPackage": "org.apptwin",
+      "frameCount": 2091,
+      "captureRequests": 2094,
+      "configuredOutputStreams": 3,
+      "active": true
+    },
+    {
+      "clientPid": 31059,
+      "hostPackage": "org.apptwin",
+      "frameCount": 2155,
+      "captureRequests": 2158,
+      "configuredOutputStreams": 3,
+      "active": true
+    }
+  ],
+  "photoCapturedOrSent": false
+}

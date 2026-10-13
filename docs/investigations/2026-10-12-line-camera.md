@@ -95,3 +95,13 @@ v1015 原 READ 五階段再次嚴格 PASS，43.14秒。真實 openinfo 權限頁
 重連後由主代理接管 ADB；手機已解鎖。舊 UiAutomation 資訊與實際前景視窗不一致，NotificationShade 覆蓋 AppTwin，造成定位失敗。關閉通知欄後，以實際 MainActivity 權限頁確認 exact openinfo／LINE 的 CAMERA 開關，由false恢復true；沒有強制停止或重新安裝 AppTwin／LINE，也沒有修改其他 App 權限。
 
 透過唯讀解析 durable runtime-permissions.bin，確認 user2／jp.naver.line.android 的 CAMERA、READ_EXTERNAL_STORAGE、WRITE_EXTERNAL_STORAGE、RECORD_AUDIO 均true。證據為 `v1015-final-restored-grants.json`。相機已不再留在測試的拒絕狀態。之後正常啟動 cloned LINE，僅讀取 resource ID／bounds 與指定對象是否命中的安全 metadata，未保存聊天或預覽影像；原入口重試前 USB 再度斷線，ADB列表與macOS USB枚舉再次皆空。最後的恢復預覽重試仍待穩定連線，不能宣稱完整驗收完成。
+
+## 2026-10-13 最終恢復預覽驗收
+
+ASUS 再次連線後，主代理正常帶回現有 AppTwin MainActivity，從 openinfo 的 LINE 圖示啟動分身，透過聊天分頁選取指定「張震龍 Kevin」，點原左下角 `chat_ui_camera_button`。僅比對已授權對象名稱與 resource ID／bounds，未輸出聊天內容或保存螢幕影像。
+
+第一次進入有 ASUS motorservice 視窗覆蓋；未將相機 CONNECT 視為完整成功。正常返回聊天後再次點原相機按鈕，LINE 的 camera surface／render texture、拍照與錄影模式控制可見，CameraService 同一 PID31059 建立三個 output streams 且 ACTIVE。兩秒樣本 frameCount 2091→2155、capture requests 2094→2158；沒有重新安裝、強制停止或手動重啟 guest，沒有拍攝或傳送照片。證據：`v1015-final-restored-preview.json`。
+
+最終正常退出預覽並回 Home：active camera clients=0；exact user2 LINE CAMERA／READ／WRITE／RECORD_AUDIO durable grants 皆true，背景總設定的一位元組值為1，debug permission property 空值。LINE base／兩個 split APK hashes 與驗收前一致。本轮新增的 UI helper 已從手機及 host 刪除；fixture／兩個測試 Space／owned media 的先前清零紀錄保留，沒有再建立測試資料。證據：`v1015-final-camera-postflight.json`。
+
+結論：本次原相機入口的權限阻擋已修復，ASUS 的原入口預覽、CAMERA 拒絕決策及恢復授權後重試均有實機證據。根因是 LINE 仍檢查 legacy WRITE，但 host 與 guest 的 maxSdk29 宣告在 API31 缺少有效授權；CAMERA 開關本身不足以滿足入口檢查。可靠度分數：99%。驗證邊界：此次只驗收預覽與權限拒絕／恢復，不包含實際照片保存或傳送，也不宣稱 SDK≥33 或其他裝置已驗證。
