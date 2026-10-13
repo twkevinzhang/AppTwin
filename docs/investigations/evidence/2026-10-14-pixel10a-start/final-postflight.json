@@ -1,0 +1,57 @@
+{
+  "versionCode": 1021,
+  "versionName": "0.1.21-pixel10a-native-maps",
+  "apkSha256": "dbcc49481be4794dce833279c2004a634d409e61d141aafcf043b208b82a3313",
+  "deviceSha256": "dbcc49481be4794dce833279c2004a634d409e61d141aafcf043b208b82a3313",
+  "records": [
+    {
+      "time": "03:50:06.373",
+      "event": "mcs_tcp_connected",
+      "port": 5228
+    },
+    {
+      "time": "03:50:06.476",
+      "event": "mcs_login_response",
+      "success": true
+    },
+    {
+      "time": "03:50:12.343",
+      "pid": "28030",
+      "event": "binder_gate",
+      "installed": true
+    },
+    {
+      "time": "03:51:57.396",
+      "pid": "28689",
+      "event": "binder_gate",
+      "installed": true
+    },
+    {
+      "time": "03:51:58.010",
+      "pid": "28706",
+      "event": "binder_gate",
+      "installed": true
+    },
+    {
+      "time": "03:51:58.513",
+      "event": "mcs_tcp_connected",
+      "port": 5228
+    },
+    {
+      "time": "03:51:58.676",
+      "event": "mcs_login_response",
+      "success": true
+    },
+    {
+      "time": "03:52:05.259",
+      "pid": "28757",
+      "event": "binder_gate",
+      "installed": true
+    }
+  ],
+  "newAppTwinCrashEvents": 0,
+  "lineLaunchRounds": 3,
+  "observedScreen": "LINE welcome/login screen; no sign-in performed",
+  "dataCleared": false,
+  "cloudResourcesCreated": false
+}

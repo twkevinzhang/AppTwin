@@ -1,0 +1,17 @@
+v1021 first attempt: original byte-cap blocker removed, parser now rejects full maps snapshot. No acceptance success.
+10-14 03:41:42.585 26126 26126 W A64NearHook: maps reason=maps-format-limit errno=0 bytes=310285 ranges=1174 reads=79
+10-14 03:41:42.585 26126 26126 W A64NearHook: reason=maps-format-limit errno=0 attempts=0 pages=1
+10-14 03:41:42.585 26126 26126 I VA++    : Sensitive Binder gate installed=0
+10-14 03:41:42.586 26126 26126 E AndroidRuntime: java.lang.IllegalStateException: Unable to establish guest native permission boundary
+10-14 03:41:43.180 26139 26139 W A64NearHook: maps reason=maps-format-limit errno=0 bytes=308636 ranges=1179 reads=78
+10-14 03:41:43.180 26139 26139 W A64NearHook: reason=maps-format-limit errno=0 attempts=0 pages=1
+10-14 03:41:43.180 26139 26139 I VA++    : Sensitive Binder gate installed=0
+10-14 03:41:43.180 26139 26139 E AndroidRuntime: java.lang.IllegalStateException: Unable to establish guest native permission boundary
+10-14 03:41:59.072 26188 26188 W A64NearHook: maps reason=maps-format-limit errno=0 bytes=310913 ranges=1180 reads=79
+10-14 03:41:59.072 26188 26188 W A64NearHook: reason=maps-format-limit errno=0 attempts=0 pages=1
+10-14 03:41:59.072 26188 26188 I VA++    : Sensitive Binder gate installed=0
+10-14 03:41:59.073 26188 26188 E AndroidRuntime: java.lang.IllegalStateException: Unable to establish guest native permission boundary
+10-14 03:41:59.703 26205 26205 W A64NearHook: maps reason=maps-format-limit errno=0 bytes=308636 ranges=1179 reads=78
+10-14 03:41:59.703 26205 26205 W A64NearHook: reason=maps-format-limit errno=0 attempts=0 pages=1
+10-14 03:41:59.703 26205 26205 I VA++    : Sensitive Binder gate installed=0
+10-14 03:41:59.704 26205 26205 E AndroidRuntime: java.lang.IllegalStateException: Unable to establish guest native permission boundary

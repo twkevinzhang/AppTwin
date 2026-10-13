@@ -1,0 +1,36 @@
+Pixel 10a Android 17, org.apptwin v1020, openinfo/user1
+Original UI: LINE icon -> ACTIVITY_START_FAILED and app crash dialog
+Host maps: 353757 bytes/3692 ranges; server maps: 314740 bytes/3198 ranges. Guest snapshot size not yet measured.
+10-14 03:39:28.894 25784 25784 W A64NearHook: reason=maps-byte-limit errno=0 attempts=0 pages=0
+10-14 03:39:28.895 25784 25784 W A64NearHook: reason=maps-byte-limit errno=0 attempts=0 pages=0
+10-14 03:39:28.895 25784 25784 W A64NearHook: reason=maps-byte-limit errno=0 attempts=0 pages=0
+10-14 03:39:28.896 25784 25784 W A64NearHook: reason=maps-byte-limit errno=0 attempts=0 pages=0
+10-14 03:39:28.896 25784 25784 W A64NearHook: reason=maps-byte-limit errno=0 attempts=0 pages=0
+10-14 03:39:28.897 25784 25784 W A64NearHook: reason=maps-byte-limit errno=0 attempts=0 pages=0
+10-14 03:39:28.897 25784 25784 W A64NearHook: reason=maps-byte-limit errno=0 attempts=0 pages=0
+10-14 03:39:28.898 25784 25784 W A64NearHook: reason=maps-byte-limit errno=0 attempts=0 pages=0
+10-14 03:39:28.914 25784 25784 I VA++    : Sensitive Binder gate installed=0
+10-14 03:39:28.915 25784 25784 E AndroidRuntime: java.lang.IllegalStateException: Unable to establish guest native permission boundary
+10-14 03:39:28.915 25784 25784 E AndroidRuntime: Caused by: java.lang.SecurityException: Sensitive Binder gate unavailable
+10-14 03:39:30.722 25812 25812 W A64NearHook: reason=maps-byte-limit errno=0 attempts=0 pages=0
+10-14 03:39:30.723 25812 25812 W A64NearHook: reason=maps-byte-limit errno=0 attempts=0 pages=0
+10-14 03:39:30.724 25812 25812 W A64NearHook: reason=maps-byte-limit errno=0 attempts=0 pages=0
+10-14 03:39:30.725 25812 25812 W A64NearHook: reason=maps-byte-limit errno=0 attempts=0 pages=0
+10-14 03:39:30.726 25812 25812 W A64NearHook: reason=maps-byte-limit errno=0 attempts=0 pages=0
+10-14 03:39:30.727 25812 25812 W A64NearHook: reason=maps-byte-limit errno=0 attempts=0 pages=0
+10-14 03:39:30.728 25812 25812 W A64NearHook: reason=maps-byte-limit errno=0 attempts=0 pages=0
+10-14 03:39:30.730 25812 25812 W A64NearHook: reason=maps-byte-limit errno=0 attempts=0 pages=0
+10-14 03:39:30.757 25812 25812 I VA++    : Sensitive Binder gate installed=0
+10-14 03:39:30.758 25812 25812 E AndroidRuntime: java.lang.IllegalStateException: Unable to establish guest native permission boundary
+10-14 03:39:30.758 25812 25812 E AndroidRuntime: Caused by: java.lang.SecurityException: Sensitive Binder gate unavailable
+10-14 03:39:31.372 25826 25826 W A64NearHook: reason=maps-byte-limit errno=0 attempts=0 pages=0
+10-14 03:39:31.373 25826 25826 W A64NearHook: reason=maps-byte-limit errno=0 attempts=0 pages=0
+10-14 03:39:31.374 25826 25826 W A64NearHook: reason=maps-byte-limit errno=0 attempts=0 pages=0
+10-14 03:39:31.375 25826 25826 W A64NearHook: reason=maps-byte-limit errno=0 attempts=0 pages=0
+10-14 03:39:31.376 25826 25826 W A64NearHook: reason=maps-byte-limit errno=0 attempts=0 pages=0
+10-14 03:39:31.377 25826 25826 W A64NearHook: reason=maps-byte-limit errno=0 attempts=0 pages=0
+10-14 03:39:31.377 25826 25826 W A64NearHook: reason=maps-byte-limit errno=0 attempts=0 pages=0
+10-14 03:39:31.378 25826 25826 W A64NearHook: reason=maps-byte-limit errno=0 attempts=0 pages=0
+10-14 03:39:31.403 25826 25826 I VA++    : Sensitive Binder gate installed=0
+10-14 03:39:31.403 25826 25826 E AndroidRuntime: java.lang.IllegalStateException: Unable to establish guest native permission boundary
+10-14 03:39:31.403 25826 25826 E AndroidRuntime: Caused by: java.lang.SecurityException: Sensitive Binder gate unavailable

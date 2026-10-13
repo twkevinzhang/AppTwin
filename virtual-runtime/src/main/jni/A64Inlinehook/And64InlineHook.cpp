@@ -566,29 +566,27 @@ static bool island_maps(uint64_t started, std::vector<A64NearBranch::MapRange> *
                         const char **reason, int *error) {
     int descriptor = static_cast<int>(syscall(__NR_openat, AT_FDCWD, "/proc/self/maps", O_RDONLY | O_CLOEXEC, 0));
     if (descriptor < 0) { *reason = "maps-open"; *error = errno; return false; }
-    std::vector<char> text(A64NearBranch::kMaximumMapBytes);
-    size_t used = 0;
-    bool complete = false;
-    *reason = "maps-read-quota";
-    for (unsigned reads = 0; reads < 128; ++reads) {
-        uint64_t now = island_now_ns();
-        if (!now || now < started || now - started >= A64NearBranch::kAllocationDeadlineNs) {
-            *reason = "deadline"; break;
-        }
-        if (used == text.size()) { *reason = "maps-byte-limit"; break; }
-        ssize_t count = static_cast<ssize_t>(syscall(__NR_read, descriptor, text.data() + used, text.size() - used));
-        if (count == 0) { complete = true; break; }
-        if (count < 0) {
-            *error = errno;
-            if (errno == EINTR) continue;
-            *reason = "maps-read"; break;
-        }
-        used += static_cast<size_t>(count);
-    }
+    A64NearBranch::MapReadMetadata metadata;
+    const bool complete = A64NearBranch::readMaps(
+        [descriptor](char *buffer, size_t capacity, int *readError) -> std::ptrdiff_t {
+            const auto count = syscall(__NR_read, descriptor, buffer, capacity);
+            if (count < 0) *readError = errno;
+            return count;
+        }, [] { return island_now_ns(); }, started, ranges, reason, error, &metadata);
     syscall(__NR_close, descriptor);
-    if (!complete) return false;
-    if (!A64NearBranch::parseMaps(text.data(), used, ranges)) { *reason = "maps-format-limit"; return false; }
-    return true;
+    if (!complete) {
+        static std::atomic<unsigned> messages(0);
+        if (messages.fetch_add(1, std::memory_order_relaxed) < 8) {
+            __android_log_print(ANDROID_LOG_WARN, "A64NearHook",
+                "maps reason=%s errno=%d bytes=%zu ranges=%zu reads=%u parse=%s line=%zu offset=%zu lineBytes=%zu headerBytes=%zu permissions=%s nextSameStart=%d nextNonempty=%d nextPadding=%d emptyPairs=%u",
+                *reason, *error, metadata.bytes, metadata.ranges, metadata.reads,
+                metadata.parse.reason, metadata.parse.line, metadata.parse.offset,
+                metadata.parse.lineBytes, metadata.parse.headerBytes, metadata.parse.permissions,
+                metadata.parse.emptyNextSameStart, metadata.parse.emptyNextNonempty,
+                metadata.parse.emptyNextPadding, metadata.parse.emptyPairs);
+        }
+    }
+    return complete;
 }
 static BranchIsland allocate_island(uintptr_t origin, uintptr_t destination) {
     std::lock_guard<std::mutex> lock(island_mutex);

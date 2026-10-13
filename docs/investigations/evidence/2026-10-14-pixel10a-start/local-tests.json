@@ -1,0 +1,19 @@
+{
+  "command": "./gradlew :virtual-runtime:testDebugUnitTest --offline --rerun-tasks",
+  "tests": 775,
+  "failures": 0,
+  "errors": 0,
+  "skipped": 0,
+  "nativeSuites": [
+    "A64MapsReaderTest",
+    "A64NearBranchTest",
+    "A64IslandPoolTest",
+    "A64FarJumpPatchTest"
+  ],
+  "nativeSanitizers": [
+    "ASan",
+    "UBSan"
+  ],
+  "nativeResult": "PASS",
+  "apkBuild": "PASS"
+}
