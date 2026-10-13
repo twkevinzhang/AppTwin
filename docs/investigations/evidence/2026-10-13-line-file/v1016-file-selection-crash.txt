@@ -1,0 +1,18 @@
+10-13 17:41:21.981 18312 18312 E AndroidRuntime: FATAL EXCEPTION: main
+10-13 17:41:21.981 18312 18312 E AndroidRuntime: Process: jp.naver.line.android, PID: 18312
+10-13 17:41:21.981 18312 18312 E AndroidRuntime: org.apptwin.crash.GuestCrashReplayException
+10-13 17:41:21.981 18312 18312 E AndroidRuntime: 	at com.lody.virtual.client.hook.providers.ProviderHook.enforceSpaceAccess(ProviderHook.java:154)
+10-13 17:41:21.981 18312 18312 E AndroidRuntime: 	at com.lody.virtual.client.hook.providers.ProviderHook.invoke(ProviderHook.java:244)
+10-13 17:41:21.981 18312 18312 E AndroidRuntime: 	at java.lang.reflect.Proxy.invoke(Proxy.java:1009)
+10-13 17:41:21.981 18312 18312 E AndroidRuntime: 	at $Proxy57.query(Unknown Source)
+10-13 17:41:21.981 18312 18312 E AndroidRuntime: 	at android.content.ContentResolver.query(ContentResolver.java:1222)
+10-13 17:41:21.981 18312 18312 E AndroidRuntime: 	at android.content.ContentResolver.query(ContentResolver.java:1153)
+10-13 17:41:21.981 18312 18312 E AndroidRuntime: 	at android.content.ContentResolver.query(ContentResolver.java:1109)
+10-13 17:41:21.981 18312 18312 E AndroidRuntime: 	at ni8.b.a(SourceFile:71)
+10-13 17:41:21.981 18312 18312 E AndroidRuntime: 	at eo1.o.invoke(SourceFile:17)
+10-13 17:41:21.981 18312 18312 E AndroidRuntime: 	at eo1.r$a.invokeSuspend(SourceFile:13)
+10-13 17:41:21.981 18312 18312 E AndroidRuntime: 	at qp8.a.resumeWith(SourceFile:7)
+10-13 17:41:21.981 18312 18312 E AndroidRuntime: 	at et8.c1.run(SourceFile:113)
+10-13 17:41:21.981 18312 18312 E AndroidRuntime: 	at kt8.l$a.run(SourceFile:3)
+10-13 17:41:21.981 18312 18312 E AndroidRuntime: 	at ot8.g.run(SourceFile:2)
+10-13 17:41:21.981 18312 18312 E AndroidRuntime: 	at ot8.a$b.run(SourceFile:87)

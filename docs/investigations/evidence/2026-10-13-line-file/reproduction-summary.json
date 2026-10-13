@@ -1,0 +1,19 @@
+{
+  "device": "ASUS_I002D",
+  "api": 31,
+  "appVersionCode": 1016,
+  "virtualUser": 2,
+  "guestPackage": "jp.naver.line.android",
+  "pickerAction": "android.intent.action.GET_CONTENT",
+  "trustedPickerActivityInStack": false,
+  "chooserActivityInStack": false,
+  "fixtureBytes": 67,
+  "selectedUriGrantCountBefore": 0,
+  "selectedUriGrantCountAfter": 0,
+  "crashTimeLocal": "2026-10-13 17:41:21.981 Asia/Taipei",
+  "guestPid": 18312,
+  "throwSite": "ProviderHook.enforceSpaceAccess:154",
+  "operation": "query",
+  "sendButtonPressed": false,
+  "fileContentsOrPrivateUrisLogged": false
+}

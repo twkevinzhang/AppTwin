@@ -1,0 +1,1 @@
+Owned fixture removed from Download. Temporary device UI helper removed. No product code or permissions changed. Returned Home. No cloud resource created.
