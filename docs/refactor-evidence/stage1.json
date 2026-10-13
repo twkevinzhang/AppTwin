@@ -1,0 +1,310 @@
+{
+  "stage": 1,
+  "stage_name": "固定契約",
+  "baseline_commit": "5f14b47",
+  "recorded_at": "2026-10-14T04:31:54.351338+08:00",
+  "overall_gate": "pending approved physical device or explicit one-task Pixel 10a authorization",
+  "production_changes": false,
+  "dependency_changes": false,
+  "new_tests": {
+    "jvm": 3,
+    "ui": 3
+  },
+  "build_and_lint": {
+    "status": "passed",
+    "latest_log": "/tmp/apptwin-refactor-stage1-scroll-build.log",
+    "tasks": [
+      ":app:assembleRuntimeProbeDebug",
+      ":app:assembleRuntimeProbeDebugAndroidTest",
+      ":app:lintRuntimeProbeDebug",
+      ":app:testRuntimeProbeDebugUnitTest"
+    ],
+    "version_properties": {
+      "APP_VERSION_CODE": 1021,
+      "APP_VERSION_NAME": "0.1.21-pixel10a-native-maps"
+    }
+  },
+  "unit_reports": {
+    "app": {
+      "task": "testRuntimeProbeDebugUnitTest",
+      "tests": 187,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "application-core": {
+      "task": "test",
+      "tests": 58,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "group-store": {
+      "task": "test",
+      "tests": 7,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "virtual-runtime": {
+      "task": "testDebugUnitTest",
+      "tests": 775,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "gms-compat-core": {
+      "task": "test",
+      "tests": 26,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "gms-runtime-adapter": {
+      "task": "testDebugUnitTest",
+      "tests": 26,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "microg-artifact-source": {
+      "task": "test",
+      "tests": 8,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "custodian": {
+      "task": "testDebugUnitTest",
+      "tests": 18,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "package-source": {
+      "task": "test",
+      "tests": 3,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "revision-store": {
+      "task": "test",
+      "tests": 5,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    }
+  },
+  "unit_execution_note": "app tests re-executed for the changed test sources; unchanged modules were Gradle UP-TO-DATE at baseline. The real pinned microG pair smoke was separately executed with both local artifact paths, zero skipped. Runtime counts include debug task only.",
+  "lint_reports": {
+    "app": {
+      "Warning": 30
+    },
+    "virtual-runtime": {
+      "Hint": 2,
+      "Warning": 133
+    }
+  },
+  "lint_limitations": "Existing virtual-runtime baseline and disabled receiver/intent detectors retained; passing Lint is not a complete IPC security assessment.",
+  "supporting_ui": {
+    "device": "Pixel 10a",
+    "api": 37,
+    "acceptance_kind": "supporting; approved-device gate pending",
+    "expected": 34,
+    "command_exit": 0,
+    "elapsed_seconds": 39.4,
+    "passed": 34,
+    "failed": 0,
+    "skipped": 0,
+    "runner_ok": true,
+    "groups_metadata_unchanged_during_final_suite": true,
+    "cases": [
+      {
+        "class": "org.apptwin.ui.HomeScreenStateContractTest",
+        "test": "refreshingSnapshotKeepsExistingSpaceAndIntegrityWarningVisible",
+        "status": 0
+      },
+      {
+        "class": "org.apptwin.ui.HomeScreenStateContractTest",
+        "test": "successfulEmptySnapshotOffersSpaceCreation",
+        "status": 0
+      },
+      {
+        "class": "org.apptwin.ui.HomeScreenStateContractTest",
+        "test": "initialLoadingDoesNotOfferEmptySpaceCreation",
+        "status": 0
+      },
+      {
+        "class": "org.apptwin.ui.SpaceProductUiTest",
+        "test": "homePopulatedSpaceAddsAppToThatExactSpace",
+        "status": 0
+      },
+      {
+        "class": "org.apptwin.ui.SpaceProductUiTest",
+        "test": "homeAppLongPressShowsTheSameAppActionsWithoutLaunching",
+        "status": 0
+      },
+      {
+        "class": "org.apptwin.ui.SpaceProductUiTest",
+        "test": "sourceMissingAppExplainsWhyItCannotLaunch",
+        "status": 0
+      },
+      {
+        "class": "org.apptwin.ui.SpaceProductUiTest",
+        "test": "homeCanCollapseAndExpandAllSpaces",
+        "status": 0
+      },
+      {
+        "class": "org.apptwin.ui.SpaceProductUiTest",
+        "test": "homeEmptySpaceAddsAppToThatSpace",
+        "status": 0
+      },
+      {
+        "class": "org.apptwin.ui.SpaceProductUiTest",
+        "test": "homeMenuNavigatesToExactSpaceWithoutGoogleToggle",
+        "status": 0
+      },
+      {
+        "class": "org.apptwin.ui.SpaceProductUiTest",
+        "test": "onboardingExplainsBoundariesBeforeContinuing",
+        "status": 0
+      },
+      {
+        "class": "org.apptwin.ui.SpaceProductUiTest",
+        "test": "homeBusyPopulatedSpaceDoesNotAddApp",
+        "status": 0
+      },
+      {
+        "class": "org.apptwin.ui.SpaceProductUiTest",
+        "test": "homeLaunchesTheExactGroupAppFromItsSpace",
+        "status": 0
+      },
+      {
+        "class": "org.apptwin.ui.SpaceProductUiTest",
+        "test": "homeInitiallyExpandsEverySpace",
+        "status": 0
+      },
+      {
+        "class": "org.apptwin.ui.SpaceProductUiTest",
+        "test": "homeCanCollapseAndExpandOneSpaceWithoutHidingOtherSpaces",
+        "status": 0
+      },
+      {
+        "class": "org.apptwin.ui.SpaceDetailsUiTest",
+        "test": "permanentBackupDeleteRequiresConfirmationAndCancelKeepsFile",
+        "status": 0
+      },
+      {
+        "class": "org.apptwin.ui.SpaceDetailsUiTest",
+        "test": "createFromBackupDispatchesSourceAndLocationHasNoPerSpaceOverride",
+        "status": 0
+      },
+      {
+        "class": "org.apptwin.ui.SpaceDetailsUiTest",
+        "test": "generalBackupDoesNotShowLineIdentityRestrictions",
+        "status": 0
+      },
+      {
+        "class": "org.apptwin.ui.SpaceDetailsUiTest",
+        "test": "permissionPageShowsHostGateAndDispatchesExactAppDecision",
+        "status": 0
+      },
+      {
+        "class": "org.apptwin.ui.SpaceDetailsUiTest",
+        "test": "platformExemptMediaShowsAutomaticStatusWithoutSwitch",
+        "status": 0
+      },
+      {
+        "class": "org.apptwin.ui.SpaceDetailsUiTest",
+        "test": "lineBackupShowsItsDeviceAndSingleOwnerRestrictions",
+        "status": 0
+      },
+      {
+        "class": "org.apptwin.ui.SpaceBackgroundCardUiTest",
+        "test": "disconnectedTcpOffersExactRetryAndBusyPreventsDuplicates",
+        "status": 0
+      },
+      {
+        "class": "org.apptwin.ui.SpaceBackgroundCardUiTest",
+        "test": "pendingRuntimeAfterUiDeadlineKeepsRecoveryButtonDisabled",
+        "status": 0
+      },
+      {
+        "class": "org.apptwin.ui.SpaceBackgroundCardUiTest",
+        "test": "microgStartupFailureHasItsOwnRetryStory",
+        "status": 0
+      },
+      {
+        "class": "org.apptwin.ui.SpaceBackgroundCardUiTest",
+        "test": "globalOffDisablesRetryEvenWhenPreviousHealthFailed",
+        "status": 0
+      },
+      {
+        "class": "org.apptwin.ui.SpaceBackgroundCardUiTest",
+        "test": "connectedTcpWithoutVerifiedSessionDoesNotShowNormal",
+        "status": 0
+      },
+      {
+        "class": "org.apptwin.ui.SpaceBackgroundCardUiTest",
+        "test": "pendingTcpConnectionUsesConnectionLabelAndNoDuplicateButton",
+        "status": 0
+      },
+      {
+        "class": "org.apptwin.ui.AppStateRestorationTest",
+        "test": "appPickerQuerySurvivesSavedStateRestoration",
+        "status": 0
+      },
+      {
+        "class": "org.apptwin.ui.AppStateRestorationTest",
+        "test": "createGroupDraftSurvivesSavedStateRestoration",
+        "status": 0
+      },
+      {
+        "class": "org.apptwin.ui.AppStateRestorationTest",
+        "test": "renameSpaceDialogAndDraftSurviveSavedStateRestoration",
+        "status": 0
+      },
+      {
+        "class": "org.apptwin.ui.HomeScreenUninstallTest",
+        "test": "shortTapLaunchesApp",
+        "status": 0
+      },
+      {
+        "class": "org.apptwin.ui.HomeScreenUninstallTest",
+        "test": "longPressDoesNotLaunchAndCancelThenConfirmControlsUninstall",
+        "status": 0
+      },
+      {
+        "class": "org.apptwin.ui.HomeScreenUninstallTest",
+        "test": "uninstallBusyDisablesTileAndShowsProgressLabel",
+        "status": 0
+      },
+      {
+        "class": "org.apptwin.ui.HomeScreenUninstallTest",
+        "test": "clearStorageDialogPreservesSharedFilesAndLocksActionsWhileClearing",
+        "status": 0
+      },
+      {
+        "class": "org.apptwin.ui.HomeScreenUninstallTest",
+        "test": "metadataWarningRemainsVisibleWhenNoValidGroupCanBeLoaded",
+        "status": 0
+      }
+    ]
+  },
+  "known_baseline_ui_test_repaired": "AppStateRestorationTest now uses Home -> SpaceDetails -> parent LazyColumn scroll -> rename -> SavedState restore; original dialog and draft assertions retained.",
+  "data_preservation": "Initial aggregate groups-tree digest differs. File timestamps show GMS profile writing after installation but before UI execution; all structural group/membership files predate installation. Consistent with existing startup recovery, but original profile contents were not captured, so no initial full-field identity claim. Both subsequent complete UI runs kept the aggregate tree digest unchanged. No target-app clear or uninstall was used.",
+  "review": "Non-author reviews found no remaining static issues; not a formal physical-device gate.",
+  "remaining_stages": [
+    "拆操作與組裝",
+    "拆畫面狀態",
+    "整理 Lifecycle／權限／背景觀察",
+    "小範圍整理 runtime"
+  ],
+  "cleanup": {
+    "test_only_package_removed": true,
+    "target_app_preserved": true,
+    "returned_to": "org.apptwin.MainActivity",
+    "background_processes_created_by_task": []
+  }
+}

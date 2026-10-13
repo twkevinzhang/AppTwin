@@ -1124,6 +1124,82 @@ class MainViewModelLifecycleTest {
     )
 
     @Test
+    fun `details loading completes as successful empty accounts without an error`() = runTest {
+        val dispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(dispatcher)
+        val pending = CompletableDeferred<SpaceDetails?>()
+        val operations = FakeOperations(groups = listOf(group())).apply {
+            detailsLoader = { pending.await() }
+        }
+        val model = viewModel(SavedStateHandle(), operations, dispatcher)
+        advanceUntilIdle()
+        model.openSpaceDetails(GROUP_ID)
+        runCurrent()
+        assertTrue(model.uiState.isLoadingSpaceDetails)
+        assertEquals(null, model.uiState.spaceDetails)
+        assertEquals(null, model.uiState.spaceDetailsError)
+        val loaded = details(GROUP_ID, emptyList())
+        pending.complete(loaded)
+        advanceUntilIdle()
+        assertFalse(model.uiState.isLoadingSpaceDetails)
+        assertEquals(loaded, model.uiState.spaceDetails)
+        assertEquals(MainDestination.SPACE_DETAILS, model.uiState.destination)
+        assertEquals(null, model.uiState.spaceDetailsError)
+    }
+
+    @Test
+    fun `details read error can retry without treating a failure as a missing space`() = runTest {
+        val dispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(dispatcher)
+        var shouldFail = true
+        val loaded = details(GROUP_ID, emptyList())
+        val operations = FakeOperations(groups = listOf(group())).apply {
+            detailsLoader = {
+                if (shouldFail) throw IllegalStateException("fixture read failure")
+                loaded
+            }
+        }
+        val model = viewModel(SavedStateHandle(), operations, dispatcher)
+        advanceUntilIdle()
+        model.openSpaceDetails(GROUP_ID)
+        advanceUntilIdle()
+        assertFalse(model.uiState.isLoadingSpaceDetails)
+        assertEquals(GROUP_ID, model.uiState.selectedSpaceId)
+        assertEquals(MainDestination.SPACE_DETAILS, model.uiState.destination)
+        assertTrue(model.uiState.spaceDetailsError != null)
+        shouldFail = false
+        model.refreshSpaceDetails()
+        assertEquals(null, model.uiState.spaceDetailsError)
+        advanceUntilIdle()
+        assertEquals(loaded, model.uiState.spaceDetails)
+        assertEquals(null, model.uiState.spaceDetailsError)
+        assertFalse(model.uiState.isLoadingSpaceDetails)
+    }
+
+    @Test
+    fun `background connection failure preserves successful local space details`() = runTest {
+        val dispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(dispatcher)
+        val loaded = details(GROUP_ID, emptyList())
+        val operations = FakeOperations(groups = listOf(group())).apply {
+            detailsLoader = { loaded }
+            backgroundLoader = { throw IllegalStateException("fixture offline") }
+        }
+        val model = viewModel(SavedStateHandle(), operations, dispatcher)
+        advanceUntilIdle()
+        model.openSpaceDetails(GROUP_ID)
+        advanceUntilIdle()
+        model.refreshSpaceBackgroundHealth()
+        advanceUntilIdle()
+        assertEquals(loaded, model.uiState.spaceDetails)
+        assertEquals(null, model.uiState.spaceDetailsError)
+        assertEquals(GROUP_ID, model.uiState.spaceBackgroundHealth?.groupId)
+        assertTrue(model.uiState.spaceBackgroundHealth?.error != null)
+        assertFalse(model.uiState.spaceBackgroundHealth!!.healthy)
+        assertEquals(listOf(GROUP_ID), model.uiState.groups.map(GroupItem::groupId))
+    }
+
+    @Test
     fun `background retry is exact space and duplicate calls are suppressed`() = runTest {
         val dispatcher = StandardTestDispatcher(testScheduler)
         Dispatchers.setMain(dispatcher)
