@@ -1,0 +1,6 @@
+{
+  "android.permission.CAMERA": true,
+  "android.permission.READ_EXTERNAL_STORAGE": true,
+  "android.permission.WRITE_EXTERNAL_STORAGE": true,
+  "android.permission.RECORD_AUDIO": true
+}
