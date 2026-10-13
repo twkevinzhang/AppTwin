@@ -39,12 +39,25 @@ android {
             versionNameSuffix = "-media-compat"
             buildConfigField("int", "FIXTURE_REVISION", "1")
         }
+        create("selectedFile") {
+            dimension = "revision"
+            applicationId = "org.apptwin.fixture.fileisolation"
+            targetSdk = 36
+            versionCode = 1
+            versionNameSuffix = "-selected-file"
+            buildConfigField("int", "FIXTURE_REVISION", "1")
+        }
         create("revisionTwo") {
             dimension = "revision"
             versionCode = 2
             versionNameSuffix = "-2"
             buildConfigField("int", "FIXTURE_REVISION", "2")
         }
+    }
+
+    sourceSets.getByName("selectedFile") {
+        manifest.srcFile("src/mediaCompat/AndroidManifest.xml")
+        java.srcDir("src/mediaCompat/java")
     }
 
     buildTypes {

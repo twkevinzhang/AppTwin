@@ -1,0 +1,32 @@
+[
+  {
+    "time": "19:17:44.008",
+    "pid": 11996,
+    "tag": "NativeEngine",
+    "metadata": "proc-maps-sanitizer host=org.apptwin remainingLeaks=0"
+  },
+  {
+    "time": "19:17:44.746",
+    "pid": 12013,
+    "tag": "NativeEngine",
+    "metadata": "proc-maps-sanitizer host=org.apptwin remainingLeaks=0"
+  },
+  {
+    "time": "19:17:45.948",
+    "pid": 12026,
+    "tag": "NativeEngine",
+    "metadata": "proc-maps-sanitizer host=org.apptwin remainingLeaks=0"
+  },
+  {
+    "time": "19:17:46.917",
+    "pid": 12063,
+    "tag": "NativeEngine",
+    "metadata": "proc-maps-sanitizer host=org.apptwin remainingLeaks=0"
+  },
+  {
+    "time": "19:18:29.853",
+    "pid": 12318,
+    "tag": "NativeEngine",
+    "metadata": "proc-maps-sanitizer host=org.apptwin remainingLeaks=0"
+  }
+]

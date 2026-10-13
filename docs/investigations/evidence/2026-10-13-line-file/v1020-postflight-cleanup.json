@@ -1,0 +1,22 @@
+{
+  "globalBackgroundEnabled": true,
+  "lineUser": 2,
+  "permissions": {
+    "CAMERA": true,
+    "RECORD_AUDIO": true,
+    "READ_EXTERNAL_STORAGE": true,
+    "WRITE_EXTERNAL_STORAGE": true
+  },
+  "temporaryIsolationGroupCleared": true,
+  "originalGroupsOnly": true,
+  "groupCount": 2,
+  "lineApkHashes": {
+    "base.apk": "94c8056777654dbde7fe19d9599a285efb55f5827f9a99c385ff2f79be89a72f",
+    "split_config.arm64_v8a.apk": "26ae3c06095a7533154dc39f637a6bd0d092cf65be814472f0d0e3ebef5719c2",
+    "split_config.xxhdpi.apk": "5ad82153b14e5ae0e3afc03b19dbc1c475f39628922463c0453ee8194a2eec2c"
+  },
+  "ownedDeviceFilesRemoved": true,
+  "fixtureUninstalled": true,
+  "diagnosticsDisabled": true,
+  "ownedTestCacheRemoved": true
+}

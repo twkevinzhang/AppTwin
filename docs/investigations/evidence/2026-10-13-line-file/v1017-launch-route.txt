@@ -1,0 +1,4 @@
+I/FilePickerDiagnostics(30856): stage=launch route=ENTRY method=startActivity action=OTHER resultTo=true requestCode=-1 hostComponent=false
+I/FilePickerDiagnostics(30856): stage=launch route=ENTRY method=startActivity action=OTHER resultTo=true requestCode=-1 hostComponent=false
+I/FilePickerDiagnostics(30856): stage=launch route=ENTRY method=startActivity action=CHOOSER resultTo=true requestCode=1141056187 hostComponent=false
+I/FilePickerDiagnostics(30856): stage=launch route=CHOOSER method=startActivity action=CHOOSER resultTo=true requestCode=1141056187 hostComponent=false

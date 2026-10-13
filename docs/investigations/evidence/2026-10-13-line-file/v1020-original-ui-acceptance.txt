@@ -1,0 +1,4 @@
+v1020: original + -> file -> own fixture -> confirmation, no crash
+v1020: cancel confirmation -> same chat, no crash
+v1020: retry same original path -> confirmation, no crash
+v1020: confirm send -> own file bubble in same chat, no crash

@@ -1,0 +1,16 @@
+
+org.apptwin.runtime.SelectedFileUriIsolationE2eTest:INSTRUMENTATION_STATUS: testHostPackageUid=10305
+INSTRUMENTATION_STATUS: testHostProcessUid=10305
+INSTRUMENTATION_STATUS_CODE: 0
+INSTRUMENTATION_STATUS: selectedFileIsolationStage=waitingForOwnedSelection
+INSTRUMENTATION_STATUS_CODE: 0
+INSTRUMENTATION_STATUS: selectedFileIsolationCandidate=primary
+INSTRUMENTATION_STATUS: selectedFileIsolationStage=ownedHostGrantObserved
+INSTRUMENTATION_STATUS_CODE: 0
+.
+
+Time: 119.044
+
+OK (1 test)
+
+

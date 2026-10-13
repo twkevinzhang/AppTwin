@@ -1,0 +1,8 @@
+
+org.apptwin.runtime.SharedMediaWritePermissionE2eTest:.
+
+Time: 32.457
+
+OK (1 test)
+
+

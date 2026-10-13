@@ -1,0 +1,11 @@
+
+org.apptwin.runtime.OwnedLineFileSendMetadataE2eTest:
+org.apptwin.runtime.OwnedLineFileSendMetadataE2eTest:INSTRUMENTATION_STATUS: ownedLineFileSendMetadata={"readOnly":true,"ownedRowsOnly":true,"count":3,"sampleLimit":10,"samples":[{"status":3,"type":1,"created_time":"nonNumeric","delivered_time":"nonNumeric","sent_count":null,"read_count":null,"serverIdPresent":true},{"status":3,"type":1,"created_time":"nonNumeric","delivered_time":"nonNumeric","sent_count":null,"read_count":null,"serverIdPresent":true},{"status":3,"type":1,"created_time":"nonNumeric","delivered_time":"nonNumeric","sent_count":null,"read_count":null,"serverIdPresent":true}]}
+INSTRUMENTATION_STATUS_CODE: 0
+.
+
+Time: 0.026
+
+OK (2 tests)
+
+

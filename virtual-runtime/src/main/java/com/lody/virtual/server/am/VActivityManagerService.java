@@ -289,11 +289,10 @@ public class VActivityManagerService extends IActivityManager.Stub
     }
     @Override public synchronized String prepareUriPicker(Intent request, IBinder resultTo) {
         if (request == null || resultTo == null) throw new SecurityException("Picker requires a guest activity");
-        String action = request.getAction();
-        if (!Intent.ACTION_OPEN_DOCUMENT.equals(action) && !Intent.ACTION_GET_CONTENT.equals(action)
-                && !"android.provider.action.PICK_IMAGES".equals(action)) {
-            throw new SecurityException("Unsupported picker action");
-        }
+        Intent pickerRequest = com.lody.virtual.helper.compat.UriPickerRequestPolicy.extract(
+                request, VirtualCore.get().getHostPkg());
+        if (pickerRequest == null) throw new SecurityException("Unsupported picker action");
+        String action = pickerRequest.getAction();
         ProcessRecord caller;
         synchronized (mPidsSelfLocked) { caller = findProcessLocked(Binder.getCallingPid()); }
         if (caller == null || !caller.info.packageName.equals(mMainStack.getPackageForToken(caller.userId, resultTo))) {
@@ -302,12 +301,14 @@ public class VActivityManagerService extends IActivityManager.Stub
         pickerSessions.entrySet().removeIf(entry -> entry.getValue().deadline < SystemClock.elapsedRealtime());
         if (pickerSessions.size() >= 64) throw new SecurityException("Picker session quota exceeded");
         Intent safe = new Intent(action);
-        safe.setType(request.getType());
+        safe.setType(pickerRequest.getType());
         if (!"android.provider.action.PICK_IMAGES".equals(action)) safe.addCategory(Intent.CATEGORY_OPENABLE);
-        safe.putExtra(Intent.EXTRA_ALLOW_MULTIPLE, request.getBooleanExtra(Intent.EXTRA_ALLOW_MULTIPLE, false));
+        safe.putExtra(Intent.EXTRA_ALLOW_MULTIPLE, pickerRequest.getBooleanExtra(Intent.EXTRA_ALLOW_MULTIPLE, false));
         safe.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION);
         String id = java.util.UUID.randomUUID().toString();
         pickerSessions.put(id, new PickerSession(caller.userId, caller.info.packageName, safe));
+        com.lody.virtual.helper.compat.FilePickerDiagnostics.session(caller.userId,
+                caller.info.packageName, "PREPARE", 0, true);
         return id;
     }
     @Override public synchronized Intent takeUriPickerRequest(String id) {
@@ -315,12 +316,15 @@ public class VActivityManagerService extends IActivityManager.Stub
         PickerSession session = pickerSessions.get(id);
         if (session == null || session.taken || session.deadline < SystemClock.elapsedRealtime()) return null;
         session.taken = true;
+        com.lody.virtual.helper.compat.FilePickerDiagnostics.session(session.user, session.pkg, "TAKE", 0, true);
         return new Intent(session.request);
     }
     @Override public synchronized boolean completeUriPicker(String id, int resultCode, Intent result) {
         com.lody.virtual.server.VirtualUserAccessPolicy.enforceHost();
         PickerSession session = pickerSessions.remove(id);
         if (session == null || !session.taken || session.deadline < SystemClock.elapsedRealtime()) return false;
+        com.lody.virtual.helper.compat.FilePickerDiagnostics.session(session.user, session.pkg,
+                "RESULT", 0, resultCode == android.app.Activity.RESULT_OK);
         if (resultCode != android.app.Activity.RESULT_OK) return true;
         if (result == null) return false;
         java.util.Set<String> uris = new java.util.HashSet<>();
@@ -335,10 +339,24 @@ public class VActivityManagerService extends IActivityManager.Stub
             Uri uri = Uri.parse(value);
             if (!"content".equals(uri.getScheme()) || context.checkUriPermission(uri,
                     Process.myPid(), Process.myUid(), Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                    != PackageManager.PERMISSION_GRANTED) return false;
+                    != PackageManager.PERMISSION_GRANTED) {
+                com.lody.virtual.helper.compat.FilePickerDiagnostics.session(session.user, session.pkg,
+                        "GRANT_CHECK", uris.size(), false);
+                return false;
+            }
         }
-        try { selectedUriGrants.add(session.user, session.pkg, uris); return true; }
-        catch (java.io.IOException failure) { return false; }
+        com.lody.virtual.helper.compat.FilePickerDiagnostics.session(session.user, session.pkg,
+                "GRANT_CHECK", uris.size(), true);
+        try {
+            selectedUriGrants.add(session.user, session.pkg, uris);
+            com.lody.virtual.helper.compat.FilePickerDiagnostics.session(session.user, session.pkg,
+                    "LEDGER", uris.size(), true);
+            return true;
+        } catch (java.io.IOException failure) {
+            com.lody.virtual.helper.compat.FilePickerDiagnostics.session(session.user, session.pkg,
+                    "LEDGER", uris.size(), false);
+            return false;
+        }
     }
     public synchronized void clearSelectedUriGrantsInternal(int user, String pkg) throws java.io.IOException {
         selectedUriGrants.clear(user, pkg);
