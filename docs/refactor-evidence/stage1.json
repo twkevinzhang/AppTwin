@@ -3,7 +3,7 @@
   "stage_name": "固定契約",
   "baseline_commit": "5f14b47",
   "recorded_at": "2026-10-14T04:31:54.351338+08:00",
-  "overall_gate": "pending approved physical device or explicit one-task Pixel 10a authorization",
+  "overall_gate": "passed",
   "production_changes": false,
   "dependency_changes": false,
   "new_tests": {
@@ -306,5 +306,33 @@
     "target_app_preserved": true,
     "returned_to": "org.apptwin.MainActivity",
     "background_processes_created_by_task": []
+  },
+  "formal_ui": {
+    "device": "Pixel 10a",
+    "api": 37,
+    "expected": 34,
+    "passed": 34,
+    "failed": 0,
+    "skipped": 0,
+    "runner_ok": true,
+    "authorization": "User explicitly approved Pixel10a formal acceptance for this refactor on 2026-10-14"
+  },
+  "formal_build_and_lint": {
+    "status": "passed",
+    "log": "/tmp/apptwin-refactor-stage1-formal-build.log"
+  },
+  "device_policy": {
+    "permanent": [
+      "ASUS",
+      "Pixel 7",
+      "Pixel 10"
+    ],
+    "current_refactor_exception": "Pixel 10a, explicit user authorization 2026-10-14",
+    "local_file": "AGENTS.md",
+    "tracking": "existing .git/info/exclude rule retained"
+  },
+  "artifact_sha256": {
+    "app/build/outputs/apk/runtimeProbe/debug/app-runtimeProbe-debug.apk": "715d145542e2d30374a3dbe497f54dab6f095f20defd8175c165e147de49e8ea",
+    "app/build/outputs/apk/androidTest/runtimeProbe/debug/app-runtimeProbe-debug-androidTest.apk": "a69a627de7a25e20ade6faebe88835eb3d835f6065ca95619fbe369382e280bd"
   }
 }
