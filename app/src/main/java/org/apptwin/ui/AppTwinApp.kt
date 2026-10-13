@@ -84,11 +84,16 @@ fun AppTwinApp(
     onShareDiagnostics: (String) -> Unit,
     onAddBackgroundServiceTile: () -> Unit = {},
 ) {
-    val state = viewModel.uiState
+    val home by viewModel.homeState.collectAsState()
+    val picker by viewModel.pickerState.collectAsState()
+    val detailsState by viewModel.spaceDetailsState.collectAsState()
+    val settings by viewModel.settingsState.collectAsState()
+    val session by viewModel.sessionState.collectAsState()
+    val navigation by viewModel.navigationState.collectAsState()
     val backgroundServiceState by BackgroundServiceController.state.collectAsState()
     val lifecycleOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
-    LaunchedEffect(state.destination, state.selectedSpaceId, backgroundServiceState.enabled, backgroundServiceState.loaded, lifecycleOwner) {
-        if (state.destination == MainDestination.SPACE_DETAILS && state.selectedSpaceId != null) {
+    LaunchedEffect(navigation.destination, navigation.selectedSpaceId, backgroundServiceState.enabled, backgroundServiceState.loaded, lifecycleOwner) {
+        if (navigation.destination == MainDestination.SPACE_DETAILS && navigation.selectedSpaceId != null) {
             lifecycleOwner.lifecycle.repeatOnLifecycle(androidx.lifecycle.Lifecycle.State.RESUMED) {
                 try {
                     while (true) {
@@ -123,11 +128,11 @@ fun AppTwinApp(
     ) { granted ->
         val appKey = pendingPermissionAppKey
         val permission = pendingPermissionName
-        val app = state.groups.asSequence()
+        val app = session.groups.asSequence()
             .flatMap { it.apps.asSequence() }
             .firstOrNull { it.launchKey == appKey }
         if (app != null && permission != null) {
-            if (state.destination == MainDestination.SPACE_DETAILS) viewModel.setSpacePermission(app.app.packageName, permission, granted)
+            if (navigation.destination == MainDestination.SPACE_DETAILS) viewModel.setSpacePermission(app.app.packageName, permission, granted)
             else viewModel.setClonePermission(app, permission, granted)
         }
         pendingPermissionAppKey = null
@@ -138,7 +143,7 @@ fun AppTwinApp(
     ) { grants ->
         val appKey = pendingPermissionAppKey
         val permission = pendingPermissionName
-        val app = state.groups.asSequence().flatMap { it.apps.asSequence() }.firstOrNull { it.launchKey == appKey }
+        val app = session.groups.asSequence().flatMap { it.apps.asSequence() }.firstOrNull { it.launchKey == appKey }
         if (app != null && permission != null) {
             if (permission == Manifest.permission.ACCESS_BACKGROUND_LOCATION) {
                 if (grants[Manifest.permission.ACCESS_COARSE_LOCATION] == true || grants[Manifest.permission.ACCESS_FINE_LOCATION] == true) {
@@ -146,7 +151,7 @@ fun AppTwinApp(
                 }
             } else {
                 val granted = grants[permission] == true
-                if (state.destination == MainDestination.SPACE_DETAILS) viewModel.setSpacePermission(app.app.packageName, permission, granted)
+                if (navigation.destination == MainDestination.SPACE_DETAILS) viewModel.setSpacePermission(app.app.packageName, permission, granted)
                 else viewModel.setClonePermission(app, permission, granted)
             }
         }
@@ -197,38 +202,38 @@ fun AppTwinApp(
                 } else permissionLauncher.launch(permission)
             }
         }
-    val pickerGroup = state.appPickerGroupId?.let { selectedId ->
-        state.groups.firstOrNull { it.groupId == selectedId }
+    val pickerGroup = picker.appPickerGroupId?.let { selectedId ->
+        session.groups.firstOrNull { it.groupId == selectedId }
     }
-    val detailsGroup = state.groups.firstOrNull { it.groupId == state.selectedSpaceId }
-        .takeIf { state.destination == MainDestination.SPACE_DETAILS }
+    val detailsGroup = session.groups.firstOrNull { it.groupId == navigation.selectedSpaceId }
+        .takeIf { navigation.destination == MainDestination.SPACE_DETAILS }
     BackHandler(
-        enabled = state.pendingDeepLink != null || pickerGroup != null || detailsGroup != null,
+        enabled = navigation.pendingDeepLink != null || pickerGroup != null || detailsGroup != null,
     ) {
         when {
-            state.pendingDeepLink != null -> viewModel.closeDeepLink()
+            navigation.pendingDeepLink != null -> viewModel.closeDeepLink()
             pickerGroup != null -> viewModel.closeAppPicker()
             detailsGroup != null -> viewModel.closeSpaceDetails()
             else -> Unit
         }
     }
 
-    LaunchedEffect(state.messageId) {
-        val message = state.message ?: return@LaunchedEffect
+    LaunchedEffect(navigation.messageId) {
+        val message = navigation.message ?: return@LaunchedEffect
         snackbarHostState.showSnackbar(message)
-        viewModel.consumeMessage(state.messageId)
+        viewModel.consumeMessage(navigation.messageId)
     }
 
-    LaunchedEffect(state.destination, state.isRefreshing) {
+    LaunchedEffect(navigation.destination, home.isRefreshing) {
         notificationsGranted = Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU ||
             context.checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) ==
             PackageManager.PERMISSION_GRANTED
     }
 
-    LaunchedEffect(state.diagnosticsReportId) {
-        val report = state.diagnosticsReport ?: return@LaunchedEffect
+    LaunchedEffect(settings.diagnosticsReportId) {
+        val report = settings.diagnosticsReport ?: return@LaunchedEffect
         onShareDiagnostics(report)
-        viewModel.consumeDiagnostics(state.diagnosticsReportId)
+        viewModel.consumeDiagnostics(settings.diagnosticsReportId)
     }
 
     AppTwinTheme {
@@ -238,7 +243,7 @@ fun AppTwinApp(
                 Row(modifier = Modifier.fillMaxSize()) {
                     if (useNavigationRail && pickerGroup == null && detailsGroup == null) {
                         AppNavigationRail(
-                            selected = state.destination,
+                            selected = navigation.destination,
                             onSelect = viewModel::navigate,
                         )
                     }
@@ -264,7 +269,7 @@ fun AppTwinApp(
                                         when {
                                             pickerGroup != null -> "加入 App"
                                             detailsGroup != null -> "空間詳細資訊"
-                                            state.destination == MainDestination.HOME -> "AppTwin"
+                                            navigation.destination == MainDestination.HOME -> "AppTwin"
                                             else -> "設定"
                                         },
                                     )
@@ -274,20 +279,22 @@ fun AppTwinApp(
                         bottomBar = {
                             if (!useNavigationRail && pickerGroup == null && detailsGroup == null) {
                                 AppNavigationBar(
-                                    selected = state.destination,
+                                    selected = navigation.destination,
                                     onSelect = viewModel::navigate,
                                 )
                             }
                         },
                         floatingActionButton = {
                             if (
-                                state.destination == MainDestination.HOME &&
-                                pickerGroup == null
+                                navigation.destination == MainDestination.HOME &&
+                                pickerGroup == null &&
+                                (home.groups.isNotEmpty() ||
+                                    (!home.isRefreshing && home.error == null && home.dataWarnings.isEmpty()))
                             ) {
                                 ExtendedFloatingActionButton(
-                                    onClick = { if (!state.isCreatingGroup) showCreateGroup = true },
+                                    onClick = { if (!session.isCreatingGroup) showCreateGroup = true },
                                     icon = { Icon(Icons.Default.Add, contentDescription = null) },
-                                    text = { Text(if (state.isCreatingGroup) "建立中…" else "建立空間") },
+                                    text = { Text(if (session.isCreatingGroup) "建立中…" else "建立空間") },
                                 )
                             }
                         },
@@ -299,44 +306,32 @@ fun AppTwinApp(
                                 .padding(innerPadding),
                         ) {
                             if (
-                                state.isCreatingGroup || state.isSpaceActionBusy ||
-                                state.busyPackageName != null ||
-                                state.busyGroupId != null ||
-                                state.launchingAppKey != null ||
-                                state.uninstallingAppKey != null ||
-                                state.clearingStorageGroupId != null ||
-                                state.archiveBusyGroupId != null ||
-                                state.isCreatingSpaceFromBackup
+                                session.isCreatingGroup || session.isSpaceActionBusy ||
+                                session.busyPackageName != null ||
+                                session.busyGroupId != null ||
+                                session.launchingAppKey != null ||
+                                session.uninstallingAppKey != null ||
+                                session.clearingStorageGroupId != null ||
+                                session.archiveBusyGroupId != null ||
+                                session.isCreatingSpaceFromBackup
                             ) {
                                 LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
                             }
                             when {
                                 pickerGroup != null -> AppPickerScreen(
-                                    state = state,
+                                    state = picker,
+                                    session = session,
                                     group = pickerGroup,
                                     onSelect = viewModel::selectApp,
                                 )
                                 detailsGroup != null -> {
-                                    val details = state.spaceDetails?.takeIf { it.groupId == detailsGroup.groupId }
                                     SpaceDetailsScreen(
+                                        state = detailsState,
+                                        session = session,
                                         group = detailsGroup,
                                         backgroundServiceState = backgroundServiceState,
-                                        backgroundHealth = state.spaceBackgroundHealth?.takeIf { it.groupId == detailsGroup.groupId },
-                                        backgroundRetrying = state.isSpaceBackgroundRetrying,
                                         onRetryBackground = viewModel::retrySpaceBackground,
-                                        storage = details?.storage?.let { listOf("App 資料" to it.appDataBytes, "快取" to it.cacheBytes, "共用檔案" to it.sharedFilesBytes, "Google 服務資料" to it.googleDataBytes) }.orEmpty(),
-                                        permissions = details?.permissions.orEmpty().filter { it.controllable || it.platformExempt }.flatMap { permission ->
-                                            permission.apps.mapNotNull { target -> detailsGroup.apps.firstOrNull { it.app.packageName == target.packageName }?.let { app ->
-                                                SpacePermissionRow(permission.permission, permission.label, app, target.granted, permission.hostGranted, permission.platformExempt)
-                                            } }
-                                        },
-                                        accounts = details?.accounts.orEmpty().map { SpaceAccountRow(it.name, it.type, it.syncAuthorities, it.syncStatus) },
-                                        authenticators = details?.accountTypes.orEmpty().map { SpaceAuthenticatorRow(it.type, it.label) },
-                                        backups = details?.backups.orEmpty(),
-                                        loading = state.isLoadingSpaceDetails,
-                                        busy = state.isSpaceActionBusy || state.busyGroupId != null || state.clearingStorageGroupId != null || state.archiveBusyGroupId != null || state.isCreatingSpaceFromBackup,
-                                        error = state.spaceDetailsError,
-                                        globalBackupLocation = state.globalBackupLocation ?: details?.backupLocation,
+                                        globalBackupLocation = settings.globalBackupLocation,
                                         onRefresh = viewModel::refreshSpaceDetails,
                                         onSetPermission = { app, permission, granted ->
                                             if (granted && context.checkSelfPermission(permission) != PackageManager.PERMISSION_GRANTED) onSetClonePermission(app, permission, true)
@@ -354,8 +349,10 @@ fun AppTwinApp(
                                         onDeleteSpace = { viewModel.deleteGroup(detailsGroup.groupId); viewModel.closeSpaceDetails() },
                                     )
                                 }
-                                state.destination == MainDestination.HOME -> HomeScreen(
-                                    state = state,
+                                navigation.destination == MainDestination.HOME -> HomeScreen(
+                                    state = home,
+                                    session = session,
+                                    onRefresh = viewModel::refresh,
                                     onCreateGroup = { showCreateGroup = true },
                                     onLaunch = viewModel::launchGroupApp,
                                     onAddApp = viewModel::openAppPicker,
@@ -366,12 +363,13 @@ fun AppTwinApp(
                                     onUninstallApp = viewModel::uninstallGroupApp,
                                     onCreateShortcut = viewModel::createShortcut,
                                     onRepairApp = viewModel::repairClone,
-                                    clearingStorageAppKey = state.clearingStorageAppKey,
+                                    clearingStorageAppKey = session.clearingStorageAppKey,
                                     onClearStorage = viewModel::clearGroupAppStorage,
                                     onSetPermission = onSetClonePermission,
                                 )
                                 else -> SettingsScreen(
-                                    state = state,
+                                    state = settings,
+                                    session = session,
                                     backgroundServiceState = backgroundServiceState,
                                     onBackgroundServiceChange = { BackgroundServiceController.setEnabled(context, it) },
                                     onBackgroundServiceRetry = {
@@ -384,7 +382,7 @@ fun AppTwinApp(
                                     onArchiveCompressionChange = viewModel::setArchiveCompression,
                                     onOpenStorageSettings = onOpenStorageSettings,
                                     onExportDiagnostics = viewModel::exportDiagnostics,
-                                    globalBackupLocation = state.globalBackupLocation,
+                                    globalBackupLocation = settings.globalBackupLocation,
                                     onChooseGlobalBackupLocation = { backupLocationLauncher.launch(null) },
                                     onCreateSpaceFromBackup = {
                                         createFromBackupLauncher.launch(
@@ -438,7 +436,7 @@ fun AppTwinApp(
                     },
                 )
             }
-            state.createSpaceError?.let { error ->
+            home.createSpaceError?.let { error ->
                 AlertDialog(
                     modifier = Modifier.testTag("create-space-error-dialog"),
                     onDismissRequest = viewModel::dismissCreateSpaceError,
@@ -447,13 +445,13 @@ fun AppTwinApp(
                     confirmButton = { TextButton(onClick = viewModel::dismissCreateSpaceError, modifier = Modifier.testTag("dismiss-create-space-error")) { Text("確定") } },
                 )
             }
-            if (state.showOnboarding) {
+            if (navigation.showOnboarding) {
                 OnboardingDialog(onContinue = viewModel::completeOnboarding)
             }
-            state.pendingDeepLink?.takeUnless { state.showOnboarding }?.let { uri ->
+            navigation.pendingDeepLink?.takeUnless { navigation.showOnboarding }?.let { uri ->
                 DeepLinkChooserDialog(
                     uri = uri,
-                    candidates = state.deepLinkCandidates,
+                    candidates = navigation.deepLinkCandidates,
                     onDismiss = viewModel::closeDeepLink,
                     onSelect = viewModel::launchDeepLink,
                 )

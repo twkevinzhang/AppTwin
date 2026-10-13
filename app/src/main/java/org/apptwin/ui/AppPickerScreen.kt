@@ -39,6 +39,8 @@ import androidx.compose.ui.unit.dp
 import org.apptwin.AppItem
 import org.apptwin.GroupItem
 import org.apptwin.MainUiState
+import org.apptwin.PickerUiState
+import org.apptwin.MainSessionUiState
 import org.apptwin.compatibility.CompatibilityLevel
 
 private val guaranteedAppPickerIconPackages = setOf(
@@ -53,6 +55,21 @@ internal fun shouldUseColorIconInAppPicker(packageName: String): Boolean =
 @Composable
 fun AppPickerScreen(
     state: MainUiState,
+    group: GroupItem,
+    onSelect: (AppItem) -> Unit,
+) {
+    AppPickerScreen(
+        state = PickerUiState(appPickerGroupId = state.appPickerGroupId, apps = state.apps, groups = state.groups, isRefreshing = state.isRefreshing),
+        session = MainSessionUiState(busyPackageName = state.busyPackageName),
+        group = group,
+        onSelect = onSelect,
+    )
+}
+
+@Composable
+fun AppPickerScreen(
+    state: PickerUiState,
+    session: MainSessionUiState = MainSessionUiState(),
     group: GroupItem,
     onSelect: (AppItem) -> Unit,
 ) {
@@ -120,8 +137,8 @@ fun AppPickerScreen(
         items(filteredApps, key = { it.entry.packageName }) { app ->
             AppPickerItem(
                 app = app,
-                isBusy = state.busyPackageName == app.entry.packageName,
-                enabled = state.busyPackageName == null,
+                isBusy = session.busyPackageName == app.entry.packageName,
+                enabled = session.busyPackageName == null,
                 onClick = { onSelect(app) },
             )
         }

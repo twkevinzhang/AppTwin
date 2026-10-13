@@ -47,6 +47,8 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import org.apptwin.MainUiState
+import org.apptwin.SettingsUiState
+import org.apptwin.MainSessionUiState
 import org.apptwin.archive.SpaceArchiveCompression
 import org.apptwin.permissions.ClonePermissionAction
 import org.apptwin.permissions.ClonePermissionCategory
@@ -56,6 +58,43 @@ import org.apptwin.permissions.ClonePermissionVirtualScope
 @Composable
 fun SettingsScreen(
     state: MainUiState,
+    onArchiveCompressionChange: (SpaceArchiveCompression) -> Unit = {},
+    onOpenStorageSettings: () -> Unit,
+    onExportDiagnostics: () -> Unit,
+    onCreateSpaceFromBackup: () -> Unit = {},
+    globalBackupLocation: String? = null,
+    onChooseGlobalBackupLocation: () -> Unit = {},
+    notificationsGranted: Boolean,
+    onRequestNotifications: () -> Unit,
+    onPermissionAction: (ClonePermissionSummary) -> Unit,
+    backgroundServiceState: BackgroundServiceState = BackgroundServiceState(),
+    onBackgroundServiceChange: (Boolean) -> Unit = {},
+    onBackgroundServiceRetry: () -> Unit = {},
+    onAddBackgroundServiceTile: () -> Unit = {},
+) {
+    SettingsScreen(
+        state = SettingsUiState(archiveCompression = state.archiveCompression, globalBackupLocation = state.globalBackupLocation, allFilesGranted = state.allFilesGranted, downloadCount = state.downloadCount, photoCount = state.photoCount, clonePermissions = state.clonePermissions, diagnosticsReport = state.diagnosticsReport, diagnosticsReportId = state.diagnosticsReportId),
+        session = MainSessionUiState(isCreatingSpaceFromBackup = state.isCreatingSpaceFromBackup, archiveBusyGroupId = state.archiveBusyGroupId),
+        onArchiveCompressionChange = onArchiveCompressionChange,
+        onOpenStorageSettings = onOpenStorageSettings,
+        onExportDiagnostics = onExportDiagnostics,
+        onCreateSpaceFromBackup = onCreateSpaceFromBackup,
+        globalBackupLocation = globalBackupLocation,
+        onChooseGlobalBackupLocation = onChooseGlobalBackupLocation,
+        notificationsGranted = notificationsGranted,
+        onRequestNotifications = onRequestNotifications,
+        onPermissionAction = onPermissionAction,
+        backgroundServiceState = backgroundServiceState,
+        onBackgroundServiceChange = onBackgroundServiceChange,
+        onBackgroundServiceRetry = onBackgroundServiceRetry,
+        onAddBackgroundServiceTile = onAddBackgroundServiceTile,
+    )
+}
+
+@Composable
+fun SettingsScreen(
+    state: SettingsUiState,
+    session: MainSessionUiState = MainSessionUiState(),
     onArchiveCompressionChange: (SpaceArchiveCompression) -> Unit = {},
     onOpenStorageSettings: () -> Unit,
     onExportDiagnostics: () -> Unit,
@@ -109,12 +148,12 @@ fun SettingsScreen(
                     modifier = Modifier
                         .padding(top = 16.dp)
                         .testTag("create-space-from-backup"),
-                    enabled = !state.isCreatingSpaceFromBackup && state.archiveBusyGroupId == null,
+                    enabled = !session.isCreatingSpaceFromBackup && session.archiveBusyGroupId == null,
                     onClick = onCreateSpaceFromBackup,
                 ) {
                     Icon(Icons.Default.Unarchive, contentDescription = null)
                     Text(
-                        if (state.isCreatingSpaceFromBackup) "從備份建立中…" else "選擇備份",
+                        if (session.isCreatingSpaceFromBackup) "從備份建立中…" else "選擇備份",
                         modifier = Modifier.padding(start = 8.dp),
                     )
                 }

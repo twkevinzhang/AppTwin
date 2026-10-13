@@ -7,6 +7,9 @@ import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.resetMain
@@ -1245,6 +1248,200 @@ class MainViewModelLifecycleTest {
         assertEquals(second, model.uiState.spaceBackgroundHealth?.groupId)
     }
 
+    @Test
+    fun `home state distinguishes unreadable empty index from a valid empty space list`() = runTest {
+        val dispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(dispatcher)
+        val unreadable = viewModel(SavedStateHandle(), FakeOperations(refreshWarnings = listOf("corrupt metadata")), dispatcher)
+        val empty = viewModel(SavedStateHandle(), FakeOperations(), dispatcher)
+        advanceUntilIdle()
+        assertFalse(unreadable.homeState.value.isRefreshing)
+        assertTrue(unreadable.homeState.value.groups.isEmpty())
+        assertTrue(unreadable.homeState.value.error != null)
+        assertEquals(unreadable.homeState.value.error, unreadable.uiState.homeError)
+        assertFalse(empty.homeState.value.isRefreshing)
+        assertTrue(empty.homeState.value.groups.isEmpty())
+        assertEquals(null, empty.homeState.value.error)
+    }
+
+    @Test
+    fun `home index read error retries into a successful published catalog`() = runTest {
+        val dispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(dispatcher)
+        val operations = FakeOperations(groups = listOf(group()), loadGroupError = IllegalStateException("unavailable"))
+        val model = viewModel(SavedStateHandle(), operations, dispatcher)
+        advanceUntilIdle()
+        assertFalse(model.homeState.value.isRefreshing)
+        assertTrue(model.homeState.value.error?.contains("unavailable") == true)
+        operations.loadGroupError = null
+        model.refresh()
+        assertTrue(model.uiState.isRefreshing)
+        advanceUntilIdle()
+        assertEquals(listOf(GROUP_ID), model.homeState.value.groups.map { it.groupId })
+        assertEquals(null, model.homeState.value.error)
+        assertEquals(model.homeState.value.groups, model.sessionState.value.groups)
+        assertEquals(model.sessionState.value.groups, model.pickerState.value.groups)
+    }
+
+    @Test
+    fun `typed home enrichment error retains fast local cards and settings snapshot does not mask it`() = runTest {
+        val dispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(dispatcher)
+        val model = viewModel(SavedStateHandle(), FakeOperations(groups = listOf(group()), refreshError = IllegalStateException("enrichment unavailable")), dispatcher)
+        advanceUntilIdle()
+        assertEquals(listOf(GROUP_ID), model.homeState.value.groups.map { it.groupId })
+        assertFalse(model.homeState.value.isRefreshing)
+        assertTrue(model.homeState.value.error?.contains("enrichment unavailable") == true)
+        assertEquals(model.homeState.value.groups, model.pickerState.value.groups)
+    }
+
+    @Test
+    fun `typed picker latest request wins while earlier lookup arrives late`() = runTest {
+        val dispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(dispatcher)
+        val pending = CompletableDeferred<Group?>()
+        val other = group().copy(id = "00000000-0000-0000-0000-000000000002")
+        val operations = object : MainOperations by FakeOperations(groups = listOf(group(), other)) {
+            override suspend fun findGroup(groupId: String): Group? =
+                if (groupId == GROUP_ID) pending.await() else other
+        }
+        val model = viewModel(SavedStateHandle(), operations, dispatcher)
+        advanceUntilIdle()
+        model.openAppPicker(GROUP_ID)
+        runCurrent()
+        model.openAppPicker(other.id)
+        runCurrent()
+        assertEquals(other.id, model.uiState.appPickerGroupId)
+        pending.complete(group())
+        advanceUntilIdle()
+        assertEquals(other.id, model.pickerState.value.appPickerGroupId)
+        assertEquals(other.id, model.uiState.appPickerGroupId)
+    }
+
+    @Test
+    fun `closed deep link resolution cannot republish a chooser after late IO completion`() = runTest {
+        val dispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(dispatcher)
+        val pending = CompletableDeferred<List<Pair<String, String>>>()
+        val cloned = group().copy(apps = listOf(GroupApp(APP_PACKAGE, addedAtEpochMillis = 2)))
+        val operations = object : MainOperations by FakeOperations(groups = listOf(cloned)) {
+            override suspend fun resolveDeepLink(uri: String) = pending.await()
+        }
+        val model = viewModel(SavedStateHandle(), operations, dispatcher)
+        advanceUntilIdle()
+        model.openDeepLink("fixture://accepted")
+        runCurrent()
+        model.closeDeepLink()
+        pending.complete(listOf(GROUP_ID to APP_PACKAGE))
+        advanceUntilIdle()
+        assertFalse(model.navigationState.value.isResolvingDeepLink)
+        assertEquals(null, model.navigationState.value.pendingDeepLink)
+        assertTrue(model.navigationState.value.deepLinkCandidates.isEmpty())
+    }
+
+    @Test
+    fun `cancelled home index read cannot publish a late catalog or enter durable recovery`() = runTest {
+        val dispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(dispatcher)
+        val gate = CompletableDeferred<Unit>()
+        val operations = FakeOperations(groups = listOf(group()), firstGroupLoadGate = gate)
+        val model = viewModel(SavedStateHandle(), operations, dispatcher)
+        val store = ViewModelStore().apply { put("model", model) }
+        runCurrent()
+        assertEquals(1, operations.loadGroupCalls)
+        store.clear()
+        gate.complete(Unit)
+        advanceUntilIdle()
+        assertFalse(operations.reconcileStarted)
+        assertEquals(0, operations.refreshCalls)
+        assertTrue(model.uiState.groups.isEmpty())
+        assertEquals(null, model.uiState.message)
+        assertEquals(null, model.uiState.homeError)
+    }
+
+    @Test
+    fun `cancelled picker lookup cannot select a space or publish a failure`() = runTest {
+        val dispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(dispatcher)
+        val gate = CompletableDeferred<Unit>()
+        val operations = FakeOperations(groups = listOf(group()), findGroupGate = gate)
+        val savedState = SavedStateHandle()
+        val model = viewModel(savedState, operations, dispatcher)
+        val store = ViewModelStore().apply { put("model", model) }
+        advanceUntilIdle()
+        model.openAppPicker(GROUP_ID)
+        runCurrent()
+        store.clear()
+        gate.complete(Unit)
+        advanceUntilIdle()
+        assertEquals(null, model.uiState.appPickerGroupId)
+        assertEquals(null, savedState.get<String>("main.appPickerGroupId"))
+        assertEquals(null, model.uiState.message)
+    }
+
+    @Test
+    fun `cancelled launch releases the shared lease without failure publication or refreshing`() = runTest {
+        val dispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(dispatcher)
+        val gate = CompletableDeferred<Unit>()
+        val operations = FakeOperations(launchGate = gate)
+        val messages = mutableListOf<String>()
+        val scope = CoroutineScope(SupervisorJob() + dispatcher)
+        val session = MainSessionCoordinator(scope, dispatcher, dispatcher, operations, operations, messages::add, messages::add)
+        session.launchBlockedByRecovery = false
+        val item = GroupAppItem(GROUP_ID, "工作", GroupHealth.HEALTHY, GroupApp(APP_PACKAGE, 2), "測試", "1", true, "可使用")
+        var refreshes = 0
+        session.launchGroupApp(item) { ++refreshes }
+        runCurrent()
+        assertEquals(item.launchKey, session.state.launchingAppKey)
+        assertFalse(session.appLaunchMutex.tryLock())
+        scope.cancel()
+        gate.complete(Unit)
+        advanceUntilIdle()
+        assertEquals(null, session.state.launchingAppKey)
+        assertTrue(session.appLaunchMutex.tryLock())
+        session.appLaunchMutex.unlock()
+        assertTrue(messages.isEmpty())
+        assertEquals(0, refreshes)
+    }
+
+    @Test
+    fun `cancelled durable recovery stops before remaining reconciliations and enrichment`() = runTest {
+        val dispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(dispatcher)
+        val gate = CompletableDeferred<Unit>()
+        val fake = FakeOperations(groups = listOf(group()), reconcileGate = gate)
+        val followup = mutableListOf<String>()
+        val operations = object : MainOperations by fake {
+            override suspend fun reconcileAppRemovals() { followup += "removals" }
+            override suspend fun reconcileApplicationOperations() { followup += "applications" }
+            override suspend fun reconcileGms(): GmsStartupResult {
+                followup += "gms"
+                return fake.reconcileGms()
+            }
+        }
+        val messages = mutableListOf<String>()
+        val scope = CoroutineScope(SupervisorJob() + dispatcher)
+        val session = MainSessionCoordinator(scope, dispatcher, dispatcher, operations, operations, messages::add, messages::add)
+        session.reconcile(
+            onStart = {},
+            loadAndPublishGroups = { operations.loadGroupSnapshot() },
+            applyFullRefresh = { _, _ -> followup += "enrichment" },
+            validatePickerSelection = {},
+            refresh = { followup += "refresh" },
+        )
+        runCurrent()
+        assertTrue(fake.reconcileStarted)
+        scope.cancel()
+        gate.complete(Unit)
+        advanceUntilIdle()
+        assertFalse(session.recoveryInProgress)
+        assertTrue(session.launchBlockedByRecovery)
+        assertEquals(1, fake.loadGroupCalls)
+        assertTrue(followup.isEmpty())
+        assertTrue(messages.isEmpty())
+    }
+
     private fun viewModel(
         savedState: SavedStateHandle,
         operations: MainOperations,
@@ -1273,7 +1470,7 @@ class MainViewModelLifecycleTest {
         private val clonePermissions: List<ClonePermissionSummary> = emptyList(),
         private val refreshGate: CompletableDeferred<Unit>? = null,
         private val refreshError: Throwable? = null,
-        private val loadGroupError: Throwable? = null,
+        var loadGroupError: Throwable? = null,
         private val firstGroupLoadGate: CompletableDeferred<Unit>? = null,
         private val secondGroupLoadGate: CompletableDeferred<Unit>? = null,
         private val clearGroupStorageGate: CompletableDeferred<Unit>? = null,
