@@ -75,12 +75,52 @@ import androidx.compose.ui.unit.dp
 import org.apptwin.GroupAppItem
 import org.apptwin.GroupItem
 import org.apptwin.MainUiState
+import org.apptwin.HomeUiState
+import org.apptwin.MainSessionUiState
 import org.apptwin.spaces.CloneLifecycleState
 import org.apptwin.spaces.SpaceLifecycleState
 
 @Composable
 fun HomeScreen(
     state: MainUiState,
+    onCreateGroup: () -> Unit,
+    onLaunch: (GroupAppItem) -> Unit = {},
+    onAddApp: (String) -> Unit = {},
+    onRenameSpace: (String, String) -> Unit = { _, _ -> },
+    onDeleteSpace: (String) -> Unit = {},
+    onOpenSpaceDetails: (String) -> Unit = {},
+    onClearAllAppData: (String) -> Unit = {},
+    onUninstallApp: (GroupAppItem) -> Unit = {},
+    onCreateShortcut: (GroupAppItem) -> Unit = {},
+    onRepairApp: (GroupAppItem) -> Unit = {},
+    clearingStorageAppKey: String? = null,
+    onClearStorage: (GroupAppItem) -> Unit = {},
+    onSetPermission: (GroupAppItem, String, Boolean) -> Unit = { _, _, _ -> },
+) {
+    HomeScreen(
+        state = HomeUiState(groups = state.groups, isRefreshing = state.isRefreshing, dataWarnings = state.dataWarnings, error = state.homeError, createSpaceError = state.createSpaceError, isCreatingGroup = state.isCreatingGroup),
+        session = MainSessionUiState(busyGroupId = state.busyGroupId, clearingStorageGroupId = state.clearingStorageGroupId, archiveBusyGroupId = state.archiveBusyGroupId, uninstallingAppKey = state.uninstallingAppKey, launchingAppKey = state.launchingAppKey, shortcutAppKey = state.shortcutAppKey, repairingAppKey = state.repairingAppKey, isCreatingSpaceFromBackup = state.isCreatingSpaceFromBackup),
+        onCreateGroup = onCreateGroup,
+        onLaunch = onLaunch,
+        onAddApp = onAddApp,
+        onRenameSpace = onRenameSpace,
+        onDeleteSpace = onDeleteSpace,
+        onOpenSpaceDetails = onOpenSpaceDetails,
+        onClearAllAppData = onClearAllAppData,
+        onUninstallApp = onUninstallApp,
+        onCreateShortcut = onCreateShortcut,
+        onRepairApp = onRepairApp,
+        clearingStorageAppKey = clearingStorageAppKey,
+        onClearStorage = onClearStorage,
+        onSetPermission = onSetPermission,
+    )
+}
+
+@Composable
+fun HomeScreen(
+    state: HomeUiState,
+    session: MainSessionUiState = MainSessionUiState(),
+    onRefresh: () -> Unit = {},
     onCreateGroup: () -> Unit,
     onLaunch: (GroupAppItem) -> Unit = {},
     onAddApp: (String) -> Unit = {},
@@ -107,6 +147,12 @@ fun HomeScreen(
         collapsedGroupIds.none { it in visibleGroupIds }
 
     Column(modifier = Modifier.fillMaxSize()) {
+        state.error?.takeIf { state.groups.isNotEmpty() }?.let { error ->
+            Row(modifier = Modifier.padding(16.dp).testTag("home-error")) {
+                Text(error, modifier = Modifier.weight(1f), color = MaterialTheme.colorScheme.error)
+                TextButton(onClick = onRefresh, modifier = Modifier.testTag("home-retry")) { Text("重新載入") }
+            }
+        }
         if (state.dataWarnings.isNotEmpty()) {
             DataIntegrityWarning(
                 count = state.dataWarnings.size,
@@ -115,7 +161,14 @@ fun HomeScreen(
         }
         BoxWithConstraints(modifier = Modifier.weight(1f)) {
             val spaceColumns = if (maxWidth >= 720.dp) 2 else 1
-            if (state.groups.isEmpty() && !state.isRefreshing) {
+            if (state.groups.isEmpty() && state.isRefreshing) {
+                CircularProgressIndicator(modifier = Modifier.testTag("home-loading").padding(24.dp))
+            } else if (state.groups.isEmpty() && (state.error != null || state.dataWarnings.isNotEmpty())) {
+                Column(modifier = Modifier.padding(24.dp).testTag("home-error")) {
+                    Text(state.error ?: "無法讀取空間資料，請重新載入。", color = MaterialTheme.colorScheme.error)
+                    TextButton(onClick = onRefresh, modifier = Modifier.testTag("home-retry")) { Text("重新載入") }
+                }
+            } else if (state.groups.isEmpty()) {
                 EmptyGroups(onCreateGroup)
             } else {
                 LazyColumn(
@@ -158,18 +211,18 @@ fun HomeScreen(
                                     ExpandableSpaceCard(
                                         item = item,
                                         expanded = item.groupId !in collapsedGroupIds,
-                                        isBusy = state.isCreatingSpaceFromBackup ||
-                                            state.busyGroupId == item.groupId ||
+                                        isBusy = session.isCreatingSpaceFromBackup ||
+                                            session.busyGroupId == item.groupId ||
 
-                                            state.clearingStorageGroupId == item.groupId ||
-                                            state.archiveBusyGroupId == item.groupId ||
-                                            state.uninstallingAppKey
+                                            session.clearingStorageGroupId == item.groupId ||
+                                            session.archiveBusyGroupId == item.groupId ||
+                                            session.uninstallingAppKey
                                                 ?.startsWith("${item.groupId}:") == true,
                                         gmsBusyMessage = null,
-                                        launchingAppKey = state.launchingAppKey,
-                                        uninstallingAppKey = state.uninstallingAppKey,
-                                        shortcutAppKey = state.shortcutAppKey,
-                                        repairingAppKey = state.repairingAppKey,
+                                        launchingAppKey = session.launchingAppKey,
+                                        uninstallingAppKey = session.uninstallingAppKey,
+                                        shortcutAppKey = session.shortcutAppKey,
+                                        repairingAppKey = session.repairingAppKey,
                                         onToggleExpanded = {
                                             collapsedGroupIds = if (item.groupId in collapsedGroupIds) {
                                                 collapsedGroupIds - item.groupId
@@ -229,7 +282,7 @@ fun HomeScreen(
         )
     }
     clearAllGroup?.let { group ->
-        val isClearing = state.clearingStorageGroupId == group.groupId
+        val isClearing = session.clearingStorageGroupId == group.groupId
         var clearWasInProgress by rememberSaveable(group.groupId) { mutableStateOf(false) }
         LaunchedEffect(isClearing) {
             if (isClearing) {
@@ -243,7 +296,7 @@ fun HomeScreen(
             group = group,
             isClearing = isClearing,
             onDismiss = {
-                if (state.clearingStorageGroupId != group.groupId) clearAllGroupId = null
+                if (session.clearingStorageGroupId != group.groupId) clearAllGroupId = null
             },
             onConfirm = { onClearAllAppData(group.groupId) },
         )

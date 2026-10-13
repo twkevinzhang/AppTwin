@@ -35,6 +35,62 @@ data class SpaceAuthenticatorRow(val type: String, val label: String)
 
 @Composable
 fun SpaceDetailsScreen(
+    state: org.apptwin.SpaceDetailsUiState,
+    session: org.apptwin.MainSessionUiState = org.apptwin.MainSessionUiState(),
+    group: GroupItem,
+    globalBackupLocation: String?,
+    onRefresh: () -> Unit,
+    onSetPermission: (GroupAppItem, String, Boolean) -> Unit,
+    onAddAccount: (String) -> Unit,
+    onRemoveAccount: (SpaceAccountRow) -> Unit,
+    onSynchronizeAccount: (SpaceAccountRow, String) -> Unit,
+    onCreateFromBackup: (SpaceBackupEntry) -> Unit,
+    onDeleteBackup: (SpaceBackupEntry) -> Unit,
+    onExport: () -> Unit,
+    onOpenGlobalSettings: () -> Unit,
+    onRename: (String) -> Unit,
+    onClearAllAppData: () -> Unit,
+    onDeleteSpace: () -> Unit,
+    backgroundServiceState: org.apptwin.runtime.BackgroundServiceState = org.apptwin.runtime.BackgroundServiceState(),
+    onRetryBackground: () -> Unit = {},
+) {
+    val details = state.spaceDetails?.takeIf { it.groupId == group.groupId }
+    SpaceDetailsScreen(
+        storage = details?.storage?.let { listOf("App 資料" to it.appDataBytes, "快取" to it.cacheBytes, "共用檔案" to it.sharedFilesBytes, "Google 服務資料" to it.googleDataBytes) }.orEmpty(),
+        permissions = details?.permissions.orEmpty().filter { it.controllable || it.platformExempt }.flatMap { permission ->
+            permission.apps.mapNotNull { target -> group.apps.firstOrNull { it.app.packageName == target.packageName }?.let { app ->
+                SpacePermissionRow(permission.permission, permission.label, app, target.granted, permission.hostGranted, permission.platformExempt)
+            } }
+        },
+        accounts = details?.accounts.orEmpty().map { SpaceAccountRow(it.name, it.type, it.syncAuthorities, it.syncStatus) },
+        authenticators = details?.accountTypes.orEmpty().map { SpaceAuthenticatorRow(it.type, it.label) },
+        backups = details?.backups.orEmpty(),
+        loading = state.isLoadingSpaceDetails,
+        busy = session.isSpaceActionBusy || session.busyGroupId != null || session.clearingStorageGroupId != null || session.archiveBusyGroupId != null || session.isCreatingSpaceFromBackup,
+        error = state.spaceDetailsError,
+        backgroundHealth = state.spaceBackgroundHealth?.takeIf { it.groupId == group.groupId },
+        backgroundRetrying = state.isSpaceBackgroundRetrying,
+        group = group,
+        globalBackupLocation = globalBackupLocation ?: details?.backupLocation,
+        onRefresh = onRefresh,
+        onSetPermission = onSetPermission,
+        onAddAccount = onAddAccount,
+        onRemoveAccount = onRemoveAccount,
+        onSynchronizeAccount = onSynchronizeAccount,
+        onCreateFromBackup = onCreateFromBackup,
+        onDeleteBackup = onDeleteBackup,
+        onExport = onExport,
+        onOpenGlobalSettings = onOpenGlobalSettings,
+        onRename = onRename,
+        onClearAllAppData = onClearAllAppData,
+        onDeleteSpace = onDeleteSpace,
+        backgroundServiceState = backgroundServiceState,
+        onRetryBackground = onRetryBackground,
+    )
+}
+
+@Composable
+fun SpaceDetailsScreen(
     group: GroupItem,
     storage: List<Pair<String, Long>>,
     permissions: List<SpacePermissionRow>,

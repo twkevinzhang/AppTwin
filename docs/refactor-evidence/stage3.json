@@ -1,0 +1,112 @@
+{
+  "stage": 3,
+  "overall_gate": "passed",
+  "base_commit": "9febf50",
+  "device": "physical Pixel 10a/API 37, approved for this five-stage refactor",
+  "host_target_sdk": 28,
+  "dependencies_changed": false,
+  "app_unit": {
+    "tests": 212,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0
+  },
+  "build_logs": [
+    "/tmp/apptwin-stage3-third-build.log",
+    "/tmp/apptwin-stage3-vm-semantics-build.log"
+  ],
+  "device_runs": [
+    {
+      "log": "/tmp/apptwin-stage3-ui-factory-account-backup.log",
+      "tests": 41,
+      "negative_status_codes": [],
+      "passed": true
+    },
+    {
+      "log": "/tmp/apptwin-stage3-isolation-phase1.log",
+      "tests": 1,
+      "negative_status_codes": [],
+      "passed": true
+    },
+    {
+      "log": "/tmp/apptwin-stage3-isolation-phase2.log",
+      "tests": 1,
+      "negative_status_codes": [],
+      "passed": true
+    },
+    {
+      "log": "/tmp/apptwin-stage3-sensors.log",
+      "tests": 1,
+      "negative_status_codes": [],
+      "passed": true
+    },
+    {
+      "log": "/tmp/apptwin-stage3-reuse-0.log",
+      "tests": 1,
+      "negative_status_codes": [],
+      "passed": true
+    },
+    {
+      "log": "/tmp/apptwin-stage3-reuse-1.log",
+      "tests": 1,
+      "negative_status_codes": [],
+      "passed": true
+    },
+    {
+      "log": "/tmp/apptwin-stage3-reuse-2.log",
+      "tests": 1,
+      "negative_status_codes": [],
+      "passed": true
+    },
+    {
+      "log": "/tmp/apptwin-stage3-reuse-3.log",
+      "tests": 1,
+      "negative_status_codes": [],
+      "passed": true
+    },
+    {
+      "log": "/tmp/apptwin-stage3-reuse-4.log",
+      "tests": 1,
+      "negative_status_codes": [],
+      "passed": true
+    },
+    {
+      "log": "/tmp/apptwin-stage3-vm-semantics-workflow.log",
+      "tests": 1,
+      "negative_status_codes": [],
+      "passed": true
+    }
+  ],
+  "device_test_executions": 50,
+  "sensor_capability_probes": 8,
+  "apk_hashes": {
+    "org.apptwin": {
+      "sha256": "f174e4624fafd41959865fd7e7e211a3082ea77a71e27ba33a7f31f91f91975a",
+      "installed_hash_matches": true
+    },
+    "org.apptwin.test": {
+      "sha256": "f92bd716871672ca1387b3c98fa38bc12cccfbb7f5fe21db95880d32ac1a1c58",
+      "installed_hash_matches": true
+    }
+  },
+  "earlier_device_runs_test_apk_sha256": "d5425ec82ca5957bdbb7fa26606ab601445596f15514eeb360fcf60ce5051047",
+  "lint": {
+    "app_warnings": 30,
+    "new_errors": 0,
+    "baseline_changed": false
+  },
+  "runtime_unit": "Stage2 791 tests; unchanged runtime not reexecuted in Stage3",
+  "cleanup": "Owned workflow and isolation tests assert owned deletion and existing public group/environment/membership preservation. No target clear/uninstall.",
+  "historical_failures": [
+    {
+      "log": "/tmp/apptwin-stage3-production-vm-workflow.log",
+      "reason": "Framework accessibility own-label query failed; corrected explicit Home navigation precondition and real Compose semantics, retaining displayed assertions."
+    }
+  ],
+  "limitations": [
+    "Physical evidence covers API37 host target28 only.",
+    "SavedState owner/recreation is not real process-death UI verification.",
+    "No LINE message ingress/notification fix claimed.",
+    "Lifecycle-aware collection and platform observation remain Stage4."
+  ]
+}

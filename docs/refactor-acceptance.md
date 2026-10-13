@@ -21,7 +21,7 @@
 | --- | --- | --- | --- |
 | 固定契約 | 盤點操作與狀態；補缺少的 characterization 測試；建立本契約 | 基線與新增測試、build、Lint；狀態 UI 在實體裝置執行 | 通過：本機與正式 Pixel 10a 驗收 |
 | 拆操作與組裝 | 細分操作介面與實際 Android adapter 實作；手動 composition root；共享 coordinator | 操作語意、復原與重複操作回歸；build、Lint、相關 unit／整合測試 | 通過：本機與正式 Pixel 10a 驗收 |
-| 拆畫面狀態 | Home／Picker／Details／Settings 責任與狀態持有者實際分離；保持 UI 與 navigation 契約 | SavedState、切換／晚到結果、操作進度及畫面狀態回歸；build、Lint、unit／UI | 未開始 |
+| 拆畫面狀態 | Home／Picker／Details／Settings 責任與狀態持有者實際分離；保持 UI 與 navigation 契約 | SavedState、切換／晚到結果、操作進度及畫面狀態回歸；build、Lint、unit／UI | 正式驗收通過 |
 | 整理 Lifecycle／權限／背景觀察 | 平台邊界提供觀察與權限能力，UI 停止時釋放 observer；操作前重新查權限 | Lifecycle 重建／停止／返回設定、權限撤銷、背景 retry／stop fences；build、Lint、unit／實機 | 未開始 |
 | 小範圍整理 runtime | 明確限定一條現有 runtime 路徑，抽取可測 policy／helper | exact scope、非法 caller／Intent、失敗／取消／重複事件與版本差異；build、Lint、unit／實機整合 | 未開始 |
 
@@ -84,3 +84,14 @@ UI fixture 測試不等於真實資料操作驗收。執行 connected tests 前�
 - 官方核對：[PermissionManager](https://android.googlesource.com/platform/frameworks/base/+/android16-qpr2-release/core/java/android/permission/PermissionManager.java)、[IActivityManager](https://android.googlesource.com/platform/frameworks/base/+/android16-qpr2-release/core/java/android/app/IActivityManager.aidl)、[RecentTaskInfo](https://developer.android.com/reference/android/app/ActivityManager.RecentTaskInfo)、[TaskInfo](https://developer.android.com/reference/android/app/TaskInfo)、[AppTask.moveToFront](https://developer.android.com/reference/android/app/ActivityManager.AppTask#moveToFront()).
 
 可靠度分數：96%。驗證方式：比對正式 APK hashes、JUnit terminal status/零 skip、實機 lifecycle/有效能力及 exact public baseline assertions，並在後續階段重新執行原始路徑；新失敗需回到對應 gate，不能用歷史成功替代。
+
+### 第三階段：畫面狀態拆分，正式驗收通過
+
+- MainViewModel 保留 navigation、SavedState、onboarding、訊息及 deep-link shell；四個實際 state owners 接管各畫面 workflow。唯一 session coordinator 接管 catalog、busy、launch mutex、普通／deep-link／add-first-launch 及 recovery sequencing。各畫面使用 readonly StateFlow，legacy MainUiState 只有同步唯讀投影。
+- Production AppTwinApp 消費六個 typed flows；Home 零有效資料的讀取／完整性錯誤顯示 Error/重試，Loading 與 Error 不呈現 Empty 建立 CTA，refresh/error 保留既有卡片。保留原 SavedState keys、dialogs、navigation 與既有 34 個 UI characterization cases，新增 3 個狀態案例。
+- 非作者審查要求的取消傳遞、owner scope 發布帳號結果、單一 Settings 備份位置 ownership 與 navigation/session atomic updates 均已修正。Gradle build、Lint 與 app 212 個 unit tests 通過，零 failure/error/skipped；app Lint 30 warnings、無新增 error/fatal，依賴及 baseline 不變。
+- 正式 Pixel 10a 共 50 個測試執行通過：37 UI 狀態契約、factory 2、帳號/備份 2、雙空間跨 force-stop 2、sensor 1（8 個有效能力 probes）、五輪 first/warm reuse、production ViewModel workflow 1。最後一例透過真實 factory/state owners 建立空間、選 fixture、first/warm launch、詳情與刪除，核對真正渲染的 own label、同 instance/PID/task/count=1、journal terminal、private directory cleanup 與既有 public baseline。初次 framework accessibility query 失敗另保留紀錄，修正明確 Home 前置條件與真實 Compose semantics 後完整通過，未移除顯示斷言。
+- 安裝 APK hashes 已核對；前 49 個執行與新增 workflow 的 test APK hash 分開記錄於 [stage3.json](refactor-evidence/stage3.json)。runtime 未修改，791 個結果沿用第二階段，不宣稱第三階段重新執行。沒有清除或解除安裝 target app。
+- 官方依據：[Architecture recommendations](https://developer.android.com/topic/architecture/recommendations)、[State holders and UI state](https://developer.android.com/topic/architecture/ui-layer/stateholders)。沒有更改依賴、SDK、runtime/workload gate 或 LINE channel 策略；lifecycle-aware collection 與平台觀察邊界留給第四階段。
+
+可靠度分數：96%。驗證方式：核對 stage3.json 的正式 runner terminal、零 skip、JUnit 結果、實機 fixture lifecycle／能力與 APK hashes；後續任何回歸須重新驗收對應流程。
