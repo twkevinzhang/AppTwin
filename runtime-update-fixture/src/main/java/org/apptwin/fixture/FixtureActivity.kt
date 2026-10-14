@@ -79,7 +79,8 @@ class FixtureActivity : Activity() {
         probeResumed = true
         lifecycleProbe.resumed()
         if (File(filesDir, "enable-permission-probe").exists() ||
-            File(filesDir, CameraMicrophoneProbe.ENABLE_FILE).exists()) {
+            File(filesDir, CameraMicrophoneProbe.ENABLE_FILE).exists() ||
+            File(filesDir, OwnedContactsProbe.ENABLE_FILE).exists()) {
             window.addFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
             if (probeReadinessDeadline == 0L) {
                 probeReadinessDeadline = android.os.SystemClock.elapsedRealtime() + 20_000
@@ -114,14 +115,21 @@ class FixtureActivity : Activity() {
     private fun startProbeWhenForeground() {
         val cameraRequest = File(filesDir, CameraMicrophoneProbe.ENABLE_FILE)
         val cameraOnly = cameraRequest.exists()
-        if (permissionProbeStarted || (!cameraOnly && !File(filesDir, "enable-permission-probe").exists())) return
+        val contactsRequest = File(filesDir, OwnedContactsProbe.ENABLE_FILE)
+        val contactsOnly = contactsRequest.exists()
+        val resultFile = when {
+            contactsOnly -> OwnedContactsProbe.RESULT_FILE
+            cameraOnly -> CameraMicrophoneProbe.RESULT_FILE
+            else -> PermissionEnforcementProbe.RESULT_FILE
+        }
+        if (permissionProbeStarted || (!contactsOnly && !cameraOnly && !File(filesDir, "enable-permission-probe").exists())) return
         if (!probeResumed || !hasWindowFocus() || isFinishing) {
             if (probeReadinessDeadline == 0L) return
             if (android.os.SystemClock.elapsedRealtime() < probeReadinessDeadline) {
                 window.decorView.postDelayed({ startProbeWhenForeground() }, 100)
             } else {
                 permissionProbeStarted = true
-                File(filesDir, if (cameraOnly) CameraMicrophoneProbe.RESULT_FILE else PermissionEnforcementProbe.RESULT_FILE).writeText(
+                File(filesDir, resultFile).writeText(
                     org.json.JSONObject().put("readiness", "foreground-timeout")
                         .put("resumed", probeResumed).put("hasWindowFocus", hasWindowFocus())
                         .put("isFinishing", isFinishing).toString(),
@@ -131,13 +139,14 @@ class FixtureActivity : Activity() {
         }
         permissionProbeStarted = true
         Thread {
-            val result = if (cameraOnly) CameraMicrophoneProbe.collect(this, cameraRequest.readText().trim())
+            val result = if (contactsOnly) OwnedContactsProbe.collect(this, org.json.JSONObject(contactsRequest.readText()))
+            else if (cameraOnly) CameraMicrophoneProbe.collect(this, cameraRequest.readText().trim())
             else PermissionEnforcementProbe.collect(this) {
                 org.json.JSONObject().put("resumed", probeResumed)
                     .put("hasWindowFocus", hasWindowFocus()).put("isFinishing", isFinishing)
                     .put("elapsedRealtime", android.os.SystemClock.elapsedRealtime())
             }
-            File(filesDir, if (cameraOnly) CameraMicrophoneProbe.RESULT_FILE else PermissionEnforcementProbe.RESULT_FILE)
+            File(filesDir, resultFile)
                 .writeText(result.toString())
         }.start()
     }

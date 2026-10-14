@@ -1,0 +1,188 @@
+{
+  "stage": 5,
+  "overall_gate": "passed",
+  "base_commit": "d301b1c",
+  "scope": "Provider pre-forward space permission mediation, existing Java runtime",
+  "device": "physical Pixel 10a/API37 approved for this five-stage refactor",
+  "host_target_sdk": 28,
+  "dependencies_changed": false,
+  "units": {
+    "app": {
+      "tests": 232,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "virtual-runtime": {
+      "tests": 804,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    }
+  },
+  "lint": {
+    "app": {
+      "Warning": 30,
+      "Error": 0,
+      "Fatal": 0
+    },
+    "virtual-runtime": {
+      "Warning": 133,
+      "Error": 0,
+      "Fatal": 0
+    },
+    "runtime-update-fixture": {
+      "Warning": 17,
+      "Error": 0,
+      "Fatal": 0
+    }
+  },
+  "existing_runtime_baseline_filtered_errors": 13,
+  "existing_runtime_baseline_filtered_warnings": 358,
+  "baseline_changed": false,
+  "build_logs": [
+    "/tmp/apptwin-stage5-second-build.log"
+  ],
+  "device_runs": [
+    {
+      "log": "/tmp/apptwin-stage5-final-regression.log",
+      "tests": 50,
+      "negative_status_codes": [],
+      "passed": true
+    },
+    {
+      "log": "/tmp/apptwin-stage5-owned-contacts.log",
+      "tests": 1,
+      "negative_status_codes": [],
+      "passed": true
+    },
+    {
+      "log": "/tmp/apptwin-stage5-final-policy.log",
+      "tests": 1,
+      "negative_status_codes": [],
+      "passed": true
+    },
+    {
+      "log": "/tmp/apptwin-stage5-final-isolation-phase1.log",
+      "tests": 1,
+      "negative_status_codes": [],
+      "passed": true
+    },
+    {
+      "log": "/tmp/apptwin-stage5-final-isolation-phase2.log",
+      "tests": 1,
+      "negative_status_codes": [],
+      "passed": true
+    },
+    {
+      "log": "/tmp/apptwin-stage5-final-reuse-0.log",
+      "tests": 1,
+      "negative_status_codes": [],
+      "passed": true
+    },
+    {
+      "log": "/tmp/apptwin-stage5-final-reuse-1.log",
+      "tests": 1,
+      "negative_status_codes": [],
+      "passed": true
+    },
+    {
+      "log": "/tmp/apptwin-stage5-final-reuse-2.log",
+      "tests": 1,
+      "negative_status_codes": [],
+      "passed": true
+    },
+    {
+      "log": "/tmp/apptwin-stage5-final-reuse-3.log",
+      "tests": 1,
+      "negative_status_codes": [],
+      "passed": true
+    },
+    {
+      "log": "/tmp/apptwin-stage5-final-reuse-4.log",
+      "tests": 1,
+      "negative_status_codes": [],
+      "passed": true
+    },
+    {
+      "log": "/tmp/apptwin-stage5-final-host-permission.log",
+      "tests": 1,
+      "negative_status_codes": [],
+      "passed": true
+    }
+  ],
+  "device_test_executions": 60,
+  "contacts_actual_provider_probes": 6,
+  "sensor_actual_capability_probes": 8,
+  "host_denied_camera_probes": 2,
+  "attribution_instrumented_cases": 3,
+  "apk_hashes": {
+    "org.apptwin": {
+      "sha256": "150f05c4a63883ac2f90d88a73c7babfff8f0fe51b131e2c44ee9ff9b9387592",
+      "installed_hash_matches": true
+    },
+    "org.apptwin.test": {
+      "sha256": "738a688b0b9bf3420f53527af6adf2656d26d751233630eaf387baf9e57cccc6",
+      "installed_hash_matches": true
+    },
+    "org.apptwin.fixture": {
+      "sha256": "ae25a64958d76875a42717adc0a6c493a2f70ee13add205c960691c48c7d74ee",
+      "installed_hash_matches": true
+    }
+  },
+  "cleanup": {
+    "owned_groups_and_original_public_structure_verified_by_tests": true,
+    "owned_contact_rows_exact_uuid_uri_cleanup_and_zero_remaining_verified_by_test": true,
+    "owned_contact_and_restart_journals_remaining": 0,
+    "contacts_host_grants_and_flags": {
+      "prior": {
+        "READ_CONTACTS": {
+          "granted": true,
+          "flags": " USER_SET|USER_SENSITIVE_WHEN_GRANTED|USER_SENSITIVE_WHEN_DENIED"
+        },
+        "WRITE_CONTACTS": {
+          "granted": true,
+          "flags": " USER_SET|USER_SENSITIVE_WHEN_GRANTED|USER_SENSITIVE_WHEN_DENIED"
+        }
+      },
+      "restored": true,
+      "current": {
+        "READ_CONTACTS": {
+          "granted": true,
+          "flags": " USER_SET|USER_SENSITIVE_WHEN_GRANTED|USER_SENSITIVE_WHEN_DENIED"
+        },
+        "WRITE_CONTACTS": {
+          "granted": true,
+          "flags": " USER_SET|USER_SENSITIVE_WHEN_GRANTED|USER_SENSITIVE_WHEN_DENIED"
+        }
+      }
+    },
+    "camera_host_grant_and_flags": {
+      "prior_granted": true,
+      "prior_flags": " USER_SET|USER_SENSITIVE_WHEN_GRANTED|USER_SENSITIVE_WHEN_DENIED",
+      "restored": true,
+      "restored_flags": " USER_SET|USER_SENSITIVE_WHEN_GRANTED|USER_SENSITIVE_WHEN_DENIED",
+      "flags_unchanged": true
+    },
+    "background_policy_prior_and_restored": "enabled=true",
+    "policy_prior_record": "/tmp/apptwin-stage5-policy-prior.txt",
+    "policy_cold_preflight": "/tmp/apptwin-stage5-policy-cold-preflight.json",
+    "cache_policy_marker_removed": true,
+    "target_data_cleared": false,
+    "target_uninstalled": false
+  },
+  "review": "Non-author before/after policy and owned-contact side-effect review PASS. Guard denial precedes rewriting/forwarding, fresh reads, SDK/URI/mode/alias short-circuit semantics preserved.",
+  "historical_failures": [
+    {
+      "log": "/tmp/apptwin-stage5-first-build.log",
+      "reason": "New test cleanup List<Long> inference; explicit type added, cleanup assertions unchanged."
+    }
+  ],
+  "limitations": [
+    "Physical evidence covers API37/host target28; API32/33 provider policy differences additionally covered by JVM tests and official documents, not older physical devices.",
+    "Contacts acceptance is scoped permission mediation, not isolation of phone Contacts data when two spaces are both explicitly allowed.",
+    "Unchanged existing media/audio policy quirks remain; this is boundary extraction rather than a new storage policy.",
+    "SavedState recreation/owner evidence is not a full process-death UI restoration test.",
+    "No LINE upstream ingress/notification fix is claimed."
+  ]
+}

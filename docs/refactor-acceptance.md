@@ -2,7 +2,7 @@
 
 ## 範圍與基線
 
-基線 commit：`5f14b47`。沿用 Kotlin／Compose、Java／AIDL／JNI 與現有模組、資料格式和依賴；AGP 8.13.2、Kotlin 2.1.0、Compose BOM 2025.03.00、Lifecycle 2.8.7。這份文件記錄驗收要求，不代表測試已通過。主代理逐階段核對實際產物和測試結果，前一階段通過後才能進入下一階段。
+基線 commit：`5f14b47`。沿用 Kotlin／Compose、Java／AIDL／JNI 與現有模組、資料格式和依賴；AGP 8.13.2、Kotlin 2.1.0、Compose BOM 2025.03.00、Lifecycle 2.8.7。本文件保留原驗收契約；實際通過結果見下方逐階段紀錄及 evidence JSON。主代理逐階段核對實際產物和測試結果，前一階段通過後才能進入下一階段。
 
 採用 Google Android 分層、單向資料流、畫面狀態持有者與建構子注入建議；不得藉重構升級依賴或替換 runtime。API／函式庫用法須核對對應版本的官方文件。參考：https://developer.android.com/topic/architecture/recommendations 與 https://developer.android.com/topic/architecture/ui-layer/state-production 。
 
@@ -22,8 +22,8 @@
 | 固定契約 | 盤點操作與狀態；補缺少的 characterization 測試；建立本契約 | 基線與新增測試、build、Lint；狀態 UI 在實體裝置執行 | 通過：本機與正式 Pixel 10a 驗收 |
 | 拆操作與組裝 | 細分操作介面與實際 Android adapter 實作；手動 composition root；共享 coordinator | 操作語意、復原與重複操作回歸；build、Lint、相關 unit／整合測試 | 通過：本機與正式 Pixel 10a 驗收 |
 | 拆畫面狀態 | Home／Picker／Details／Settings 責任與狀態持有者實際分離；保持 UI 與 navigation 契約 | SavedState、切換／晚到結果、操作進度及畫面狀態回歸；build、Lint、unit／UI | 正式驗收通過 |
-| 整理 Lifecycle／權限／背景觀察 | 平台邊界提供觀察與權限能力，UI 停止時釋放 observer；操作前重新查權限 | Lifecycle 重建／停止／返回設定、權限撤銷、背景 retry／stop fences；build、Lint、unit／實機 | 未開始 |
-| 小範圍整理 runtime | 明確限定一條現有 runtime 路徑，抽取可測 policy／helper | exact scope、非法 caller／Intent、失敗／取消／重複事件與版本差異；build、Lint、unit／實機整合 | 未開始 |
+| 整理 Lifecycle／權限／背景觀察 | 平台邊界提供觀察與權限能力，UI 停止時釋放 observer；操作前重新查權限 | Lifecycle 重建／停止／返回設定、權限撤銷、背景 retry／stop fences；build、Lint、unit／實機 | 正式驗收通過 |
+| 小範圍整理 runtime | 明確限定一條現有 runtime 路徑，抽取可測 policy／helper | exact scope、非法 caller／Intent、失敗／取消／重複事件與版本差異；build、Lint、unit／實機整合 | 正式驗收通過 |
 
 不得用介面重新命名或純資料分組取代實際責任拆分。每階段留下實際 command、結果與未驗證項目；禁止預先填入 PASS。
 
@@ -108,3 +108,15 @@ UI fixture 測試不等於真實資料操作驗收。執行 connected tests 前�
 - 官方核對：[Lifecycle coroutines](https://developer.android.com/topic/libraries/architecture/coroutines)、[Runtime permissions](https://developer.android.com/training/permissions/requesting)、[Bluetooth permissions](https://developer.android.com/develop/connectivity/bluetooth/bt-permissions)、[Compose synchronization](https://developer.android.com/develop/ui/compose/testing/synchronization)。SDK 與既有平台豁免／background location 分支保留；未新增 Bluetooth 功能、未宣稱跨版本實機或 LINE 通知修復。
 
 可靠度分數：96%。驗證方式：比對 stage4.json 正式 runner terminal、APK hashes、JUnit/Lint 結果、實際能力與設定復原；後續 runtime 變更須重新驗收相關路徑。
+
+### 第五階段：Provider 權限中介邊界，正式驗收通過
+
+- ProviderHook 的實際 Space 權限決策移入 ProviderSpaceAccessGuard；Android URI／permission／platform 讀取由小型 environment 提供。保留先 guard、再 processArgs／attribution／MethodBox 的順序；拒絕不得 forwarding。Contacts aliases、first/last URI、mode、unknown call/batch、Documents grants 與 API 32/33 Media 分支逐項維持原語意，沒有改 caller/user/package/generation/workload locks、LINE 或 dependency。
+- 新增 13 個 runtime JVM cases，包含實際 ProviderHook.invoke 拒絕時 rewrite/base calls 都為 0。錯誤日誌僅保留 method／exception type，移除 args/URI/content 輸出。
+- 完整 build、app 232 與 runtime 804 個 unit tests 通過，零 failure/error/skipped。Lint app 30、runtime 133、fixture 17 warnings，無未過濾 error/fatal，baseline 與 detector 設定不變；runtime 既有 baseline filtered 13 errors/358 warnings 仍保留。
+- 正式 Pixel 10a 共 60 個測試執行通過：完整回歸 50（含實際 3 個 attribution cases）、Contacts 1（6 次真實 query/insert grant/deny/restart/revoke probes）、背景 policy 1、跨 host restart 隔離 2、五輪 first/warm reuse、host camera revoke 1（2 次真實 denial probes）。原 camera/microphone suite 另含八個有效能力 probes。沒有 skip 或將測試 body 取代 teardown。
+- Contacts 僅建立 null account/no Data/aggregation disabled 的 UUID local raw rows；查詢僅 exact own seed URI／UUID，清理僅 own URI＋UUID predicate 並驗證零殘留。未列出原聯絡人內容、未偽裝 sync adapter 或建立外部帳號。host Contacts grants 原本已允許，前後值及 flags 相同；camera 授權／flags 與背景 policy 均已恢復。owned journals／spaces 清理與既有 public tuples 由測試核對。
+- app、test、fixture 安裝 SHA-256 已核對；所有 gate 與限制見 [stage5.json](refactor-evidence/stage5.json)。Contacts 證據是 scope 權限中介，不代表兩個都明確允許的 spaces 擁有不同 phone Contacts DB；既有 media/audio policy quirks 保留，不冒稱全新 storage policy。
+- 官方核對：[Binder identity](https://developer.android.com/reference/android/os/Binder)、[Context URI permission](https://developer.android.com/reference/android/content/Context#checkUriPermission(android.net.Uri,int,int,int))、[Shared Media](https://developer.android.com/training/data-storage/shared/media)、[RawContacts](https://developer.android.com/reference/android/provider/ContactsContract.RawContacts)。較舊 OS 的實機、完整 UI process death、LINE upstream ingress/通知修復不在已驗證結論內。
+
+可靠度分數：96%。驗證方式：核對所有五階段 JSON、正式 runner terminal／零 skip、JUnit/Lint、安裝 hashes、owned cleanup 與原 policy/permission readback；後续範圍變更須重驗對應路徑。

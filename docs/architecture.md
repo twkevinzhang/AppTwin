@@ -20,6 +20,49 @@ Installed source package
        host-private GroupApp data
 ```
 
+## Launcher composition and observation
+
+```text
+MainActivity + SavedStateHandle
+        |
+Application-owned MainApplicationContainer / shared operation graph
+        |                         |
+plain MainViewModel shell         BackgroundServiceRepository <- Tile
+        |
+Home / Picker / SpaceDetails / Settings state owners
+        |               |
+readonly UI StateFlows  MainSessionCoordinator: catalog / launch / recovery
+        |
+focused operation ports -> Android adapters -> existing stores / runtime
+
+ProviderHook -> ProviderSpaceAccessGuard -> fresh Android environment
+            -> existing argument / attribution processing -> provider
+```
+
+- The application container owns one operation graph, the existing serialized dispatchers,
+  settings stores, and background policy repository. No new DI framework or dependency version
+  is required. MainViewModel retains navigation, SavedState, messages, deep-link coordination,
+  and permission request tickets; it does not construct Android dependencies or retain Context.
+- Screen state owners own their actual workflows. A single session coordinator owns shared
+  catalog, busy state, launch serialization and recovery. The legacy MainUiState is a synchronous
+  read-only compatibility projection rather than a second mutable source.
+- UI collects state while STARTED; Details health observation runs only while RESUMED. Stopping
+  observation cancels UI work and invalidates stale results, without stopping authorized daemon
+  work. Explicit background mutations belong to the application scope and publish durable
+  readback; explicit Stop invalidates an older queued Enable.
+- Returning from Settings or a guest activity refreshes platform permission and selected-screen
+  state. Permission callbacks carry their original group/package/binding/membership and a saved
+  request ticket. Cancellation invalidates pending preparation; stale callbacks cannot consume a
+  newer request. Stable membership is package plus addedAt, independent of ADDED/ENABLED state.
+- Provider mediation occurs before argument rewriting, attribution repair or forwarding. The
+  guard owns Contacts/Documents/Media policy and its environment reads current virtual permission
+  and selected/host URI grants. Existing authority aliases, URI/mode parsing and SDK branches are
+  preserved; denial and unavailable evidence never reach the provider. Error metadata excludes
+  provider arguments and URI/content values.
+- Stage gates and physical-device coverage are recorded in [refactor-acceptance.md](refactor-acceptance.md)
+  and the per-stage evidence JSON. API 37 / host target 28 physical evidence does not establish
+  every older OS branch or target 36 behavior. LINE upstream ingress remains a separate limitation.
+
 ## Implemented boundaries
 
 - `package-source`, `revision-store`, and `group-store` own the domain models and transition
@@ -143,9 +186,11 @@ reviewed release manifest
 
 ## Not accepted yet
 
-- A complete per-space permission policy across Android services. Camera/microphone
-  `checkSelfPermission` decisions are fixture-validated, but actual Camera/AudioRecord service
-  enforcement, active-session revocation, voice, and video are not.
+- A complete per-space permission policy across Android services. Physical Pixel 10a fixture
+  acceptance covers actual Camera/AudioRecord capability access and blocking across grants,
+  guest restarts, and subsequent permission revocation, including host camera denial. Instant
+  revocation during an already-active capture session, real voice/video workflows, and coverage
+  of all Android services remain unverified.
 - Real push-service delivery and notification click routing with third-party services.
 - Pinned-launcher shortcut confirmation on a physical launcher remains a manual acceptance item.
   Exported cold-start deep-link entry, exact chooser candidates, virtual-user resolution, and the
