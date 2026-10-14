@@ -21,7 +21,6 @@ import java.lang.reflect.InvocationHandler;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.lang.reflect.Proxy;
-import java.util.Arrays;
 import java.util.HashMap;
 import java.util.Map;
 
@@ -65,9 +64,15 @@ public class ProviderHook implements InvocationHandler {
 
     protected final Object mBase;
     private String permissionAuthority;
+    private final ProviderSpaceAccessGuard spaceAccessGuard;
 
     public ProviderHook(Object base) {
+        this(base, new AndroidProviderSpaceAccessEnvironment());
+    }
+
+    ProviderHook(Object base, ProviderSpaceAccessEnvironment environment) {
         this.mBase = base;
+        this.spaceAccessGuard = new ProviderSpaceAccessGuard(environment);
     }
 
     private static HookFetcher fetchHook(String authority) {
@@ -112,93 +117,7 @@ public class ProviderHook implements InvocationHandler {
     }
 
     private void enforceSpaceAccess(String method, Object[] args) {
-        if ("asBinder".equals(method)) return;
-        String authority = ProviderAuthorityPolicy.normalize(permissionAuthority);
-        if (authority == null) return;
-        // Never compare ProviderInfo.authority as a single string: ContactsProvider commonly
-        // publishes com.android.contacts;contacts. Gate aliases and URI-scoped acquisition.
-        String operationAuthority = null;
-        if (args != null) for (Object arg : args) if (arg instanceof Uri) {
-            operationAuthority = ProviderAuthorityPolicy.normalize(((Uri) arg).getAuthority());
-            break;
-        }
-        if (ProviderAuthorityPolicy.contacts(authority) || ProviderAuthorityPolicy.contacts(operationAuthority)) {
-            boolean write = "insert".equals(method) || "bulkInsert".equals(method)
-                    || "delete".equals(method) || "update".equals(method);
-            if ("openFile".equals(method) || "openAssetFile".equals(method)) {
-                boolean afterUri = false;
-                if (args != null) for (Object arg : args) {
-                    if (arg instanceof Uri) { afterUri = true; continue; }
-                    if (afterUri && arg instanceof String) {
-                        write = ((String) arg).contains("w");
-                        break;
-                    }
-                }
-            }
-            com.lody.virtual.client.hook.GuestPermissionPolicy.require(write
-                    ? "android.permission.WRITE_CONTACTS" : "android.permission.READ_CONTACTS");
-            // Unknown call/batch operations can perform both reads and writes.
-            if ("call".equals(method) || "applyBatch".equals(method)) {
-                com.lody.virtual.client.hook.GuestPermissionPolicy.require("android.permission.WRITE_CONTACTS");
-            }
-        }
-        if (authority.endsWith(".documents") || authority.contains("photopicker")) {
-            Uri selected = null;
-            String documentMode = null;
-            boolean afterUri = false;
-            if (args != null) for (Object arg : args) {
-                if (arg instanceof Uri) { selected = (Uri) arg; afterUri = true; continue; }
-                if (afterUri && arg instanceof String && documentMode == null) documentMode = (String) arg;
-            }
-            if (!com.lody.virtual.client.hook.GuestSelectedUriGrants.hasRead(selected)) {
-                com.lody.virtual.helper.compat.FilePickerDiagnostics.denied(method, selected != null);
-                throw new SecurityException("URI was not selected for this space");
-            }
-            if (MediaProviderAccessPolicy.usesLegacyWriteCapability(Build.VERSION.SDK_INT)
-                    && MediaProviderAccessPolicy.requiresWrite(method, documentMode)) {
-                com.lody.virtual.client.hook.GuestPermissionPolicy.require("android.permission.WRITE_EXTERNAL_STORAGE");
-                if (selected == null || VirtualCore.get().getContext().checkUriPermission(selected,
-                        android.os.Process.myPid(), android.os.Process.myUid(),
-                        android.content.Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
-                        != android.content.pm.PackageManager.PERMISSION_GRANTED) {
-                    throw new SecurityException("Selected URI has no write grant for this space");
-                }
-            }
-        }
-        if (ProviderAuthorityPolicy.contains(authority, "media") || "media".equals(operationAuthority)) {
-            Uri uri = null;
-            if (args != null) for (Object arg : args) if (arg instanceof Uri) { uri = (Uri) arg; break; }
-            String mode = null;
-            if ("openFile".equals(method) || "openAssetFile".equals(method)) {
-                boolean afterUri = false;
-                if (args != null) for (Object arg : args) {
-                    if (arg instanceof Uri) { afterUri = true; continue; }
-                    if (afterUri && arg instanceof String) { mode = (String) arg; break; }
-                }
-            }
-            boolean selectedReadGranted = com.lody.virtual.client.hook.GuestSelectedUriGrants.hasRead(uri)
-                    && VirtualCore.get().getContext().checkUriPermission(uri,
-                    android.os.Process.myPid(), android.os.Process.myUid(),
-                    android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                    == android.content.pm.PackageManager.PERMISSION_GRANTED;
-            String path = uri == null ? "" : uri.getPath();
-            boolean onlyImages = path != null && path.contains("/images");
-            boolean onlyVideos = path != null && path.contains("/video");
-            // Preserve the existing audio read behavior; audio mutations still need WRITE.
-            boolean readGranted = path != null && path.contains("/audio")
-                    || com.lody.virtual.client.hook.GuestPermissionPolicy.canReadMedia(
-                    !onlyVideos, !onlyImages);
-            if (!MediaProviderAccessPolicy.usesLegacyWriteCapability(Build.VERSION.SDK_INT)) {
-                // Preserve modern scoped-storage behavior; the platform still checks the operation.
-                if (selectedReadGranted || readGranted) return;
-                throw new SecurityException("Space media permission denied");
-            }
-            boolean writeGranted = com.lody.virtual.client.hook.GuestPermissionPolicy.isGranted(
-                    "android.permission.WRITE_EXTERNAL_STORAGE");
-            if (!MediaProviderAccessPolicy.allows(method, mode, readGranted, writeGranted, selectedReadGranted)) {
-                throw new SecurityException("Space media permission denied");
-            }
-        }
+        spaceAccessGuard.enforce(permissionAuthority, method, args);
     }
 
     public Bundle call(MethodBox methodBox, String method, String arg, Bundle extras) throws InvocationTargetException {
@@ -334,7 +253,7 @@ public class ProviderHook implements InvocationHandler {
             }
             return methodBox.call();
         } catch (Throwable e) {
-            VLog.d("ProviderHook", "call: %s (%s) with error", method.getName(), Arrays.toString(args));
+            VLog.d("ProviderHook", "call: %s failed (%s)", method.getName(), e.getClass().getSimpleName());
             if (e instanceof InvocationTargetException) {
                 throw e.getCause();
             }
