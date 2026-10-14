@@ -15,6 +15,10 @@ import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.SharingStarted
 import org.apptwin.archive.ArchiveExportSettingsStore
 import org.apptwin.archive.SpaceArchiveCompression
+import org.apptwin.runtime.BackgroundServiceRepository
+import org.apptwin.runtime.BackgroundServiceState
+import org.apptwin.permissions.ClonePermissionRequestIdentity
+import org.apptwin.permissions.sameClonePermissionMembership
 
 /** Owns navigation and shell events; screen work is delegated to scoped state owners. */
 class MainViewModel internal constructor(
@@ -24,7 +28,70 @@ class MainViewModel internal constructor(
     private val onboardingStore: OnboardingStore = CompletedOnboardingStore,
     archiveExportSettingsStore: ArchiveExportSettingsStore = DefaultArchiveExportSettingsStore,
     launchDispatcher: CoroutineDispatcher = ioDispatcher,
+    private val backgroundServiceRepository: BackgroundServiceRepository? = null,
 ) : ViewModel() {
+    private val fallbackBackgroundState = MutableStateFlow(BackgroundServiceState()).asStateFlow()
+    val backgroundServiceState = backgroundServiceRepository?.state ?: fallbackBackgroundState
+    fun setBackgroundServiceEnabled(enabled: Boolean) { backgroundServiceRepository?.setEnabled(enabled) }
+    fun refreshBackgroundService() { backgroundServiceRepository?.refresh() }
+    /** Re-read platform policy after Settings, dialogs, or guest activities return. */
+    fun onHostResumed() {
+        refreshBackgroundService()
+        settings.refreshBackupLocation()
+        refresh()
+    }
+
+    private var permissionRequestGeneration = savedStateHandle.get<Long>(PERMISSION_GENERATION_KEY)
+        ?: savedStateHandle.get<ArrayList<String>>(PERMISSION_REQUEST_KEY)?.getOrNull(6)?.toLongOrNull() ?: 0L
+    private fun nextPermissionGeneration(): Long {
+        permissionRequestGeneration++
+        savedStateHandle[PERMISSION_GENERATION_KEY] = permissionRequestGeneration
+        return permissionRequestGeneration
+    }
+
+    fun prepareClonePermissionRequest(item: GroupAppItem, permission: String, onPrepared: () -> Unit) {
+        if (savedStateHandle.get<ArrayList<String>>(PERMISSION_REQUEST_KEY) != null) return
+        val generation = nextPermissionGeneration()
+        viewModelScope.launch {
+            val group = operationResult { withContext(ioDispatcher) { operations.findGroup(item.groupId) } }.getOrNull()
+                ?: return@launch
+            if (generation != permissionRequestGeneration) return@launch
+            val binding = group.environmentBinding?.internalId ?: return@launch
+            val member = group.apps.firstOrNull { sameClonePermissionMembership(item.app, it) } ?: return@launch
+            if (savedStateHandle.get<ArrayList<String>>(PERMISSION_REQUEST_KEY) != null) return@launch
+            savedStateHandle[PERMISSION_REQUEST_KEY] = arrayListOf(item.groupId, item.app.packageName, permission, item.launchKey, binding.toString(), member.addedAtEpochMillis.toString(), generation.toString())
+            onPrepared()
+        }
+    }
+    fun completeClonePermissionRequest(permission: String?, granted: Boolean, requestTicket: Long? = pendingClonePermissionTicket()) {
+        if (requestTicket == null || requestTicket != pendingClonePermissionTicket()) return
+        val fields = savedStateHandle.remove<ArrayList<String>>(PERMISSION_REQUEST_KEY) ?: return
+        nextPermissionGeneration()
+        if (fields.size != 7 || (permission != null && permission != fields[2])) return
+        val internalId = fields[4].toIntOrNull() ?: return
+        val identity = ClonePermissionRequestIdentity(fields[0], fields[1], fields[2], fields[3], internalId, fields[5].toLongOrNull() ?: return)
+        viewModelScope.launch {
+            val group = operationResult { withContext(ioDispatcher) { operations.findGroup(identity.groupId) } }.getOrNull()
+                ?: return@launch
+            val item = session.state.groups.firstOrNull { it.groupId == identity.groupId }?.apps
+                ?.firstOrNull { it.app.packageName == identity.packageName } ?: return@launch
+            if (group.apps.none { it.packageName == identity.packageName } ||
+                !identity.matches(item.groupId, item.app.packageName, identity.permission, item.launchKey,
+                    group.environmentBinding?.internalId ?: -1, item.app.addedAtEpochMillis)) return@launch
+            val updated = operationResult { withContext(ioDispatcher) {
+                operations.setClonePermission(item, identity.permission, granted, identity)
+            } }.getOrElse { false }
+            if (!updated) showMessage("無法更新分身權限")
+            refresh()
+        }
+    }
+    fun pendingClonePermissionName(): String? = savedStateHandle.get<ArrayList<String>>(PERMISSION_REQUEST_KEY)?.getOrNull(2)
+    fun pendingClonePermissionTicket(): Long? = savedStateHandle.get<ArrayList<String>>(PERMISSION_REQUEST_KEY)?.getOrNull(6)?.toLongOrNull()
+    fun cancelClonePermissionRequest() {
+        nextPermissionGeneration()
+        savedStateHandle.remove<ArrayList<String>>(PERMISSION_REQUEST_KEY)
+    }
+
     private var resolvingDeepLinkUri: String? = null
     private var resolvedDeepLinkIdentities: Set<Pair<String, String>>? = null
     private var deepLinkGeneration = 0L
@@ -306,6 +373,8 @@ class MainViewModel internal constructor(
         }
     }
     private companion object {
+        const val PERMISSION_GENERATION_KEY = "main.permissionRequestGeneration"
+        const val PERMISSION_REQUEST_KEY = "main.pendingClonePermission"
         const val SELECTED_SPACE_KEY = "main.selectedSpace"
         const val DESTINATION_KEY = "main.destination"
         const val APP_PICKER_GROUP_KEY = "main.appPickerGroupId"

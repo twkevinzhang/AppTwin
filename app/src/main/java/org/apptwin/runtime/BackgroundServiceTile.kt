@@ -16,12 +16,13 @@ import kotlinx.coroutines.launch
 class BackgroundServiceTile : TileService() {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private var observation: Job? = null
+    private val repository by lazy { BackgroundServiceController.repository(this) }
 
     override fun onStartListening() {
         super.onStartListening()
         observation?.cancel()
         observation = scope.launch {
-            BackgroundServiceController.state.collect { state ->
+            repository.state.collect { state ->
                 qsTile?.apply {
                     label = "AppTwin 背景服務"
                     this.state = when {
@@ -37,16 +38,16 @@ class BackgroundServiceTile : TileService() {
                 }
             }
         }
-        BackgroundServiceController.refresh(this)
+        repository.refresh()
     }
 
     override fun onClick() {
         super.onClick()
         val toggle = Runnable {
-            val state = BackgroundServiceController.state.value
+            val state = repository.state.value
             state.performTileClick(
-                requestChange = { BackgroundServiceController.setEnabled(this, it) },
-                refresh = { BackgroundServiceController.refresh(this) },
+                requestChange = { repository.setEnabled(it) },
+                refresh = { repository.refresh() },
             )
             if (!state.loaded && !state.busy && state.error == null) {
                 Toast.makeText(this, "正在讀取設定，請稍後再試。", Toast.LENGTH_SHORT).show()

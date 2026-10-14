@@ -44,7 +44,6 @@ import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.Composable
 import androidx.lifecycle.repeatOnLifecycle
 import androidx.compose.runtime.LaunchedEffect
@@ -58,7 +57,6 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.unit.dp
-import org.apptwin.runtime.BackgroundServiceController
 import org.apptwin.MainDestination
 import org.apptwin.MainViewModel
 import org.apptwin.permissions.ClonePermissionAction
@@ -84,30 +82,24 @@ fun AppTwinApp(
     onShareDiagnostics: (String) -> Unit,
     onAddBackgroundServiceTile: () -> Unit = {},
 ) {
-    val home by viewModel.homeState.collectAsState()
-    val picker by viewModel.pickerState.collectAsState()
-    val detailsState by viewModel.spaceDetailsState.collectAsState()
-    val settings by viewModel.settingsState.collectAsState()
-    val session by viewModel.sessionState.collectAsState()
-    val navigation by viewModel.navigationState.collectAsState()
-    val backgroundServiceState by BackgroundServiceController.state.collectAsState()
+    val home by viewModel.homeState.collectWhileStarted()
+    val picker by viewModel.pickerState.collectWhileStarted()
+    val detailsState by viewModel.spaceDetailsState.collectWhileStarted()
+    val settings by viewModel.settingsState.collectWhileStarted()
+    val session by viewModel.sessionState.collectWhileStarted()
+    val navigation by viewModel.navigationState.collectWhileStarted()
+    val backgroundServiceState by viewModel.backgroundServiceState.collectWhileStarted()
     val lifecycleOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
     LaunchedEffect(navigation.destination, navigation.selectedSpaceId, backgroundServiceState.enabled, backgroundServiceState.loaded, lifecycleOwner) {
         if (navigation.destination == MainDestination.SPACE_DETAILS && navigation.selectedSpaceId != null) {
             lifecycleOwner.lifecycle.repeatOnLifecycle(androidx.lifecycle.Lifecycle.State.RESUMED) {
-                try {
-                    while (true) {
-                        viewModel.refreshSpaceBackgroundHealth()
-                        kotlinx.coroutines.delay(10_000L)
-                    }
-                } finally { viewModel.stopSpaceBackgroundObservation() }
+                observeSpaceHealth(viewModel::refreshSpaceBackgroundHealth, viewModel::stopSpaceBackgroundObservation)
             }
         }
     }
     val snackbarHostState = remember { SnackbarHostState() }
     var showCreateGroup by rememberSaveable { mutableStateOf(false) }
-    var pendingPermissionAppKey by rememberSaveable { mutableStateOf<String?>(null) }
-    var pendingPermissionName by rememberSaveable { mutableStateOf<String?>(null) }
+    var pendingClonePermissionTicket by rememberSaveable { mutableStateOf<Long?>(null) }
     var pendingSettingsPermission by rememberSaveable { mutableStateOf<String?>(null) }
     var settingsPermissionsDeniedPermanently by rememberSaveable {
         mutableStateOf(emptySet<String>())
@@ -122,41 +114,32 @@ fun AppTwinApp(
     }
     val notificationPermissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission(),
-    ) { granted -> notificationsGranted = granted }
+    ) { _ ->
+        notificationsGranted = Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU ||
+            context.checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED
+    }
     val permissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission(),
     ) { granted ->
-        val appKey = pendingPermissionAppKey
-        val permission = pendingPermissionName
-        val app = session.groups.asSequence()
-            .flatMap { it.apps.asSequence() }
-            .firstOrNull { it.launchKey == appKey }
-        if (app != null && permission != null) {
-            if (navigation.destination == MainDestination.SPACE_DETAILS) viewModel.setSpacePermission(app.app.packageName, permission, granted)
-            else viewModel.setClonePermission(app, permission, granted)
-        }
-        pendingPermissionAppKey = null
-        pendingPermissionName = null
+        val ticket = pendingClonePermissionTicket
+        pendingClonePermissionTicket = null
+        viewModel.completeClonePermissionRequest(null, granted, ticket)
     }
     val locationPermissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions(),
     ) { grants ->
-        val appKey = pendingPermissionAppKey
-        val permission = pendingPermissionName
-        val app = session.groups.asSequence().flatMap { it.apps.asSequence() }.firstOrNull { it.launchKey == appKey }
-        if (app != null && permission != null) {
-            if (permission == Manifest.permission.ACCESS_BACKGROUND_LOCATION) {
-                if (grants[Manifest.permission.ACCESS_COARSE_LOCATION] == true || grants[Manifest.permission.ACCESS_FINE_LOCATION] == true) {
-                    onOpenPermissionSettings(permission)
-                }
-            } else {
-                val granted = grants[permission] == true
-                if (navigation.destination == MainDestination.SPACE_DETAILS) viewModel.setSpacePermission(app.app.packageName, permission, granted)
-                else viewModel.setClonePermission(app, permission, granted)
+        val ticket = pendingClonePermissionTicket
+        pendingClonePermissionTicket = null
+        val permission = viewModel.pendingClonePermissionName()
+        if (ticket == null || ticket != viewModel.pendingClonePermissionTicket()) return@rememberLauncherForActivityResult
+        if (permission == Manifest.permission.ACCESS_BACKGROUND_LOCATION) {
+            viewModel.cancelClonePermissionRequest()
+            if (grants[Manifest.permission.ACCESS_COARSE_LOCATION] == true || grants[Manifest.permission.ACCESS_FINE_LOCATION] == true) {
+                onOpenPermissionSettings(permission)
             }
+        } else {
+            viewModel.completeClonePermissionRequest(permission, grants[permission] == true, ticket)
         }
-        pendingPermissionAppKey = null
-        pendingPermissionName = null
     }
     val settingsPermissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission(),
@@ -183,23 +166,35 @@ fun AppTwinApp(
         if (source != null) viewModel.createSpaceFromBackup(source)
     }
     val onSetClonePermission: (org.apptwin.GroupAppItem, String, Boolean) -> Unit =
-        { app, permission, granted ->
+        permissionAction@{ app, permission, granted ->
+            // An old platform dialog must finish before another request can replace its ticket.
+            if (pendingClonePermissionTicket != null) return@permissionAction
             if (!granted || context.checkSelfPermission(permission) == PackageManager.PERMISSION_GRANTED) {
                 viewModel.setClonePermission(app, permission, granted)
             } else if (permission == Manifest.permission.ACCESS_BACKGROUND_LOCATION && Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
                 if (context.checkSelfPermission(Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED || context.checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED) {
                     onOpenPermissionSettings(permission)
                 } else {
-                    pendingPermissionAppKey = app.launchKey
-                    pendingPermissionName = permission
-                    locationPermissionLauncher.launch(arrayOf(Manifest.permission.ACCESS_COARSE_LOCATION, Manifest.permission.ACCESS_FINE_LOCATION))
+                    viewModel.prepareClonePermissionRequest(app, permission) {
+                        if (!lifecycleOwner.lifecycle.currentState.isAtLeast(androidx.lifecycle.Lifecycle.State.STARTED)) {
+                            viewModel.cancelClonePermissionRequest()
+                            return@prepareClonePermissionRequest
+                        }
+                        pendingClonePermissionTicket = viewModel.pendingClonePermissionTicket()
+                        locationPermissionLauncher.launch(arrayOf(Manifest.permission.ACCESS_COARSE_LOCATION, Manifest.permission.ACCESS_FINE_LOCATION))
+                    }
                 }
             } else {
-                pendingPermissionAppKey = app.launchKey
-                pendingPermissionName = permission
-                if (permission == Manifest.permission.ACCESS_FINE_LOCATION || permission == Manifest.permission.ACCESS_COARSE_LOCATION) {
-                    locationPermissionLauncher.launch(arrayOf(Manifest.permission.ACCESS_COARSE_LOCATION, Manifest.permission.ACCESS_FINE_LOCATION))
-                } else permissionLauncher.launch(permission)
+                viewModel.prepareClonePermissionRequest(app, permission) {
+                    if (!lifecycleOwner.lifecycle.currentState.isAtLeast(androidx.lifecycle.Lifecycle.State.STARTED)) {
+                        viewModel.cancelClonePermissionRequest()
+                        return@prepareClonePermissionRequest
+                    }
+                    pendingClonePermissionTicket = viewModel.pendingClonePermissionTicket()
+                    if (permission == Manifest.permission.ACCESS_FINE_LOCATION || permission == Manifest.permission.ACCESS_COARSE_LOCATION) {
+                        locationPermissionLauncher.launch(arrayOf(Manifest.permission.ACCESS_COARSE_LOCATION, Manifest.permission.ACCESS_FINE_LOCATION))
+                    } else permissionLauncher.launch(permission)
+                }
             }
         }
     val pickerGroup = picker.appPickerGroupId?.let { selectedId ->
@@ -224,10 +219,12 @@ fun AppTwinApp(
         viewModel.consumeMessage(navigation.messageId)
     }
 
-    LaunchedEffect(navigation.destination, home.isRefreshing) {
-        notificationsGranted = Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU ||
-            context.checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) ==
-            PackageManager.PERMISSION_GRANTED
+    LaunchedEffect(lifecycleOwner) {
+        lifecycleOwner.lifecycle.repeatOnLifecycle(androidx.lifecycle.Lifecycle.State.RESUMED) {
+            notificationsGranted = Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU ||
+                context.checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED
+            kotlinx.coroutines.awaitCancellation()
+        }
     }
 
     LaunchedEffect(settings.diagnosticsReportId) {
@@ -334,8 +331,7 @@ fun AppTwinApp(
                                         globalBackupLocation = settings.globalBackupLocation,
                                         onRefresh = viewModel::refreshSpaceDetails,
                                         onSetPermission = { app, permission, granted ->
-                                            if (granted && context.checkSelfPermission(permission) != PackageManager.PERMISSION_GRANTED) onSetClonePermission(app, permission, true)
-                                            else viewModel.setSpacePermission(app.app.packageName, permission, granted)
+                                            onSetClonePermission(app, permission, granted)
                                         },
                                         onAddAccount = viewModel::addSpaceAccount,
                                         onRemoveAccount = { viewModel.removeSpaceAccount(org.apptwin.SpaceAccountEntry(it.name, it.type)) },
@@ -371,11 +367,11 @@ fun AppTwinApp(
                                     state = settings,
                                     session = session,
                                     backgroundServiceState = backgroundServiceState,
-                                    onBackgroundServiceChange = { BackgroundServiceController.setEnabled(context, it) },
+                                    onBackgroundServiceChange = { viewModel.setBackgroundServiceEnabled(it) },
                                     onBackgroundServiceRetry = {
                                         backgroundServiceState.retry(
-                                            requestChange = { BackgroundServiceController.setEnabled(context, it) },
-                                            refresh = { BackgroundServiceController.refresh(context) },
+                                            requestChange = { viewModel.setBackgroundServiceEnabled(it) },
+                                            refresh = { viewModel.refreshBackgroundService() },
                                         )
                                     },
                                     onAddBackgroundServiceTile = onAddBackgroundServiceTile,

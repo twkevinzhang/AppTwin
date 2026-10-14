@@ -22,7 +22,6 @@ import com.lody.virtual.client.isolated.IsolatedWorkerProbe
 import com.lody.virtual.client.stub.DaemonJobService
 import org.apptwin.permissions.permissionSettingsDestination
 import org.apptwin.runtime.DaemonWorkloadAuthorization
-import org.apptwin.runtime.BackgroundServiceController
 import org.apptwin.runtime.BackgroundServiceTile
 import org.apptwin.runtime.GroupAppRuntimeSupport
 import org.apptwin.runtime.mainActivityLaunchHosts
@@ -106,8 +105,7 @@ class MainActivity : ComponentActivity() {
     override fun onResume() {
         super.onResume()
         mainActivityLaunchHosts.onResumed(this)
-        BackgroundServiceController.refresh(this)
-        if (::mainViewModel.isInitialized) mainViewModel.refresh()
+        if (::mainViewModel.isInitialized) mainViewModel.onHostResumed()
     }
 
     override fun onWindowFocusChanged(hasFocus: Boolean) {

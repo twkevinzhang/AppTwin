@@ -42,6 +42,16 @@ internal interface ClonePermissionOperations {
         permission: String,
         granted: Boolean,
     ): Boolean
+
+    suspend fun setClonePermission(
+        item: GroupAppItem,
+        permission: String,
+        granted: Boolean,
+        expectedIdentity: org.apptwin.permissions.ClonePermissionRequestIdentity,
+    ): Boolean = if (expectedIdentity.matches(
+            item.groupId, item.app.packageName, permission, item.launchKey,
+            expectedIdentity.internalId, item.app.addedAtEpochMillis,
+        )) setClonePermission(item, permission, granted) else false
 }
 
 internal interface SpaceAccountOperations {
