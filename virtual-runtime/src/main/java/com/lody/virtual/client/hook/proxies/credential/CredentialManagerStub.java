@@ -7,10 +7,8 @@ import com.lody.virtual.client.hook.base.MethodProxy;
 import com.lody.virtual.helper.utils.VLog;
 
 import java.lang.reflect.Method;
-import java.util.List;
-import java.util.Set;
 
-/** Removes privileged provider filters before a guest request crosses into the host OS. */
+/** Routes guest credentials within their Space; physical credential providers are never queried. */
 public final class CredentialManagerStub extends BinderInvocationProxy {
 
     private static final String SERVICE_NAME = "credential";
@@ -32,6 +30,8 @@ public final class CredentialManagerStub extends BinderInvocationProxy {
         addMethodProxy(new SanitizeGetCredentialRequest("executeGetCredential"));
         addMethodProxy(new SanitizeGetCredentialRequest("executePrepareGetCredential"));
         addMethodProxy(new SanitizeGetCredentialRequest("getCandidateCredentials"));
+        addMethodProxy(new SanitizeGetCredentialRequest("executeCreateCredential"));
+        addMethodProxy(new SanitizeGetCredentialRequest("clearCredentialState"));
     }
 
     private static final class SanitizeGetCredentialRequest extends MethodProxy {
@@ -48,9 +48,6 @@ public final class CredentialManagerStub extends BinderInvocationProxy {
 
         @Override
         public Object call(Object who, Method method, Object... args) throws Throwable {
-            if (args != null && args.length > 0) {
-                clearAllowedProviders(args[0]);
-            }
             String packageName = VClientImpl.get().getCurrentPackage();
             if (shouldReturnNoCredential(packageName, methodName)
                     && prepareAndNotifyManualLogin(
@@ -64,7 +61,20 @@ public final class CredentialManagerStub extends BinderInvocationProxy {
                 FacebookLiteCredentialCompat.monitorManualLoginNavigation();
                 return null;
             }
-            return method.invoke(who, args);
+            if ("executeGetCredential".equals(methodName)) {
+                return SpaceGoogleCredentialBridge.execute(args);
+            }
+            // Prepared/candidate sessions cannot safely bind a physical provider to a Space.
+            if ("executePrepareGetCredential".equals(methodName)) {
+                SpaceGoogleCredentialBridge.rejectPrepared(args);
+            } else if ("executeCreateCredential".equals(methodName)) {
+                notifyError(args, "android.credentials.CreateCredentialException.TYPE_NO_CREATE_OPTIONS");
+            } else if ("clearCredentialState".equals(methodName)) {
+                notifyError(args, "android.credentials.ClearCredentialStateException.TYPE_UNKNOWN");
+            } else {
+                SpaceGoogleCredentialBridge.reject(args);
+            }
+            return null;
         }
     }
 
@@ -79,13 +89,18 @@ public final class CredentialManagerStub extends BinderInvocationProxy {
     }
 
     static boolean notifyNoCredential(Object[] args) {
+        return notifyError(args, NO_CREDENTIAL);
+    }
+
+    static boolean notifyError(Object[] args, String type) {
         if (args == null) return false;
         for (Object arg : args) {
             if (arg == null) continue;
             try {
                 Method onError = arg.getClass().getMethod(
                         "onError", String.class, String.class);
-                onError.invoke(arg, NO_CREDENTIAL,
+                onError.setAccessible(true);
+                onError.invoke(arg, type,
                         "Host credentials are unavailable inside this AppTwin guest");
                 return true;
             } catch (NoSuchMethodException ignored) {
@@ -95,38 +110,6 @@ public final class CredentialManagerStub extends BinderInvocationProxy {
             }
         }
         return false;
-    }
-
-    /**
-     * The physical host UID cannot hold CREDENTIAL_MANAGER_SET_ALLOWED_PROVIDERS. Clearing only
-     * this mutable filter preserves every credential option and lets normal provider discovery run.
-     */
-    static int clearAllowedProviders(Object request) {
-        if (request == null) {
-            return 0;
-        }
-        try {
-            Method optionsMethod = request.getClass().getMethod("getCredentialOptions");
-            Object optionsValue = optionsMethod.invoke(request);
-            if (!(optionsValue instanceof List)) {
-                return 0;
-            }
-            int cleared = 0;
-            for (Object option : (List<?>) optionsValue) {
-                if (option == null) {
-                    continue;
-                }
-                Method providersMethod = option.getClass().getMethod("getAllowedProviders");
-                Object providersValue = providersMethod.invoke(option);
-                if (providersValue instanceof Set && !((Set<?>) providersValue).isEmpty()) {
-                    ((Set<?>) providersValue).clear();
-                    cleared++;
-                }
-            }
-            return cleared;
-        } catch (ReflectiveOperationException | RuntimeException ignored) {
-            return 0;
-        }
     }
 
     private static Class<?> loadStubClass() {

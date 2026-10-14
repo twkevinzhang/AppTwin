@@ -13,6 +13,7 @@ import com.lody.virtual.client.VClientImpl;
 import com.lody.virtual.client.GuestPackageIdentity;
 import com.lody.virtual.client.core.VirtualCore;
 import com.lody.virtual.client.interfaces.IInjector;
+import com.lody.virtual.client.hook.proxies.credential.SpaceCredentialActivityResults;
 import com.lody.virtual.client.ipc.VActivityManager;
 import com.lody.virtual.helper.utils.ComponentUtils;
 import com.lody.virtual.helper.utils.Reflect;
@@ -115,9 +116,12 @@ final class HCallbackLaunchPolicy {
                     } else if (SCHEDULE_CRASH == msg.what) {
                         // to avoid the exception send from System.
                         return true;
-                    } else if (EXECUTE_TRANSACTION == msg.what
-                            && shouldConsumeMissingGuestLaunch(msg.obj)) {
-                        return true;
+                    } else if (EXECUTE_TRANSACTION == msg.what) {
+                        if (Build.VERSION.SDK_INT >= 34) {
+                            SpaceCredentialResultTransactions.intercept(msg.obj,
+                                    SpaceCredentialActivityResults::consumeActivityResult);
+                        }
+                        if (shouldConsumeMissingGuestLaunch(msg.obj)) return true;
                     }
                     if (otherCallback != null) {
                         boolean desired = otherCallback.handleMessage(msg);

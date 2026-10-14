@@ -18,10 +18,8 @@ import org.junit.Test;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
-import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
 
 public class CredentialManagerStubTest {
 
@@ -34,26 +32,8 @@ public class CredentialManagerStubTest {
         assertNotNull(invocationStub.getMethodProxy("executeGetCredential"));
         assertNotNull(invocationStub.getMethodProxy("executePrepareGetCredential"));
         assertNotNull(invocationStub.getMethodProxy("getCandidateCredentials"));
-    }
-
-    @Test
-    public void clearsOnlyNonEmptyAllowedProviderSets() {
-        FakeOption restricted = new FakeOption("password", "provider.one", "provider.two");
-        FakeOption unrestricted = new FakeOption("passkey");
-        FakeRequest request = new FakeRequest(restricted, unrestricted);
-
-        assertEquals(1, CredentialManagerStub.clearAllowedProviders(request));
-
-        assertEquals("password", restricted.type);
-        assertEquals(0, restricted.getAllowedProviders().size());
-        assertEquals("passkey", unrestricted.type);
-        assertEquals(0, unrestricted.getAllowedProviders().size());
-    }
-
-    @Test
-    public void leavesUnknownRequestShapesUntouched() {
-        assertEquals(0, CredentialManagerStub.clearAllowedProviders(null));
-        assertEquals(0, CredentialManagerStub.clearAllowedProviders(new Object()));
+        assertNotNull(invocationStub.getMethodProxy("executeCreateCredential"));
+        assertNotNull(invocationStub.getMethodProxy("clearCredentialState"));
     }
 
     @Test
@@ -161,32 +141,6 @@ public class CredentialManagerStubTest {
 
         public void onError(String type, String message) {
             calls.add("framework-onError");
-        }
-    }
-
-    public static final class FakeRequest {
-        private final List<FakeOption> options;
-
-        FakeRequest(FakeOption... options) {
-            this.options = new ArrayList<>(Arrays.asList(options));
-        }
-
-        public List<FakeOption> getCredentialOptions() {
-            return options;
-        }
-    }
-
-    public static final class FakeOption {
-        final String type;
-        private final Set<String> allowedProviders;
-
-        FakeOption(String type, String... allowedProviders) {
-            this.type = type;
-            this.allowedProviders = new HashSet<>(Arrays.asList(allowedProviders));
-        }
-
-        public Set<String> getAllowedProviders() {
-            return allowedProviders;
         }
     }
 

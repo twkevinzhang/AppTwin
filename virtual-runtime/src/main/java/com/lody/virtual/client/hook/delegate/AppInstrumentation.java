@@ -13,11 +13,14 @@ import android.os.RemoteException;
 
 import com.lody.virtual.client.VClientImpl;
 import com.lody.virtual.client.core.VirtualCore;
+import com.lody.virtual.client.core.InvocationStubManager;
+import com.lody.virtual.client.hook.proxies.am.ActivityClientControllerStub;
 import com.lody.virtual.client.fixer.ActivityFixer;
 import com.lody.virtual.client.fixer.ContextFixer;
 import com.lody.virtual.client.fixer.GuestEdgeToEdgeCompat;
 import com.lody.virtual.client.fixer.GuestWindowDiagnostics;
 import com.lody.virtual.client.interfaces.IInjector;
+import com.lody.virtual.client.hook.proxies.credential.SpaceCredentialUiOwnership;
 import com.lody.virtual.client.ipc.ActivityClientRecord;
 import com.lody.virtual.client.ipc.VActivityManager;
 import com.lody.virtual.helper.utils.VLog;
@@ -72,6 +75,7 @@ public final class AppInstrumentation extends InstrumentationDelegate implements
 
     @Override
     public void callActivityOnCreate(Activity activity, Bundle icicle) {
+        InvocationStubManager.getInstance().checkEnv(ActivityClientControllerStub.class);
         ActivitySavedStateCompat.prepare(icicle, activity.getClassLoader());
         VirtualCore.get().getComponentDelegate().beforeActivityCreate(activity);
         IBinder token = mirror.android.app.Activity.mToken.get(activity);
@@ -95,6 +99,7 @@ public final class AppInstrumentation extends InstrumentationDelegate implements
             }
         }
         GuestEdgeToEdgeCompat.apply(activity, info);
+        SpaceCredentialUiOwnership.onCreate(activity);
         try {
             super.callActivityOnCreate(activity, icicle);
         } catch (Throwable e) {
@@ -139,13 +144,16 @@ public final class AppInstrumentation extends InstrumentationDelegate implements
 
     @Override
     public void callActivityOnCreate(Activity activity, Bundle icicle, PersistableBundle persistentState) {
+        InvocationStubManager.getInstance().checkEnv(ActivityClientControllerStub.class);
         ActivitySavedStateCompat.prepare(icicle, activity.getClassLoader());
+        SpaceCredentialUiOwnership.onCreate(activity);
         super.callActivityOnCreate(activity, icicle, persistentState);
         GuestWindowDiagnostics.afterLifecycle(activity, "persistable-create");
     }
 
     @Override
     public void callActivityOnResume(Activity activity) {
+        InvocationStubManager.getInstance().checkEnv(ActivityClientControllerStub.class);
         VirtualCore.get().getComponentDelegate().beforeActivityResume(activity);
         super.callActivityOnResume(activity);
         VActivityManager.get().onActivityResumed(activity);
@@ -165,6 +173,7 @@ public final class AppInstrumentation extends InstrumentationDelegate implements
             super.callActivityOnDestroy(activity);
             VirtualCore.get().getComponentDelegate().afterActivityDestroy(activity);
         } finally {
+            SpaceCredentialUiOwnership.onDestroy(activity);
             com.lody.virtual.client.stub.ForegroundEngineBinding.stopped(activity);
             // Recent Android releases no longer reliably report activityDestroyed through the
             // legacy ActivityTaskManager binder callback. Keeping cleanup at the lifecycle
@@ -207,6 +216,7 @@ public final class AppInstrumentation extends InstrumentationDelegate implements
 
     @Override
     public void callApplicationOnCreate(Application app) {
+        InvocationStubManager.getInstance().checkEnv(ActivityClientControllerStub.class);
         super.callApplicationOnCreate(app);
     }
 

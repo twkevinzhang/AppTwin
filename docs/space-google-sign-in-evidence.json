@@ -1,0 +1,317 @@
+{
+  "schemaVersion": 1,
+  "date": "2026-10-14",
+  "overall": "implemented_pending_latest_automation_complete_line_drive_and_formal_physical_acceptance",
+  "sourceFreezeFinal": true,
+  "device": {
+    "model": "Pixel 10a",
+    "api": 37,
+    "variant": "runtimeProbe",
+    "hostTargetSdk": 28,
+    "acceptanceRole": "supporting",
+    "formalApprovedModels": [
+      "ASUS",
+      "Pixel 7"
+    ]
+  },
+  "candidateEvidence": {
+    "build": "passed",
+    "lint": "passed",
+    "appUnit": {
+      "tests": 232,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "runtimeDebugUnit": {
+      "tests": 834,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "physicalRegression": {
+      "tests": 38,
+      "failures": 0,
+      "skipped": 0,
+      "seconds": 120.467
+    },
+    "lineChooser": {
+      "status": "observed_by_root",
+      "spaceAccountCount": 1,
+      "onlySpaceAccount": true,
+      "callerLabelLine": true,
+      "sensitiveValuesPersisted": false
+    },
+    "logs": [
+      {
+        "path": "/tmp/apptwin-google-space-tenth-build.log",
+        "sha256": "1f25dd41a3ffa61682f348c1c83c9762b68a6219c6745452e3ec250020ac37e2",
+        "scope": "candidate_before_remaining_ui_ownership_fix"
+      },
+      {
+        "path": "/tmp/apptwin-google-space-final-regression.log",
+        "sha256": "51a7f19e500d8b1be344f1855c892db9f9a158951f057f9f3ae82b162036364c",
+        "scope": "candidate_before_remaining_ui_ownership_fix"
+      }
+    ],
+    "subsequentCandidates": [
+      {
+        "candidate": 11,
+        "build": "passed",
+        "buildSeconds": 53,
+        "actualParcelCapabilityTests": {
+          "tests": 2,
+          "failures": 0,
+          "seconds": 0.029,
+          "log": "/tmp/apptwin-google-capability11.log"
+        },
+        "originalLineCredential": {
+          "observedAt": "2026-10-14T13:56:28+08:00",
+          "accountSelection": "in_memory_matched_only_space_google_account",
+          "callback": "success_exactly_once",
+          "lineRecognizedExpectedIdentity": true,
+          "lineScreen": "account_migration_or_login_confirmation",
+          "finalLineLoginComplete": false
+        },
+        "uiOwnershipBadParcelable": "still_observed"
+      },
+      {
+        "candidate": 12,
+        "scope": "deadline_diagnostic_for_actual_frozen_caller",
+        "finalAcceptance": "not_recorded"
+      },
+      {
+        "candidate": 13,
+        "scope": "diagnostic_build_root_verification_in_progress",
+        "finalAcceptance": "not_recorded"
+      }
+    ]
+  },
+  "pending": {
+    "originalLineGoogleConsentAndLogin": "primary_login_accepted_restore_picker_space_only_but_account_not_retained_drive_and_home_unverified",
+    "finalIdentityVerification": "pending",
+    "ownedUiTimeoutAndCancellation": "passed_final15_original_line_supporting_device",
+    "finalBuildLintAndRegression": "latest_build_lint_units_passed_latest_native_and_42_regression_pending_real_call",
+    "finalApkHashes": "latest_production_and_test_recorded_installed_production_match_verified",
+    "cleanupAndFinalReview": "cleanup_and_review_passed_commit_pending",
+    "formalPhysicalAcceptance": "pending_physical_ASUS_or_Pixel_7_per_latest_replacement_AGENTS"
+  },
+  "limitations": [
+    "Only API 37 runtimeProbe host target 28 physical evidence",
+    "Prepared, candidate, create, clear and unsupported credential semantics fail closed; not full Credential Manager parity",
+    "Chooser correctness does not prove OAuth callback or LINE login success",
+    "LINE push ingress remains outside this acceptance",
+    "Latest replacement AGENTS approves ASUS or Pixel 7 only; Pixel 10a is supporting evidence and formal physical acceptance remains pending."
+  ],
+  "secretsPersisted": false,
+  "finalCandidate": {
+    "candidate": 15,
+    "build": {
+      "status": "passed",
+      "seconds": 40,
+      "log": "/tmp/apptwin-google-space-fifteenth-build.log"
+    },
+    "appUnit": {
+      "tests": 232,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "runtimeDebugUnit": {
+      "tests": 836,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "lint": {
+      "unfilteredErrors": 0,
+      "unfilteredFatal": 0,
+      "warnings": {
+        "app": 30,
+        "runtime": 142,
+        "fixture": 17
+      },
+      "unchangedRuntimeBaseline": {
+        "errors": 13,
+        "warnings": 358
+      }
+    },
+    "apkSha256": {
+      "app": "eed8228473618b2c4d7c7112c0913ba0083350020ad9794fdac05710f8b8fdb4",
+      "test": "2f6fe0710464dcd57b813658b8f71fb954a8b5b5dba0d239a053e8b75a9bbb51"
+    },
+    "physicalRegression": {
+      "status": "passed_supporting_device",
+      "tests": 41,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "seconds": 123.286,
+      "log": "/tmp/apptwin-google-space-final41-regression.log",
+      "logSha256": "718edd78057654d8ffb34ae385643d0201952cd8cc5bc18d261510589502869b"
+    },
+    "changes": [
+      "Framework ResultReceiver CREATOR normalization",
+      "Isolated ClipData capability transport",
+      "UI-local 120-second active-uptime deadline",
+      "Current-session and pre-delivery deadline fences prevent late success"
+    ],
+    "addsThawOrKeepalive": false,
+    "originalLineFinalAuth": "pending",
+    "actualTimeoutAndCancellation": {
+      "status": "passed_supporting_device_original_line_flow",
+      "date": "2026-10-14",
+      "timezone": "Asia/Taipei",
+      "timeout": {
+        "requestAt": "14:04:12.640",
+        "uiRegisteredAt": "14:04:14.035",
+        "callerFrozenBeforeDeadline": true,
+        "googleUiFrozenBeforeDeadline": false,
+        "deadlineAt": "14:06:12.742",
+        "finishAcceptedAt": "14:06:12.752",
+        "finishAccepted": true,
+        "terminalCallbackCount": 1,
+        "returnedOriginalLineLoginPage": true,
+        "freezerMetadataPath": "/tmp/apptwin-google-final-freezer.json"
+      },
+      "retryAndCancel": {
+        "requestAt": "14:06:33.927",
+        "onlySpaceAccount": true,
+        "callerLabelLine": true,
+        "backResultAt": "14:06:44.301",
+        "terminalErrorAt": "14:06:44.307",
+        "finishAccepted": true,
+        "terminalCallbackCount": 1,
+        "returnedOriginalLine": true
+      },
+      "deadlineClock": "active_uptime_not_wall_clock",
+      "addsThawOrKeepalive": false
+    },
+    "installedAppSha256MatchesBuild": true,
+    "uiOwnershipRegistration": {
+      "status": "observed_passed",
+      "observedAt": "2026-10-14T14:04:14+08:00",
+      "callerKnown": true,
+      "callerMatchesVirtual": true,
+      "registeredKind": "root",
+      "actualTimeoutTerminalOutcome": "passed_original_line_flow"
+    },
+    "chooser": {
+      "onlySpaceAccount": true,
+      "spaceGoogleAccountCount": 1,
+      "callerLabelLine": true,
+      "sensitiveValuesPersisted": false,
+      "metadataPath": "/tmp/apptwin-google-final-chooser.json"
+    },
+    "evidenceRole": "historical_candidate15_google_path_not_latest_overall_acceptance"
+  },
+  "formalPhysicalAcceptancePending": true,
+  "secondaryAccountChooser": {
+    "status": "implemented_candidate17_original_line_space_only_observed",
+    "trigger": "LINE_chat_restore_select_account_after_primary_google_login",
+    "component": "android/android.accounts.ChooseTypeAndAccountActivity",
+    "hostAccountCountObserved": 4,
+    "hostAccountSelected": false,
+    "rootCancelled": true,
+    "preservedLineRestorePage": true,
+    "cause": "unrecognized_framework_account_chooser_falls_through_virtual_resolve_to_physical_start",
+    "plannedRoute": "caller_space_scoped_virtual_account_chooser",
+    "implementation": "completed_candidate17",
+    "acceptance": "supporting_manual_passed_final_automation_pending",
+    "onlySpaceAccountObserved": true,
+    "selectedSpaceAccountReturnedLineRestorePage": true,
+    "lineRetainedSelectedRestoreAccount": false,
+    "driveAuthorizationVerified": false,
+    "fullLineHomeVerified": false,
+    "backupSkipConfirmed": false
+  },
+  "latestCandidate": {
+    "productionCandidate": 17,
+    "testCandidate": 19,
+    "productionMetadata": {
+      "app": {
+        "tests": 232,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      },
+      "virtual-runtime": {
+        "tests": 839,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      },
+      "app_lint": {
+        "Error": 0,
+        "Fatal": 0,
+        "Warning": 30
+      },
+      "virtual-runtime_lint": {
+        "Error": 0,
+        "Fatal": 0,
+        "Warning": 142
+      },
+      "runtime-update-fixture_lint": {
+        "Error": 0,
+        "Fatal": 0,
+        "Warning": 17
+      },
+      "apk_sha256": {
+        "app/build/outputs/apk/runtimeProbe/debug/app-runtimeProbe-debug.apk": "75d66d6cefa301e7f52ee27ee470a3b013864845688eb4f9e8bede106bb69747",
+        "app/build/outputs/apk/androidTest/runtimeProbe/debug/app-runtimeProbe-debug-androidTest.apk": "aebef5c7ac7bba062eec8854563e5544af5528277879f06fa83e5488445e9f80"
+      }
+    },
+    "fullBuild16Seconds": 111,
+    "incrementalBuild17Seconds": 3,
+    "testOnlyBuild18Seconds": 11,
+    "focused17": "failed_observer_cannot_see_engine_process",
+    "focused18": "warm_cold_failed_exact_foreground_guard_real_call_top",
+    "finalRegression": {
+      "testsPlanned": 42,
+      "status": "not_run"
+    },
+    "googlePrimaryLoginProgressPersistsColdRestore": true,
+    "formalPhysicalAcceptancePending": true,
+    "testBuild19": {
+      "status": "passed",
+      "seconds": 9,
+      "log": "/tmp/apptwin-google-space-nineteenth-build.log"
+    },
+    "appSha256": "75d66d6cefa301e7f52ee27ee470a3b013864845688eb4f9e8bede106bb69747",
+    "installedAppSha256MatchesBuild": true,
+    "testSha256": "1e379833cf2f6c39821e053c57297bd029c15917c9778c7eaf361d4454b2d649",
+    "focused19": "not_run_real_call_in_foreground"
+  },
+  "externalVerificationBlock": {
+    "status": "ui_verification_paused",
+    "readOnlyObservedTop": "com.google.android.dialer/...InCallActivity",
+    "callManipulated": false,
+    "testAssertionWeakened": false,
+    "provenRotationBug": false,
+    "diagnosticOnlyChanges": "safe_phase_metadata_and_split_lines",
+    "retryCondition": "real_call_no_longer_foreground"
+  },
+  "cleanup": {
+    "metadataPath": "/tmp/apptwin-google-final19-cleanup.json",
+    "onlyOriginalGroup": true,
+    "groupAndAppsMetadataUnchanged": true,
+    "runtimeDiagnosticsMayChange": true,
+    "ownedFixtureAccountsCleaned": true,
+    "originalGoogleAccountCount": 1,
+    "byteForBytePrivateDataPreservationClaim": false
+  },
+  "lineState": {
+    "hostAccountSelected": false,
+    "primarySessionMayHaveMoved": true,
+    "coldCloneResumeAtRestorePage": true,
+    "driveAuthorizationVerified": false,
+    "fullLineHomeVerified": false,
+    "backupSkipFinalized": false
+  },
+  "review": "passed_commit_pending",
+  "ongoingResources": {
+    "cloudPaidResources": [],
+    "devServers": [],
+    "realUserCall": "ongoing_not_manipulated"
+  }
+}

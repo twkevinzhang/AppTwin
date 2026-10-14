@@ -25,6 +25,7 @@
             <meta-data android:name="android.accounts.AccountAuthenticator" android:resource="@xml/fixture_interactive_authenticator" />
         </service>
         <activity android:name=".FixtureAccountLoginActivity" android:exported="false" />
+        <activity android:name=".OwnedCallerProbeActivity" android:exported="false" android:launchMode="standard" />
         <service android:name=".FixtureSyncService" android:exported="true">
             <intent-filter><action android:name="android.content.SyncAdapter" /></intent-filter>
             <meta-data android:name="android.content.SyncAdapter" android:resource="@xml/fixture_sync_adapter" />

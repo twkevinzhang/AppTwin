@@ -113,7 +113,8 @@ public class ChooseTypeAndAccountActivity extends Activity
     private ArrayList<Account> mAccounts;
     private int mPendingRequest = REQUEST_NULL;
     private Parcelable[] mExistingAccounts = null;
-    private int mSelectedItemIndex;
+    private int mSelectedItemIndex = SELECTED_ITEM_NONE;
+    private boolean mResultDelivered;
     private Button mOkButton;
     private int mCallingUserId;
     private boolean mDontShowPicker;
@@ -122,6 +123,13 @@ public class ChooseTypeAndAccountActivity extends Activity
     public void onCreate(Bundle savedInstanceState) {
         // save some items we use frequently
         final Intent intent = getIntent();
+        mCallingUserId = com.lody.virtual.helper.compat.SpaceAccountPickerPolicy.validatedUser(intent);
+        if (mCallingUserId < 0) {
+            super.onCreate(savedInstanceState);
+            setResult(RESULT_CANCELED);
+            finish();
+            return;
+        }
 
         if (savedInstanceState != null) {
             mPendingRequest = savedInstanceState.getInt(KEY_INSTANCE_STATE_PENDING_REQUEST);
@@ -135,11 +143,11 @@ public class ChooseTypeAndAccountActivity extends Activity
             mSelectedAddNewAccount = savedInstanceState.getBoolean(
                     KEY_INSTANCE_STATE_SELECTED_ADD_ACCOUNT, false);
             mAccounts = savedInstanceState.getParcelableArrayList(KEY_INSTANCE_STATE_ACCOUNT_LIST);
-            mCallingUserId = savedInstanceState.getInt(KEY_USER_ID);
+            // The launch's caller token and generation are authoritative after recreation.
         } else {
             mPendingRequest = REQUEST_NULL;
             mExistingAccounts = null;
-            mCallingUserId = intent.getIntExtra(KEY_USER_ID, -1);
+
             // If the selected account as specified in the intent matches one in the list we will
             // show is as pre-selected.
             Account selectedAccount = intent.getParcelableExtra(EXTRA_SELECTED_ACCOUNT);
@@ -147,7 +155,6 @@ public class ChooseTypeAndAccountActivity extends Activity
                 mSelectedAccountName = selectedAccount.name;
             }
         }
-        VLog.v(TAG, "selected account name is " + mSelectedAccountName);
 
         mSetOfAllowableAccounts = getAllowableAccountSet(intent);
         mSetOfRelevantAccountTypes = getReleventAccountTypes(intent);
@@ -160,21 +167,12 @@ public class ChooseTypeAndAccountActivity extends Activity
             return;
         }
 
-        // In cases where the activity does not need to show an account picker, cut the chase
-        // and return the result directly. Eg:
-        // Single account -> select it directly
-        // No account -> launch add account activity directly
-        if (mPendingRequest == REQUEST_NULL) {
-            // If there are no relevant accounts and only one relevant account type go directly to
-            // add account. Otherwise let the user choose.
-            if (mAccounts.isEmpty()) {
-                setNonLabelThemeAndCallSuperCreate(savedInstanceState);
-                if (mSetOfRelevantAccountTypes.size() == 1) {
-                    runAddAccountForAuthenticator(mSetOfRelevantAccountTypes.iterator().next());
-                } else {
-                    startChooseAccountTypeActivity();
-                }
-            }
+        // An empty Space is an empty account result, never a request for host/add-account UI.
+        if (mAccounts.isEmpty()) {
+            setNonLabelThemeAndCallSuperCreate(savedInstanceState);
+            setResult(RESULT_CANCELED);
+            finish();
+            return;
         }
 
         String[] listItems = getListOfDisplayableOptions(mAccounts);
@@ -202,6 +200,7 @@ public class ChooseTypeAndAccountActivity extends Activity
     @Override
     protected void onResume() {
         super.onResume();
+        if (!hasCurrentScope()) { setResult(RESULT_CANCELED); finish(); return; }
         if (mPendingRequest != REQUEST_ADD_ACCOUNT || mExistingAccounts == null) {
             return;
         }
@@ -220,11 +219,12 @@ public class ChooseTypeAndAccountActivity extends Activity
     @Override
     protected void onSaveInstanceState(final Bundle outState) {
         super.onSaveInstanceState(outState);
+        outState.putInt(KEY_USER_ID, mCallingUserId);
         outState.putInt(KEY_INSTANCE_STATE_PENDING_REQUEST, mPendingRequest);
         if (mPendingRequest == REQUEST_ADD_ACCOUNT) {
             outState.putParcelableArray(KEY_INSTANCE_STATE_EXISTING_ACCOUNTS, mExistingAccounts);
         }
-        if (mSelectedItemIndex != SELECTED_ITEM_NONE) {
+        if (mAccounts != null && mSelectedItemIndex != SELECTED_ITEM_NONE) {
             if (mSelectedItemIndex == mAccounts.size()) {
                 outState.putBoolean(KEY_INSTANCE_STATE_SELECTED_ADD_ACCOUNT, true);
             } else {
@@ -241,6 +241,7 @@ public class ChooseTypeAndAccountActivity extends Activity
     }
 
     public void onOkButtonClicked(View view) {
+        if (!hasCurrentScope() || mAccounts == null) { setResult(RESULT_CANCELED); finish(); return; }
         if (mSelectedItemIndex == mAccounts.size()) {
             // Selected "Add New Account" option
             startChooseAccountTypeActivity();
@@ -255,12 +256,8 @@ public class ChooseTypeAndAccountActivity extends Activity
     @Override
     protected void onActivityResult(final int requestCode, final int resultCode,
                                     final Intent data) {
-        if (Log.isLoggable(TAG, Log.VERBOSE)) {
-            if (data != null && data.getExtras() != null) data.getExtras().keySet();
-            Bundle extras = data != null ? data.getExtras() : null;
-            Log.v(TAG, "ChooseTypeAndAccountActivity.onActivityResult(reqCode=" + requestCode
-                    + ", resCode=" + resultCode + ", extras=" + extras + ")");
-        }
+        VLog.v(TAG, "account picker result request=%d code=%d", requestCode, resultCode);
+        if (!hasCurrentScope()) { setResult(RESULT_CANCELED); finish(); return; }
 
         // we got our result, so clear the fact that we had a pending request
         mPendingRequest = REQUEST_NULL;
@@ -296,6 +293,7 @@ public class ChooseTypeAndAccountActivity extends Activity
                 }
 
                 if (accountName == null || accountType == null) {
+                    if (mExistingAccounts == null) { setResult(RESULT_CANCELED); finish(); return; }
                     Account[] currentAccounts = VAccountManager.get().getAccounts(mCallingUserId, null);
                     Set<Account> preExistingAccounts = new HashSet<>();
                     for (Parcelable accountParcel : mExistingAccounts) {
@@ -310,7 +308,7 @@ public class ChooseTypeAndAccountActivity extends Activity
                     }
                 }
 
-                if (accountName != null || accountType != null) {
+                if (accountName != null && accountType != null) {
                     setResultAndFinish(accountName, accountType);
                     return;
                 }
@@ -326,6 +324,9 @@ public class ChooseTypeAndAccountActivity extends Activity
     }
 
     protected void runAddAccountForAuthenticator(String type) {
+        if (!hasCurrentScope() || !mSetOfRelevantAccountTypes.contains(type)) {
+            setResult(RESULT_CANCELED); finish(); return;
+        }
         if (Log.isLoggable(TAG, Log.VERBOSE)) {
             Log.v(TAG, "runAddAccountForAuthenticator: " + type);
         }
@@ -342,6 +343,7 @@ public class ChooseTypeAndAccountActivity extends Activity
     @Override
     public void run(final AccountManagerFuture<Bundle> accountManagerFuture) {
         try {
+            if (!hasCurrentScope()) { setResult(RESULT_CANCELED); finish(); return; }
             final Bundle accountManagerResult = accountManagerFuture.getResult();
             final Intent intent = accountManagerResult.getParcelable(
                     AccountManager.KEY_INTENT);
@@ -365,7 +367,9 @@ public class ChooseTypeAndAccountActivity extends Activity
                         return;
                     }
                 }
-                startActivityForResult(intent, REQUEST_ADD_ACCOUNT);
+                // Authenticator UI must resolve inside this exact Space; never use host fallback.
+                setResult(RESULT_CANCELED);
+                finish();
                 return;
             }
         } catch (OperationCanceledException e) {
@@ -397,23 +401,33 @@ public class ChooseTypeAndAccountActivity extends Activity
     }
 
     private void onAccountSelected(Account account) {
-        Log.d(TAG, "selected account " + account);
+        VLog.d(TAG, "selected Space account");
         setResultAndFinish(account.name, account.type);
     }
 
     private void setResultAndFinish(final String accountName, final String accountType) {
+        if (mResultDelivered) return;
+        if (!hasCurrentScope() || accountName == null || accountType == null
+                || !getAcceptableAccountChoices(VAccountManager.get()).contains(new Account(accountName, accountType))) {
+            mResultDelivered = true;
+            setResult(RESULT_CANCELED);
+            finish();
+            return;
+        }
+        mResultDelivered = true;
         Bundle bundle = new Bundle();
         bundle.putString(AccountManager.KEY_ACCOUNT_NAME, accountName);
         bundle.putString(AccountManager.KEY_ACCOUNT_TYPE, accountType);
         setResult(Activity.RESULT_OK, new Intent().putExtras(bundle));
-        VLog.v(TAG, "ChooseTypeAndAccountActivity.setResultAndFinish: "
-                + "selected account " + accountName + ", " + accountType);
+        VLog.v(TAG, "Space account selection completed");
         finish();
     }
 
     private void startChooseAccountTypeActivity() {
         VLog.v(TAG, "ChooseAccountTypeActivity.startChooseAccountTypeActivity()");
+        if (!hasCurrentScope()) { setResult(RESULT_CANCELED); finish(); return; }
         final Intent intent = new Intent(this, ChooseAccountTypeActivity.class);
+        com.lody.virtual.helper.compat.SpaceAccountPickerPolicy.copyScope(getIntent(), intent);
         intent.setFlags(Intent.FLAG_ACTIVITY_CLEAR_WHEN_TASK_RESET);
         intent.putExtra(EXTRA_ALLOWABLE_ACCOUNT_TYPES_STRING_ARRAY,
                 getIntent().getStringArrayExtra(EXTRA_ALLOWABLE_ACCOUNT_TYPES_STRING_ARRAY));
@@ -491,7 +505,7 @@ public class ChooseTypeAndAccountActivity extends Activity
         Set<String> setOfRelevantAccountTypes;
         final String[] allowedAccountTypes =
                 intent.getStringArrayExtra(EXTRA_ALLOWABLE_ACCOUNT_TYPES_STRING_ARRAY);
-        AuthenticatorDescription[] descs = VAccountManager.get().getAuthenticatorTypes();
+        AuthenticatorDescription[] descs = VAccountManager.get().getAuthenticatorTypes(mCallingUserId);
         Set<String> supportedAccountTypes = new HashSet<String>(descs.length);
         for (AuthenticatorDescription desc : descs) {
             supportedAccountTypes.add(desc.type);
@@ -521,6 +535,11 @@ public class ChooseTypeAndAccountActivity extends Activity
             }
         }
         return setOfAllowableAccounts;
+    }
+
+    private boolean hasCurrentScope() {
+        return mCallingUserId >= 0
+                && com.lody.virtual.helper.compat.SpaceAccountPickerPolicy.validatedUser(getIntent()) == mCallingUserId;
     }
 
     /**
