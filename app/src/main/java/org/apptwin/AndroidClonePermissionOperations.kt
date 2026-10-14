@@ -23,6 +23,9 @@ import org.apptwin.permissions.ClonePermissionCategory
 import org.apptwin.permissions.ClonePermissionRequirement
 import org.apptwin.permissions.ClonePermissionTarget
 import org.apptwin.permissions.ClonePermissionVirtualScope
+import org.apptwin.permissions.canApplyClonePermission
+import org.apptwin.permissions.ClonePermissionRequestIdentity
+import org.apptwin.permissions.sameClonePermissionMembership
 import org.apptwin.runtime.VirtualRuntimeController
 
 /** Android implementation of the ClonePermissionOperations feature boundary. */
@@ -35,19 +38,47 @@ internal class AndroidClonePermissionOperations(
         item: GroupAppItem,
         permission: String,
         granted: Boolean,
+    ): Boolean = applyClonePermission(item, permission, granted, null)
+
+    override suspend fun setClonePermission(
+        item: GroupAppItem,
+        permission: String,
+        granted: Boolean,
+        expectedIdentity: ClonePermissionRequestIdentity,
+    ): Boolean = applyClonePermission(item, permission, granted, expectedIdentity)
+
+    private fun applyClonePermission(
+        item: GroupAppItem,
+        permission: String,
+        granted: Boolean,
+        expectedIdentity: ClonePermissionRequestIdentity?,
     ): Boolean {
         if (permission !in SUPPORTED_RUNTIME_PERMISSIONS) return false
         val group = groupStore.find(item.groupId) ?: return false
         if (group.health != GroupHealth.HEALTHY) return false
         val member = group.apps.firstOrNull { it.packageName == item.app.packageName } ?: return false
+        if (!sameClonePermissionMembership(item.app, member)) return false
         val userId = group.environmentBinding?.internalId ?: return false
-        if (PlatformPermissionCompatibility.isUnavailableOnPlatform(application.packageManager, permission)) {
+        if (expectedIdentity != null && !expectedIdentity.matches(
+                group.id, member.packageName, permission, item.launchKey, userId, member.addedAtEpochMillis,
+            )) return false
+        val platformExempt = PlatformPermissionCompatibility.isUnavailableOnPlatform(application.packageManager, permission)
+        if (!canApplyClonePermission(granted, platformExempt, hostPermissionGranted(permission))) return false
+        if (platformExempt) {
             // Platform-exempt grants are idempotent and cannot revoke or restart the clone.
             return granted && VPackageManager.get().setRuntimePermissionGranted(
                 permission, item.app.packageName, userId, true,
             )
         }
         runtimeController.preparePackageForPermissions(group, member)
+        // Preparation may take time. Never apply a stale decision to a removed/replaced member
+        // or retain a host grant that Android revoked while preparation was running.
+        val currentGroup = groupStore.find(item.groupId) ?: return false
+        if (currentGroup.health != GroupHealth.HEALTHY ||
+            currentGroup.environmentBinding?.internalId != userId ||
+            currentGroup.apps.none { sameClonePermissionMembership(member, it) } ||
+            !canApplyClonePermission(granted, false, hostPermissionGranted(permission))
+        ) return false
         val changed = VPackageManager.get().setRuntimePermissionGranted(
             permission,
             item.app.packageName,
@@ -61,6 +92,9 @@ internal class AndroidClonePermissionOperations(
         }
         return changed
     }
+
+    private fun hostPermissionGranted(permission: String): Boolean =
+        application.checkSelfPermission(permission) == PackageManager.PERMISSION_GRANTED
 
     internal fun virtualPermissionGranted(permission: String, packageName: String, userId: Int): Boolean =
         runCatching {

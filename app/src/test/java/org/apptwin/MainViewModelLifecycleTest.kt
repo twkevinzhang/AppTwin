@@ -1442,6 +1442,140 @@ class MainViewModelLifecycleTest {
         assertTrue(messages.isEmpty())
     }
 
+    @Test
+    fun `permission result updates captured space once after navigation changes`() = runTest {
+        val dispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(dispatcher)
+        val original = group().copy(apps = listOf(GroupApp(APP_PACKAGE, 2L, GroupAppState.ENABLED)))
+        val fake = FakeOperations(groups = listOf(original), installedEntries = listOf(appItem().entry))
+        val writes = mutableListOf<String>()
+        val operations = object : MainOperations by fake {
+            override suspend fun setClonePermission(item: GroupAppItem, permission: String, granted: Boolean, expectedIdentity: org.apptwin.permissions.ClonePermissionRequestIdentity): Boolean {
+                writes += item.groupId
+                return true
+            }
+        }
+        val model = viewModel(SavedStateHandle(), operations, dispatcher)
+        advanceUntilIdle()
+        var prepared = false
+        model.prepareClonePermissionRequest(model.sessionState.value.groups.single().apps.single(), "android.permission.CAMERA") { prepared = true }
+        advanceUntilIdle()
+        assertTrue(prepared)
+        model.navigate(MainDestination.SETTINGS)
+        model.completeClonePermissionRequest(null, true)
+        model.completeClonePermissionRequest(null, true)
+        advanceUntilIdle()
+        assertEquals(listOf(GROUP_ID), writes)
+    }
+
+    @Test
+    fun `saved permission request restores original binding and rejects replaced space`() = runTest {
+        val dispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(dispatcher)
+        var original = group().copy(apps = listOf(GroupApp(APP_PACKAGE, 2L, GroupAppState.ENABLED)))
+        val fake = FakeOperations(groups = listOf(original), installedEntries = listOf(appItem().entry))
+        val writes = mutableListOf<String>()
+        val operations = object : MainOperations by fake {
+            override suspend fun findGroup(groupId: String): Group = original
+            override suspend fun setClonePermission(item: GroupAppItem, permission: String, granted: Boolean, expectedIdentity: org.apptwin.permissions.ClonePermissionRequestIdentity): Boolean {
+                writes += item.groupId
+                return true
+            }
+        }
+        val handle = SavedStateHandle()
+        val first = viewModel(handle, operations, dispatcher)
+        advanceUntilIdle()
+        first.prepareClonePermissionRequest(first.sessionState.value.groups.single().apps.single(), "android.permission.CAMERA") {}
+        advanceUntilIdle()
+        val restored = viewModel(handle, operations, dispatcher)
+        advanceUntilIdle()
+        assertEquals("android.permission.CAMERA", restored.pendingClonePermissionName())
+        original = original.copy(environmentBinding = EnvironmentBinding(99))
+        restored.completeClonePermissionRequest(null, true)
+        advanceUntilIdle()
+        assertTrue(writes.isEmpty())
+        assertEquals(null, restored.pendingClonePermissionName())
+    }
+
+    @Test
+    fun `cancel invalidates pending lookup and late prepare cannot reopen dialog`() = runTest {
+        val dispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(dispatcher)
+        val original = group().copy(apps = listOf(GroupApp(APP_PACKAGE, 2L, GroupAppState.ENABLED)))
+        val gate = CompletableDeferred<Group>()
+        val fake = FakeOperations(groups = listOf(original), installedEntries = listOf(appItem().entry))
+        val operations = object : MainOperations by fake {
+            override suspend fun findGroup(groupId: String): Group = gate.await()
+        }
+        val model = viewModel(SavedStateHandle(), operations, dispatcher)
+        advanceUntilIdle()
+        var dialogs = 0
+        model.prepareClonePermissionRequest(model.sessionState.value.groups.single().apps.single(), "android.permission.CAMERA") { dialogs++ }
+        runCurrent()
+        model.cancelClonePermissionRequest()
+        gate.complete(original)
+        advanceUntilIdle()
+        assertEquals(0, dialogs)
+        assertEquals(null, model.pendingClonePermissionTicket())
+    }
+
+    @Test
+    fun `late lookup and old callback cannot replace or consume newer request`() = runTest {
+        val dispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(dispatcher)
+        val original = group().copy(apps = listOf(GroupApp(APP_PACKAGE, 2L, GroupAppState.ENABLED)))
+        val oldLookup = CompletableDeferred<Group>()
+        val fake = FakeOperations(groups = listOf(original), installedEntries = listOf(appItem().entry))
+        var lookups = 0
+        val operations = object : MainOperations by fake {
+            override suspend fun findGroup(groupId: String): Group = if (++lookups == 1) oldLookup.await() else original
+        }
+        val model = viewModel(SavedStateHandle(), operations, dispatcher)
+        advanceUntilIdle()
+        val item = model.sessionState.value.groups.single().apps.single()
+        var dialogs = 0
+        model.prepareClonePermissionRequest(item, "android.permission.CAMERA") { dialogs++ }
+        runCurrent()
+        model.prepareClonePermissionRequest(item, "android.permission.RECORD_AUDIO") { dialogs++ }
+        runCurrent()
+        val newerTicket = model.pendingClonePermissionTicket()
+        oldLookup.complete(original)
+        advanceUntilIdle()
+        assertEquals(1, dialogs)
+        assertEquals("android.permission.RECORD_AUDIO", model.pendingClonePermissionName())
+        model.completeClonePermissionRequest("android.permission.CAMERA", true, newerTicket!! - 1L)
+        assertEquals(newerTicket, model.pendingClonePermissionTicket())
+        model.cancelClonePermissionRequest()
+    }
+
+    @Test
+    fun `permission prepare accepts launched member state but rejects replacement timestamp`() = runTest {
+        val dispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(dispatcher)
+        val originalMember = GroupApp(APP_PACKAGE, 2L, GroupAppState.ADDED)
+        val originalGroup = group().copy(apps = listOf(originalMember))
+        var currentGroup = originalGroup
+        val fake = FakeOperations(groups = listOf(originalGroup), installedEntries = listOf(appItem().entry))
+        val operations = object : MainOperations by fake {
+            override suspend fun findGroup(groupId: String): Group = currentGroup
+        }
+        val model = viewModel(SavedStateHandle(), operations, dispatcher)
+        advanceUntilIdle()
+        val capturedItem = model.sessionState.value.groups.single().apps.single()
+        currentGroup = originalGroup.copy(apps = listOf(originalMember.copy(state = GroupAppState.ENABLED)))
+        var dialogs = 0
+        model.prepareClonePermissionRequest(capturedItem, "android.permission.CAMERA") { dialogs++ }
+        advanceUntilIdle()
+        assertEquals(1, dialogs)
+        assertEquals("android.permission.CAMERA", model.pendingClonePermissionName())
+        model.cancelClonePermissionRequest()
+        currentGroup = originalGroup.copy(apps = listOf(originalMember.copy(addedAtEpochMillis = 3L, state = GroupAppState.ENABLED)))
+        model.prepareClonePermissionRequest(capturedItem, "android.permission.CAMERA") { dialogs++ }
+        advanceUntilIdle()
+        assertEquals(1, dialogs)
+        assertEquals(null, model.pendingClonePermissionName())
+    }
+
     private fun viewModel(
         savedState: SavedStateHandle,
         operations: MainOperations,

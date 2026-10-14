@@ -1,0 +1,158 @@
+{
+  "stage": 4,
+  "overall_gate": "passed",
+  "base_commit": "dea8dd4",
+  "device": "physical Pixel 10a/API37, approved for this five-stage refactor",
+  "host_target_sdk": 28,
+  "dependencies_changed": false,
+  "app_unit": {
+    "tests": 232,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0
+  },
+  "lint": {
+    "Warning": 30,
+    "Error": 0,
+    "Fatal": 0
+  },
+  "runtime_unit": "Untouched runtime; Stage2 791-test result not reexecuted in Stage4",
+  "build_logs": [
+    "/tmp/apptwin-stage4-stable-membership-build.log",
+    "/tmp/apptwin-stage4-cold-actual-pid-build.log"
+  ],
+  "device_runs": [
+    {
+      "log": "/tmp/apptwin-stage4-final-regression.log",
+      "tests": 47,
+      "negative_status_codes": [],
+      "passed": true
+    },
+    {
+      "log": "/tmp/apptwin-stage4-final-isolation-phase1.log",
+      "tests": 1,
+      "negative_status_codes": [],
+      "passed": true
+    },
+    {
+      "log": "/tmp/apptwin-stage4-final-isolation-phase2.log",
+      "tests": 1,
+      "negative_status_codes": [],
+      "passed": true
+    },
+    {
+      "log": "/tmp/apptwin-stage4-final-reuse-0.log",
+      "tests": 1,
+      "negative_status_codes": [],
+      "passed": true
+    },
+    {
+      "log": "/tmp/apptwin-stage4-final-reuse-1.log",
+      "tests": 1,
+      "negative_status_codes": [],
+      "passed": true
+    },
+    {
+      "log": "/tmp/apptwin-stage4-final-reuse-2.log",
+      "tests": 1,
+      "negative_status_codes": [],
+      "passed": true
+    },
+    {
+      "log": "/tmp/apptwin-stage4-final-reuse-3.log",
+      "tests": 1,
+      "negative_status_codes": [],
+      "passed": true
+    },
+    {
+      "log": "/tmp/apptwin-stage4-final-reuse-4.log",
+      "tests": 1,
+      "negative_status_codes": [],
+      "passed": true
+    },
+    {
+      "log": "/tmp/apptwin-stage4-final-host-permission.log",
+      "tests": 1,
+      "negative_status_codes": [],
+      "passed": true
+    },
+    {
+      "log": "/tmp/apptwin-stage4-cold-actual-pid-policy.log",
+      "tests": 1,
+      "negative_status_codes": [],
+      "passed": true
+    }
+  ],
+  "device_test_executions": 56,
+  "sensor_capability_probes": 8,
+  "host_denied_camera_probes": 2,
+  "apk_hashes": {
+    "org.apptwin": {
+      "sha256": "5d0cb94d3ffd3d7e5687854791e0630f9768ba6201f5026b5f1f2c101b158b51",
+      "installed_hash_matches": true
+    },
+    "org.apptwin.test": {
+      "sha256": "c33757817a00349d8bc649cdba6d1acdd785edc72e1fe51a75d9fdee03b36ce8",
+      "installed_hash_matches": true
+    }
+  },
+  "cleanup": {
+    "owned_groups_removed_and_existing_public_structure_asserted": true,
+    "owned_restart_statefiles_remaining": 0,
+    "host_camera_grant_and_flags_restored": {
+      "prior_granted": true,
+      "prior_flags": " USER_SET|USER_SENSITIVE_WHEN_GRANTED|USER_SENSITIVE_WHEN_DENIED",
+      "restored": true,
+      "restored_flags": " USER_SET|USER_SENSITIVE_WHEN_GRANTED|USER_SENSITIVE_WHEN_DENIED",
+      "flags_unchanged": true
+    },
+    "prior_background_policy": "enabled=true, restored and actual readback asserted",
+    "policy_prior_record": "/tmp/apptwin-stage4-cold-actual-pid-prior.txt",
+    "policy_preflight": "/tmp/apptwin-stage4-cold-actual-pid-preflight.json",
+    "policy_cache_marker_removed": true,
+    "target_data_cleared": false,
+    "target_uninstalled": false
+  },
+  "review": "Independent source review PASS; request generation/ticket, stable membership, raw cold-policy authority and lifecycle helpers reviewed.",
+  "historical_failures": [
+    {
+      "log": "/tmp/apptwin-stage4-first-build.log",
+      "reason": "Lint rejected StateFlow.value in composition; lifecycle initializer corrected without suppression."
+    },
+    {
+      "log": "/tmp/apptwin-stage4-lifecycle-callback-workflow.log",
+      "reason": "Test omitted real permissions subsection entry."
+    },
+    {
+      "log": "/tmp/apptwin-stage4-lifecycle-callback-subscription.log",
+      "reason": "Test returned task with Settings on top; actual Back added. Compose delay clock was not advanced."
+    },
+    {
+      "log": "/tmp/apptwin-stage4-settings-subscription-final.log",
+      "reason": "subscription=1, healthReads=1: test clock delay needed advancement."
+    },
+    {
+      "log": "/tmp/apptwin-stage4-formal-regression.log",
+      "reason": "Full GroupApp equality rejected ADDED→ENABLED state changes; stable package/addedAt comparison fixed, original sensor and full regression rerun."
+    },
+    {
+      "log": "/tmp/apptwin-stage4-background-policy.log",
+      "reason": "Fail-closed guard rejected existing guest started by MainActivity; no policy mutation."
+    },
+    {
+      "log": "/tmp/apptwin-stage4-cold-policy-authority-metadata.log",
+      "reason": "Test treated legacy getSystemPid UID as PID; used existing actual PID API with immutable cross-check, production API unchanged."
+    },
+    {
+      "log": "/tmp/apptwin-stage4-isolation-method-selection-error.log",
+      "reason": "Incorrect method selector; no valid phase-two acceptance. Correct phase two resumed same owned state."
+    }
+  ],
+  "limitations": [
+    "Physical coverage is API37/host target28; older version differences are official-document/source coverage.",
+    "Permission-result case exercises real production VM entry, not automation of Android permission dialog.",
+    "Lifecycle helper test uses real Activity lifecycle with Compose test clock for helper delay; not MCS/socket wall-time health proof.",
+    "Cold policy inventory is a non-atomic raw/physical snapshot close to mutation. Policy restoration restores eligibility, not an old private socket.",
+    "No LINE upstream ingress/notification fix claimed."
+  ]
+}

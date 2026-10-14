@@ -95,3 +95,16 @@ UI fixture 測試不等於真實資料操作驗收。執行 connected tests 前�
 - 官方依據：[Architecture recommendations](https://developer.android.com/topic/architecture/recommendations)、[State holders and UI state](https://developer.android.com/topic/architecture/ui-layer/stateholders)。沒有更改依賴、SDK、runtime/workload gate 或 LINE channel 策略；lifecycle-aware collection 與平台觀察邊界留給第四階段。
 
 可靠度分數：96%。驗證方式：核對 stage3.json 的正式 runner terminal、零 skip、JUnit 結果、實機 fixture lifecycle／能力與 APK hashes；後續任何回歸須重新驗收對應流程。
+
+### 第四階段：Lifecycle／權限／背景觀察，正式驗收通過
+
+- UI 六個畫面 flows 與背景 policy flow 使用既有 Lifecycle API 控制 STARTED 訂閱；Details health observer 只在 RESUMED 執行，Stop 只取消 UI 觀察。MainActivity resume 統一重新讀取權限、畫面與備份設定；通知權限回程重新核對系統狀態。
+- Application 持有唯一可注入背景 repository、scope 與 mutation mutex；Tile 與 UI 共用。保留 durable readback／原意圖 retry，explicit Stop 使排隊 enable 失效；觀察者取消不取消 application 操作。
+- 權限請求保留原 group/package/permission/launchKey/binding/member timestamp 與 ticket；取消 generation 拒絕晚到 lookup，舊 callback 不消耗新 request。Adapter 在操作入口與準備後重新核對 host grant、原 binding 及穩定 membership。正常 ADDED→ENABLED 的 state 不是 membership 更換；刪除重加仍拒絕。
+- Gradle build、Lint 與 app 232 個 unit tests 通過，零 failure/error/skipped；Lint 30 warnings、零 error/fatal、未增加 baseline 或依賴。正式 Pixel 10a 共 56 個測試執行通過：完整回歸 47、跨 host force-stop 隔離 2、五輪 first/warm reuse、host revoke 1（兩個實際 camera denial probes）、實際 background policy 1；sensor 套件含八個 grant/restart/revoke 能力 probes。
+- 真實 Settings Back 返回與同 Activity 畫面讀回通過；production permission-result 入口的原 scope／cancel／舊 ticket 通過，但不是 OS permission dialog 全自動操作。Lifecycle helper 使用真實 Activity 與 Compose test clock 證明訂閱 1→0→1、Stop 後無 polling，不能冒稱 MCS wall-time 健康證據。
+- 實際 Off／retry rejection／queued Enable→Stop／prior policy restore 通過。Cold preflight 使用 pre-hook raw AM、實體 UID/PID 與全部 virtual users；不能把非原子 snapshot 說成原子保證。測試的 legacy getSystemPid 實際為 UID，已改用既有 actual PID API 並交叉核對，未改 production API。
+- 安裝 hashes、owned cleanup、host CAMERA grant/flags 與原背景設定復原均已核對；沒有清除或解除安裝 target app。所有歷史失敗與限制見 [stage4.json](refactor-evidence/stage4.json)，不計為正式通過。
+- 官方核對：[Lifecycle coroutines](https://developer.android.com/topic/libraries/architecture/coroutines)、[Runtime permissions](https://developer.android.com/training/permissions/requesting)、[Bluetooth permissions](https://developer.android.com/develop/connectivity/bluetooth/bt-permissions)、[Compose synchronization](https://developer.android.com/develop/ui/compose/testing/synchronization)。SDK 與既有平台豁免／background location 分支保留；未新增 Bluetooth 功能、未宣稱跨版本實機或 LINE 通知修復。
+
+可靠度分數：96%。驗證方式：比對 stage4.json 正式 runner terminal、APK hashes、JUnit/Lint 結果、實際能力與設定復原；後續 runtime 變更須重新驗收相關路徑。
