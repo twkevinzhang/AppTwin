@@ -43,7 +43,12 @@ public class ChooseAccountTypeActivity extends Activity {
     public void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         mCallingUserId = com.lody.virtual.helper.compat.SpaceAccountPickerPolicy.validatedUser(getIntent());
-        if (mCallingUserId < 0) { setResult(RESULT_CANCELED); finish(); return; }
+        android.content.ComponentName parent = getCallingActivity();
+        if (mCallingUserId < 0 || parent == null
+                || !VirtualCore.get().getHostPkg().equals(parent.getPackageName())
+                || !ChooseTypeAndAccountActivity.class.getName().equals(parent.getClassName())) {
+            setResult(RESULT_CANCELED); finish(); return;
+        }
 
         // Read the validAccountTypes, if present, and add them to the setOfAllowableAccountTypes
         Set<String> setOfAllowableAccountTypes = null;

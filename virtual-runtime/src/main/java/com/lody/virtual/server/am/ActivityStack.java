@@ -1046,6 +1046,14 @@ import static android.content.pm.ActivityInfo.LAUNCH_SINGLE_TOP;
         }
     }
 
+    boolean isActivityOwnedByProcess(int userId, IBinder token, ProcessRecord owner) {
+        synchronized (mHistory) {
+            ActivityRecord record = findActivityByToken(userId, token);
+            return record != null && record.process == owner && owner != null
+                    && owner.userId == userId;
+        }
+    }
+
     String getPackageForToken(int userId, IBinder token) {
         synchronized (mHistory) {
             ActivityRecord r = findActivityByToken(userId, token);
