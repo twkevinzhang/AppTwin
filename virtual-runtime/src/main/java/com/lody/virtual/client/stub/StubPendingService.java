@@ -24,7 +24,10 @@ public class StubPendingService extends Service {
             Intent realIntent = intent.getParcelableExtra("_VA_|_intent_");
             int userId = intent.getIntExtra("_VA_|_user_id_", 0);
             if (realIntent != null && PendingIntentUserGeneration.isCurrent(intent, userId)) {
-                VActivityManager.get().startService(null, realIntent, null, userId);
+                Intent replyIntent = PendingIntentRemoteInput.copyResults(intent, realIntent, "service");
+                if (replyIntent != null) {
+                    VActivityManager.get().startService(null, replyIntent, null, userId);
+                }
             }
         }
         stopSelf();
