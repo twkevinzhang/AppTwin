@@ -17,6 +17,9 @@ import java.io.File
 class FixtureActivity : Activity() {
     private val lifecycleProbe by lazy { FixtureLifecycleProbe(this) }
     private var selectedUriProbe: SelectedUriProbe? = null
+    private var credentialProbe: OwnedCredentialProbe? = null
+    private var callerProbe: OwnedCallerProbe? = null
+    private var accountPickerProbe: OwnedAccountPickerProbe? = null
     private var permissionProbeStarted = false
     @Volatile private var probeResumed = false
     private var probeReadinessDeadline = 0L
@@ -78,6 +81,14 @@ class FixtureActivity : Activity() {
         super.onResume()
         probeResumed = true
         lifecycleProbe.resumed()
+        window.decorView.post { startCallerProbeWhenForeground(); startAccountPickerWhenForeground() }
+        if (File(filesDir, OwnedCredentialProbe.ENABLE_FILE).exists() && credentialProbe == null) {
+            window.decorView.post {
+                if (probeResumed && hasWindowFocus() && credentialProbe == null) {
+                    credentialProbe = OwnedCredentialProbe(this).also { it.start() }
+                }
+            }
+        }
         if (File(filesDir, "enable-permission-probe").exists() ||
             File(filesDir, CameraMicrophoneProbe.ENABLE_FILE).exists() ||
             File(filesDir, OwnedContactsProbe.ENABLE_FILE).exists()) {
@@ -99,7 +110,14 @@ class FixtureActivity : Activity() {
     override fun onWindowFocusChanged(hasFocus: Boolean) {
         super.onWindowFocusChanged(hasFocus)
         lifecycleProbe.focus(hasFocus)
-        if (hasFocus) window.decorView.post { startProbeWhenForeground() }
+        if (hasFocus) window.decorView.post {
+            startProbeWhenForeground()
+            startCallerProbeWhenForeground()
+            startAccountPickerWhenForeground()
+            if (probeResumed && credentialProbe == null && File(filesDir, OwnedCredentialProbe.ENABLE_FILE).exists()) {
+                credentialProbe = OwnedCredentialProbe(this).also { it.start() }
+            }
+        }
     }
 
     override fun onStop() {
@@ -108,8 +126,23 @@ class FixtureActivity : Activity() {
     }
 
     override fun onDestroy() {
+        credentialProbe?.cancel()
         lifecycleProbe.destroyed()
         super.onDestroy()
+    }
+
+    private fun startAccountPickerWhenForeground() {
+        if (probeResumed && hasWindowFocus() && accountPickerProbe == null &&
+            File(filesDir, OwnedAccountPickerProbe.ENABLE_FILE).exists()) {
+            accountPickerProbe = OwnedAccountPickerProbe(this).also { it.start() }
+        }
+    }
+
+    private fun startCallerProbeWhenForeground() {
+        if (probeResumed && hasWindowFocus() && callerProbe == null &&
+            File(filesDir, OwnedCallerProbe.ENABLE_FILE).exists()) {
+            callerProbe = OwnedCallerProbe(this).also { it.start() }
+        }
     }
 
     private fun startProbeWhenForeground() {
@@ -154,6 +187,8 @@ class FixtureActivity : Activity() {
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: android.content.Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
         selectedUriProbe?.onResult(requestCode, resultCode, data)
+        callerProbe?.onResult(requestCode, resultCode, data)
+        accountPickerProbe?.onResult(requestCode, resultCode, data)
     }
 
     private fun permissionGranted(permission: String): Boolean =

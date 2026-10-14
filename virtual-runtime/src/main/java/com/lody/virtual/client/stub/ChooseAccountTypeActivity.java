@@ -35,12 +35,15 @@ import java.util.Set;
 public class ChooseAccountTypeActivity extends Activity {
     private static final String TAG = "AccountChooser";
 
+    private int mCallingUserId = -1;
     private HashMap<String, AuthInfo> mTypeToAuthenticatorInfo = new HashMap<String, AuthInfo>();
     private ArrayList<AuthInfo> mAuthenticatorInfosToDisplay;
 
     @Override
     public void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+        mCallingUserId = com.lody.virtual.helper.compat.SpaceAccountPickerPolicy.validatedUser(getIntent());
+        if (mCallingUserId < 0) { setResult(RESULT_CANCELED); finish(); return; }
 
         // Read the validAccountTypes, if present, and add them to the setOfAllowableAccountTypes
         Set<String> setOfAllowableAccountTypes = null;
@@ -96,6 +99,10 @@ public class ChooseAccountTypeActivity extends Activity {
     }
 
     private void setResultAndFinish(final String type) {
+        if (com.lody.virtual.helper.compat.SpaceAccountPickerPolicy.validatedUser(getIntent()) != mCallingUserId
+                || !mTypeToAuthenticatorInfo.containsKey(type)) {
+            setResult(RESULT_CANCELED); finish(); return;
+        }
         Bundle bundle = new Bundle();
         bundle.putString(AccountManager.KEY_ACCOUNT_TYPE, type);
         setResult(Activity.RESULT_OK, new Intent().putExtras(bundle));
@@ -105,7 +112,7 @@ public class ChooseAccountTypeActivity extends Activity {
     }
 
     private void buildTypeToAuthDescriptionMap() {
-        for(AuthenticatorDescription desc : VAccountManager.get().getAuthenticatorTypes()) {
+        for(AuthenticatorDescription desc : VAccountManager.get().getAuthenticatorTypes(mCallingUserId)) {
             String name = null;
             Drawable icon = null;
             try {

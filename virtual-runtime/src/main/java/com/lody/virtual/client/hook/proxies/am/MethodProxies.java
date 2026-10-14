@@ -541,6 +541,15 @@ class MethodProxies {
                 resultWho = (String) args[resultToIndex + 1];
                 requestCode = (int) args[resultToIndex + 2];
             }
+            Intent accountRequest = com.lody.virtual.helper.compat.SpaceAccountPickerPolicy.effectiveRequest(intent);
+            if (accountRequest != null) {
+                Intent bridge = com.lody.virtual.helper.compat.SpaceAccountPickerPolicy.redirect(
+                        accountRequest, getHostPkg(), userId, resultTo);
+                if (bridge == null) return ActivityManagerCompat.START_INTENT_NOT_RESOLVED;
+                com.lody.virtual.helper.compat.UriPickerRequestPolicy.replaceLaunchIntent(args, intentIndex, bridge);
+                MethodParameterUtils.replaceFirstAppPkg(args);
+                return method.invoke(who, args);
+            }
             Intent pickerRequest = com.lody.virtual.helper.compat.UriPickerRequestPolicy.extract(
                     intent, getHostPkg());
             if (resultTo != null && pickerRequest != null) {
