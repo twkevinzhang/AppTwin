@@ -1,5 +1,10 @@
 package org.apptwin.ui
 
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.ui.semantics.SemanticsProperties
+import androidx.compose.ui.test.SemanticsMatcher
+import androidx.compose.ui.test.assert
+import org.apptwin.spaces.SpaceLifecycleState
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsNotEnabled
@@ -185,6 +190,47 @@ class SpaceProductUiTest {
         composeRule.runOnIdle { assertEquals(secondSpaceId, selected) }
         composeRule.onNodeWithText("啟用 Google 服務").assertDoesNotExist()
         composeRule.onNodeWithText("停用 Google 服務").assertDoesNotExist()
+    }
+
+    @Test
+    fun lifecycleAvatarOpensExactSpaceWithoutReadyChip() {
+        var selected: String? = null
+        setHome(multiSpaceState, onOpenSpaceDetails = { selected = it })
+        composeRule.onNodeWithTag("space-status-$secondSpaceId").performClick()
+        composeRule.runOnIdle { assertEquals(secondSpaceId, selected) }
+        composeRule.onNodeWithText("可使用").assertDoesNotExist()
+    }
+
+    @Test
+    fun lifecycleAvatarReportsTransitionsWithoutReplacingSpaceIdentity() {
+        val current = mutableStateOf(SpaceLifecycleState.READY)
+        composeRule.setContent {
+            AppTwinTheme {
+                HomeScreen(
+                    state = defaultState.copy(groups = listOf(space.copy(lifecycle = current.value))),
+                    onCreateGroup = {}, onLaunch = {}, onAddApp = {},
+                    onClearAllAppData = {}, onDeleteSpace = {},
+                )
+            }
+        }
+        val states = listOf(
+            SpaceLifecycleState.READY to "已就緒",
+            SpaceLifecycleState.CREATING to "建立中",
+            SpaceLifecycleState.REPAIRING to "修復中",
+            SpaceLifecycleState.NEEDS_REPAIR to "需要修復",
+            SpaceLifecycleState.DELETING to "刪除中",
+        )
+        states.forEach { (state, label) ->
+            composeRule.runOnIdle { current.value = state }
+            composeRule.onNodeWithTag("space-status-$spaceId")
+                .assertIsDisplayed()
+                .assert(SemanticsMatcher.expectValue(SemanticsProperties.StateDescription, label))
+            composeRule.onNodeWithText(space.name).assertIsDisplayed()
+            if (state != SpaceLifecycleState.READY) {
+                val subtitle = if (state == SpaceLifecycleState.DELETING) label else "1 個 App · $label"
+                composeRule.onNodeWithText(subtitle).assertIsDisplayed()
+            }
+        }
     }
 
     private fun setHome(
