@@ -76,6 +76,12 @@ final class VirtualUserCleanupCoordinator {
                 step.clear(userId);
             } catch (Exception failure) {
                 // Never log account names, tokens, paths, or service exception messages here.
+                try {
+                    com.lody.virtual.helper.utils.VLog.w("VirtualUserCleanup",
+                            "step=%s error=%s", step.name(), failure.getClass().getSimpleName());
+                } catch (RuntimeException | LinkageError unavailableDiagnostics) {
+                    // Diagnostics must never mask the cleanup failure or skip remaining steps.
+                }
                 failures.add(step.name());
             }
         }

@@ -115,6 +115,8 @@ public class ChooseTypeAndAccountActivity extends Activity
     private Parcelable[] mExistingAccounts = null;
     private int mSelectedItemIndex = SELECTED_ITEM_NONE;
     private boolean mResultDelivered;
+    private boolean mSessionClaimed;
+    private static final String KEY_SESSION_CLAIMED = "nativePickerSessionClaimed";
     private Button mOkButton;
     private int mCallingUserId;
     private boolean mDontShowPicker;
@@ -123,7 +125,11 @@ public class ChooseTypeAndAccountActivity extends Activity
     public void onCreate(Bundle savedInstanceState) {
         // save some items we use frequently
         final Intent intent = getIntent();
-        mCallingUserId = com.lody.virtual.helper.compat.SpaceAccountPickerPolicy.validatedUser(intent);
+        boolean restoringClaim = savedInstanceState != null && savedInstanceState.getBoolean(KEY_SESSION_CLAIMED, false);
+        mCallingUserId = restoringClaim
+                ? com.lody.virtual.helper.compat.SpaceAccountPickerPolicy.validatedUser(intent)
+                : com.lody.virtual.helper.compat.SpaceAccountPickerPolicy.claimUser(intent);
+        mSessionClaimed = mCallingUserId >= 0;
         if (mCallingUserId < 0) {
             super.onCreate(savedInstanceState);
             setResult(RESULT_CANCELED);
@@ -191,6 +197,9 @@ public class ChooseTypeAndAccountActivity extends Activity
 
     @Override
     protected void onDestroy() {
+        if (isFinishing() && mSessionClaimed && !mResultDelivered) {
+            com.lody.virtual.helper.compat.SpaceAccountPickerPolicy.complete(getIntent());
+        }
         if (Log.isLoggable(TAG, Log.VERBOSE)) {
             Log.v(TAG, "ChooseTypeAndAccountActivity.onDestroy()");
         }
@@ -219,6 +228,7 @@ public class ChooseTypeAndAccountActivity extends Activity
     @Override
     protected void onSaveInstanceState(final Bundle outState) {
         super.onSaveInstanceState(outState);
+        outState.putBoolean(KEY_SESSION_CLAIMED, mSessionClaimed);
         outState.putInt(KEY_USER_ID, mCallingUserId);
         outState.putInt(KEY_INSTANCE_STATE_PENDING_REQUEST, mPendingRequest);
         if (mPendingRequest == REQUEST_ADD_ACCOUNT) {
@@ -237,11 +247,17 @@ public class ChooseTypeAndAccountActivity extends Activity
     }
 
     public void onCancelButtonClicked(View view) {
+        traceResult("cancel-button", false);
         onBackPressed();
     }
 
     public void onOkButtonClicked(View view) {
-        if (!hasCurrentScope() || mAccounts == null) { setResult(RESULT_CANCELED); finish(); return; }
+        if (!hasCurrentScope() || mAccounts == null) {
+            traceResult("ok-invalid-scope", false);
+            setResult(RESULT_CANCELED); finish(); return;
+        }
+        traceResult(mSelectedItemIndex == SELECTED_ITEM_NONE ? "ok-no-selection"
+                : mSelectedItemIndex == mAccounts.size() ? "ok-add-account" : "ok-existing-account", true);
         if (mSelectedItemIndex == mAccounts.size()) {
             // Selected "Add New Account" option
             startChooseAccountTypeActivity();
@@ -406,19 +422,30 @@ public class ChooseTypeAndAccountActivity extends Activity
     }
 
     private void setResultAndFinish(final String accountName, final String accountType) {
-        if (mResultDelivered) return;
-        if (!hasCurrentScope() || accountName == null || accountType == null
-                || !getAcceptableAccountChoices(VAccountManager.get()).contains(new Account(accountName, accountType))) {
+        if (mResultDelivered) { traceResult("duplicate-result", false); return; }
+        boolean currentScope = hasCurrentScope();
+        boolean accountPresent = accountName != null && accountType != null;
+        boolean currentMember = currentScope && accountPresent
+                && getAcceptableAccountChoices(VAccountManager.get()).contains(new Account(accountName, accountType));
+        if (!currentScope || !accountPresent || !currentMember) {
+            traceResult(!currentScope ? "result-invalid-scope"
+                    : !accountPresent ? "result-missing-fields" : "result-account-unavailable", false);
+            com.lody.virtual.helper.compat.SpaceAccountPickerPolicy.complete(getIntent());
             mResultDelivered = true;
             setResult(RESULT_CANCELED);
             finish();
             return;
+        }
+        if (!com.lody.virtual.helper.compat.SpaceAccountPickerPolicy.complete(getIntent())) {
+            mResultDelivered = true;
+            setResult(RESULT_CANCELED); finish(); return;
         }
         mResultDelivered = true;
         Bundle bundle = new Bundle();
         bundle.putString(AccountManager.KEY_ACCOUNT_NAME, accountName);
         bundle.putString(AccountManager.KEY_ACCOUNT_TYPE, accountType);
         setResult(Activity.RESULT_OK, new Intent().putExtras(bundle));
+        traceResult("result-ok-account", true);
         VLog.v(TAG, "Space account selection completed");
         finish();
     }
@@ -535,6 +562,12 @@ public class ChooseTypeAndAccountActivity extends Activity
             }
         }
         return setOfAllowableAccounts;
+    }
+
+    private static void traceResult(String checkpoint, boolean accepted) {
+        try {
+            VLog.i("SpaceAccountPicker", "checkpoint=%s accepted=%s", checkpoint, accepted);
+        } catch (RuntimeException | LinkageError unavailableDiagnostics) { }
     }
 
     private boolean hasCurrentScope() {

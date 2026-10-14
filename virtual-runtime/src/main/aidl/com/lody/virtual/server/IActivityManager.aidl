@@ -21,6 +21,10 @@ import com.lody.virtual.server.interfaces.IProcessObserver;
 interface IActivityManager {
     boolean startScopedAccountSync(int userId, in ComponentName component, in Account account, String authority, in IBinder syncContext);
     void cancelScopedAccountSync(int userId, in ComponentName component, in IBinder syncContext);
+    String prepareNativeAccountPicker(in IBinder resultTo);
+    int claimNativeAccountPicker(String session);
+    int currentNativeAccountPicker(String session);
+    boolean completeNativeAccountPicker(String session);
     String prepareUriPicker(in Intent request, in IBinder resultTo);
     Intent takeUriPickerRequest(String session);
     boolean completeUriPicker(String session, int resultCode, in Intent result);

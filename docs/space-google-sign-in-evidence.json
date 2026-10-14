@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "date": "2026-10-14",
-  "overall": "implemented_pending_latest_automation_complete_line_drive_and_formal_physical_acceptance",
+  "overall": "source24_both_account_routes_and_supporting_full42_passed_backup_pin_home_and_formal_device_pending",
   "sourceFreezeFinal": true,
   "device": {
     "model": "Pixel 10a",
@@ -88,12 +88,12 @@
     ]
   },
   "pending": {
-    "originalLineGoogleConsentAndLogin": "primary_login_accepted_restore_picker_space_only_but_account_not_retained_drive_and_home_unverified",
+    "originalLineGoogleConsentAndLogin": "space_account_retained_real_backup_found_backup_pin_and_final_home_pending",
     "finalIdentityVerification": "pending",
     "ownedUiTimeoutAndCancellation": "passed_final15_original_line_supporting_device",
-    "finalBuildLintAndRegression": "latest_build_lint_units_passed_latest_native_and_42_regression_pending_real_call",
-    "finalApkHashes": "latest_production_and_test_recorded_installed_production_match_verified",
-    "cleanupAndFinalReview": "cleanup_and_review_passed_commit_pending",
+    "finalBuildLintAndRegression": "source24_build_lint_232_app_843_runtime_and_supporting_full42_passed",
+    "finalApkHashes": "source24_app_test_fixture_hashes_recorded_install_match_per_root_verification",
+    "cleanupAndFinalReview": "completed_source24_cleanup_metadata_and_independent_review_no_blockers",
     "formalPhysicalAcceptance": "pending_physical_ASUS_or_Pixel_7_per_latest_replacement_AGENTS"
   },
   "limitations": [
@@ -267,8 +267,17 @@
     "focused17": "failed_observer_cannot_see_engine_process",
     "focused18": "warm_cold_failed_exact_foreground_guard_real_call_top",
     "finalRegression": {
-      "testsPlanned": 42,
-      "status": "not_run"
+      "candidate": 21,
+      "tests": 42,
+      "status": "passed_supporting_device",
+      "seconds": 184.713,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "negativePerTestStatusCount": 0,
+      "log": "/tmp/apptwin-google-space-final42-diagnostic21.log",
+      "logSha256": "8091d50eb757f123a72c6bbfe1b0c782c07b59b16bcf600c4c86e6f79088dad1",
+      "scopeLimitation": "candidate21_only_existing_direct_selection_cancel_empty_not_new_forwarded_result_or_candidate23"
     },
     "googlePrimaryLoginProgressPersistsColdRestore": true,
     "formalPhysicalAcceptancePending": true,
@@ -280,25 +289,37 @@
     "appSha256": "75d66d6cefa301e7f52ee27ee470a3b013864845688eb4f9e8bede106bb69747",
     "installedAppSha256MatchesBuild": true,
     "testSha256": "1e379833cf2f6c39821e053c57297bd029c15917c9778c7eaf361d4454b2d649",
-    "focused19": "not_run_real_call_in_foreground"
+    "focused19": {
+      "status": "passed_supporting_device_after_resume",
+      "tests": 1,
+      "seconds": 29.838,
+      "log": "/tmp/apptwin-google-nativepicker19-resume.log",
+      "selectionWithRotationOperation": true,
+      "rotationProvesActivityRecreation": false,
+      "cancelCallback": true,
+      "emptySpaceCallback": true,
+      "exactForegroundGuardPreserved": true
+    }
   },
   "externalVerificationBlock": {
-    "status": "ui_verification_paused",
+    "status": "cleared_for_supporting_device_ui_verification",
     "readOnlyObservedTop": "com.google.android.dialer/...InCallActivity",
     "callManipulated": false,
     "testAssertionWeakened": false,
     "provenRotationBug": false,
     "diagnosticOnlyChanges": "safe_phase_metadata_and_split_lines",
-    "retryCondition": "real_call_no_longer_foreground"
+    "retryCondition": "real_call_no_longer_foreground",
+    "observedTopOnResume": "launcher"
   },
   "cleanup": {
-    "metadataPath": "/tmp/apptwin-google-final19-cleanup.json",
+    "metadataPath": "/tmp/apptwin-google-final24-cleanup.json",
     "onlyOriginalGroup": true,
     "groupAndAppsMetadataUnchanged": true,
     "runtimeDiagnosticsMayChange": true,
     "ownedFixtureAccountsCleaned": true,
     "originalGoogleAccountCount": 1,
-    "byteForBytePrivateDataPreservationClaim": false
+    "byteForBytePrivateDataPreservationClaim": false,
+    "installedApkMatchesSource24": true
   },
   "lineState": {
     "hostAccountSelected": false,
@@ -306,12 +327,222 @@
     "coldCloneResumeAtRestorePage": true,
     "driveAuthorizationVerified": false,
     "fullLineHomeVerified": false,
-    "backupSkipFinalized": false
+    "backupSkipFinalized": false,
+    "source21RestorePickerOnlySpaceAccountCount": 1,
+    "restoreSelectedAccountNameBlank": false,
+    "restoreButtonEnabled": true,
+    "safeBrowsingApiDisabledIsDriveEvidence": false,
+    "lineRetainsExpectedSpaceAccount": true,
+    "cloudBackupFound": true,
+    "backupPinPromptReached": true,
+    "backupRestored": false
   },
-  "review": "passed_commit_pending",
+  "review": "documentation_included_with_fix_actual_commit_authoritative_in_git_log",
   "ongoingResources": {
     "cloudPaidResources": [],
     "devServers": [],
-    "realUserCall": "ongoing_not_manipulated"
+    "realUserCall": "call_ui_no_longer_foreground_on_resume_not_manipulated"
+  },
+  "subsequentRegressionHistory": [
+    {
+      "candidate": 19,
+      "tests": 42,
+      "status": "failed",
+      "failures": 6,
+      "seconds": 114.736,
+      "firstFailure": "AccountRefresh_cleanup_runtime_ownership_after_body_passed",
+      "foreground": "launcher_no_call_ui"
+    },
+    {
+      "candidate": 20,
+      "scope": "diagnostic_logger_only",
+      "status": "jvm_failed_android_log_not_mocked"
+    },
+    {
+      "candidate": 21,
+      "scope": "best_effort_diagnostic_logger_no_cleanup_ownership_logic_change",
+      "build": "passed",
+      "buildSeconds": 60,
+      "runtimeUnit": {
+        "tests": 839,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      },
+      "focusedAccountRefresh": {
+        "status": "passed",
+        "tests": 1,
+        "seconds": 15.476,
+        "log": "/tmp/apptwin-google-accountrefresh21.log"
+      }
+    }
+  ],
+  "boundedRecovery": {
+    "exactOwnedPartialMetadataCaptured": true,
+    "preservingDataInstallColdStartupCount": 1,
+    "usedExistingRecovery": true,
+    "ownedProcessCount": 0,
+    "ownedServiceCount": 0,
+    "pending": false,
+    "groupStoreAutoReconciledOnlyOriginal": true,
+    "manualPrivateFileDelete": false,
+    "cleanupOwnershipLogicChanged": false,
+    "cleanupRaceClaimedFixed": false
+  },
+  "candidate22": {
+    "changes": "best_effort_native_chooser_scope_result_boolean_diagnostics_only",
+    "behaviorChanged": false,
+    "build": "passed",
+    "buildSeconds": 42,
+    "buildLog": "/tmp/apptwin-google-space-twentysecond-build.log",
+    "runtimeUnit": {
+      "tests": 839,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "originalLineResultDiagnostic": {
+      "status": "confirmed_canceled_after_source_scope_became_false",
+      "scopeValidOnCreateAt": "2026-10-14T15:27:50+08:00",
+      "scopeInvalidOnConfirmAt": "2026-10-14T15:27:56+08:00",
+      "intentFlag": "0x02000000_FLAG_ACTIVITY_FORWARD_RESULT",
+      "legitimateTransientSourceFinished": true,
+      "driveUnsupportedClaim": false,
+      "provenance": "tool_output_transcription_original_log_path_later_overwritten"
+    },
+    "apkHashes": "historical_not_retained_superseded_by_final24"
+  },
+  "candidate23": {
+    "status": "implemented_review_and_build_passed",
+    "behaviorChanged": true,
+    "design": "bounded_server_native_picker_capability_for_legitimate_finished_forward_result_source",
+    "bindings": [
+      "owner_ProcessRecord",
+      "process_generation",
+      "client_Binder",
+      "Space_epochs",
+      "package_epochs",
+      "TTL",
+      "host_UI_claim",
+      "once_consume"
+    ],
+    "globalActivityStackChanged": false,
+    "isolationRelaxed": false,
+    "forwardedFixture": "parent_startForResult_transient_forward_and_finish_choose_after_destroy_parent_exactly_once",
+    "build": {
+      "status": "passed",
+      "seconds": 62
+    },
+    "acceptance": "superseded_by_candidate24_passed",
+    "review": "passed",
+    "apiCompatibilityIssueFound": "removeIf_API24_changed_to_Iterator_in_candidate24"
+  },
+  "candidate24": {
+    "changes": "API21_compatible_Iterator_in_retireOwner_and_retireUser_only",
+    "suppressionAdded": false,
+    "dependenciesChanged": false,
+    "build": {
+      "status": "passed",
+      "seconds": 66
+    },
+    "appUnit": {
+      "tests": 232,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "runtimeDebugUnit": {
+      "tests": 843,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "lint": {
+      "unfilteredError": 0,
+      "unfilteredFatal": 0,
+      "warnings": {
+        "app": 30,
+        "runtime": 142,
+        "fixture": 17
+      },
+      "baselineUnchanged": true
+    },
+    "installedPreservingData": true,
+    "focusedForwardedFixture": {
+      "status": "passed_supporting_device",
+      "probes": 4,
+      "seconds": 32.736,
+      "log": "/tmp/apptwin-google-nativepicker24-forward.log"
+    },
+    "originalLineManual": {
+      "status": "space_account_accepted_real_cloud_backup_found",
+      "observedAt": "2026-10-14T15:42:08+08:00",
+      "scopeCurrent": true,
+      "existingAccount": true,
+      "scopeComplete": true,
+      "resultOkAccount": true,
+      "lineRetainsExpectedSpaceAccount": true,
+      "cloudBackupFound": true,
+      "restoreButtonEnabled": true,
+      "backupPinPromptReached": true,
+      "backupPinReadStoredGuessed": false,
+      "backupRestored": false,
+      "fullLineHome": false,
+      "tracePath": "/tmp/apptwin-native24-result.log",
+      "businessStatePath": "/tmp/apptwin-line24-business-state.json"
+    },
+    "fullRegression": {
+      "status": "passed_supporting_device",
+      "tests": 42,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "negativePerTestStatusCount": 0,
+      "seconds": 175.361,
+      "exitCode": 0,
+      "log": "/tmp/apptwin-google-space-final42-source24.log",
+      "logSha256": "96fc368ad6f6cb5bea044ded63ff47fb49c661bc65e72a345afaab8b26a557aa"
+    },
+    "apkHashes": {
+      "app/build/outputs/apk/runtimeProbe/debug/app-runtimeProbe-debug.apk": "0a68397fa9999dcd2cc27a28f7eea6725e12b0a88289577c3d699a24c0f6629f",
+      "app/build/outputs/apk/androidTest/runtimeProbe/debug/app-runtimeProbe-debug-androidTest.apk": "6b3cb81946ff837a76a5ad8786f6e89b8843c7498baec740ef614f4535da09e1",
+      "runtime-update-fixture/build/outputs/apk/revisionOne/debug/runtime-update-fixture-revisionOne-debug.apk": "6f865ec7ec46f8e67739854a4b17879a0c736f753a5e9fda80f05394721eaf86"
+    },
+    "buildMetadataPath": "/tmp/apptwin-google-final24-build-metadata.json",
+    "buildMetadata": {
+      "source": "24",
+      "apkSha256": {
+        "app/build/outputs/apk/runtimeProbe/debug/app-runtimeProbe-debug.apk": "0a68397fa9999dcd2cc27a28f7eea6725e12b0a88289577c3d699a24c0f6629f",
+        "app/build/outputs/apk/androidTest/runtimeProbe/debug/app-runtimeProbe-debug-androidTest.apk": "6b3cb81946ff837a76a5ad8786f6e89b8843c7498baec740ef614f4535da09e1",
+        "runtime-update-fixture/build/outputs/apk/revisionOne/debug/runtime-update-fixture-revisionOne-debug.apk": "6f865ec7ec46f8e67739854a4b17879a0c736f753a5e9fda80f05394721eaf86"
+      },
+      "app": {
+        "tests": 232,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      },
+      "virtual-runtime": {
+        "tests": 843,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      },
+      "app_lint": {
+        "Error": 0,
+        "Fatal": 0,
+        "Warning": 30
+      },
+      "virtual-runtime_lint": {
+        "Error": 0,
+        "Fatal": 0,
+        "Warning": 142
+      },
+      "runtime-update-fixture_lint": {
+        "Error": 0,
+        "Fatal": 0,
+        "Warning": 17
+      }
+    }
   }
 }

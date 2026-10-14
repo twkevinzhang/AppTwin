@@ -67,7 +67,9 @@ class OwnedFrameworkAccountPickerE2eTest {
                     val request = UUID.randomUUID().toString()
                     File(files, "enable-owned-account-picker-probe").writeText(JSONObject().put("requestId", request)
                         .put("forgedUser", b.user()).put("expectedName", accountA.name)
-                        .put("accountType", PACKAGE).toString())
+                        .put("accountType", PACKAGE).put("forwarded", mode == "forwarded").toString())
+                    val transient = File(files, "owned-account-picker-transient.json")
+                    check(!transient.exists() || transient.delete())
                     val result = File(files, "owned-account-picker-outcome.json")
                     check(!result.exists() || result.delete())
                     android.util.Log.i("OwnedAccountPicker", "phase=$mode stage=before-host")
@@ -81,7 +83,21 @@ class OwnedFrameworkAccountPickerE2eTest {
                     if (mode != "empty") {
                         awaitSyntheticAccount(accountA.name)
                         assertSyntheticAccountAbsent(accountB.name)
-                        if (mode == "select") {
+                        if (mode == "forwarded") {
+                            val destroyedDeadline = SystemClock.elapsedRealtime() + 10_000
+                            var destroyed = false
+                            while (SystemClock.elapsedRealtime() < destroyedDeadline) {
+                                assertNoPhysicalPicker()
+                                val state = runCatching { JSONObject(transient.readText()) }.getOrNull()
+                                destroyed = state != null && state.optString("requestId") == request && state.optBoolean("destroyed")
+                                if (destroyed) break
+                                Thread.sleep(50)
+                            }
+                            assertTrue("Forwarding guest trampoline must be destroyed before account selection", destroyed)
+                            assertFalse("No result before the user selects the owned account", result.exists())
+                            clickSyntheticAccount(accountA.name)
+                            clickFrameworkButton("android:id/button2")
+                        } else if (mode == "select") {
                             instrumentation.uiAutomation.setRotation(android.app.UiAutomation.ROTATION_FREEZE_90)
                             try {
                                 awaitSyntheticAccount(accountA.name)
@@ -103,8 +119,9 @@ class OwnedFrameworkAccountPickerE2eTest {
                     val outcome = requireNotNull(observed) { "Framework account picker callback did not terminate" }
                     assertEquals(request, outcome.getString("requestId"))
                     assertEquals(1, outcome.getInt("callbacks"))
+                    assertTrue("Parent receives the original request code", outcome.getBoolean("requestCodeMatches"))
                     when (mode) {
-                        "select" -> { assertTrue(outcome.getBoolean("resultOk")); assertTrue(outcome.getBoolean("nameMatches")); assertTrue(outcome.getBoolean("typeMatches")) }
+                        "select", "forwarded" -> { assertTrue(outcome.getBoolean("resultOk")); assertTrue(outcome.getBoolean("nameMatches")); assertTrue(outcome.getBoolean("typeMatches")) }
                         "cancel" -> { assertTrue(outcome.getBoolean("cancelled")); assertFalse(outcome.getBoolean("hasAccount")) }
                         else -> { assertTrue("Empty owned Space returns explicit cancellation", outcome.getBoolean("cancelled")); assertFalse("Empty owned Space must never return a host account", outcome.getBoolean("hasAccount")) }
                     }
@@ -115,6 +132,7 @@ class OwnedFrameworkAccountPickerE2eTest {
                 probe(a, "select")
                 probe(a, "cancel")
                 probe(empty, "empty")
+                probe(a, "forwarded")
             }
         } catch (error: Throwable) { primary = error; throw error }
         finally {

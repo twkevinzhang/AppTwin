@@ -280,6 +280,62 @@ public class VActivityManagerService extends IActivityManager.Stub
     private final Map<Long, LinePushDaemonAuthorizationScope> mLinePushDaemonAuthorizations =
             new java.util.HashMap<>();
     private final SelectedUriGrantState selectedUriGrants = new SelectedUriGrantState();
+    private final NativeAccountPickerSessions<ProcessRecord> nativeAccountPickerSessions =
+            new NativeAccountPickerSessions<>(this::isNativeAccountPickerOwnerCurrent);
+
+    private boolean isNativeAccountPickerOwnerCurrent(NativeAccountPickerSessions.Scope<ProcessRecord> scope) {
+        ProcessRecord owner = scope.owner;
+        synchronized (this) {
+            if (owner == null || owner.generation != scope.processGeneration
+                    || owner.userId != scope.user || owner.client == null
+                    || !scope.client.equals(owner.client.asBinder())
+                    || !isCurrentActivityProcessOwner(owner)
+                    || !scope.packageName.equals(owner.info.packageName)) return false;
+        }
+        // Server-owned snapshots may be pruned while another guest issues a request. Clear
+        // Binder identity for bookkeeping only; issue already authenticated its actual caller.
+        long identity = Binder.clearCallingIdentity();
+        try {
+            // Read user/package authority outside the VAMS monitor to preserve lock order.
+            if (!com.lody.virtual.server.pm.VUserManagerService.get().isRuntimeAvailable(scope.user)) return false;
+            com.lody.virtual.os.VUserInfo user = com.lody.virtual.server.pm.VUserManagerService.get().getUserInfo(scope.user);
+            return user != null && user.serialNumber == scope.serial
+                    && user.pendingIntentGeneration == scope.userEpoch
+                    && scope.packageEpoch != 0
+                    && scope.packageEpoch == com.lody.virtual.server.pm.VUserManagerService.get()
+                            .getPackagePendingIntentGeneration(scope.packageName, scope.user)
+                    && SystemClock.elapsedRealtime() < scope.deadline;
+        } finally { Binder.restoreCallingIdentity(identity); }
+    }
+
+    @Override public String prepareNativeAccountPicker(IBinder source) {
+        ProcessRecord caller;
+        synchronized (mPidsSelfLocked) { caller = findProcessLocked(Binder.getCallingPid()); }
+        if (source == null || caller == null
+                || !mMainStack.isActivityOwnedByProcess(caller.userId, source, caller)
+                || !caller.info.packageName.equals(mMainStack.getPackageForToken(caller.userId, source))
+                || !isCurrentActivityProcessOwner(caller)) throw new SecurityException("Account picker owner mismatch");
+        com.lody.virtual.os.VUserInfo user = com.lody.virtual.server.pm.VUserManagerService.get().getUserInfo(caller.userId);
+        if (user == null) return null;
+        return nativeAccountPickerSessions.issue(caller, caller.client.asBinder(), caller.generation,
+                caller.userId, caller.info.packageName, user.serialNumber, user.pendingIntentGeneration,
+                com.lody.virtual.server.pm.VUserManagerService.get()
+                        .getPackagePendingIntentGeneration(caller.info.packageName, caller.userId),
+                SystemClock.elapsedRealtime());
+    }
+    @Override public int claimNativeAccountPicker(String session) {
+        com.lody.virtual.server.VirtualUserAccessPolicy.enforceHost();
+        return nativeAccountPickerSessions.claim(session, SystemClock.elapsedRealtime());
+    }
+    @Override public int currentNativeAccountPicker(String session) {
+        com.lody.virtual.server.VirtualUserAccessPolicy.enforceHost();
+        return nativeAccountPickerSessions.current(session, SystemClock.elapsedRealtime());
+    }
+    @Override public boolean completeNativeAccountPicker(String session) {
+        com.lody.virtual.server.VirtualUserAccessPolicy.enforceHost();
+        return nativeAccountPickerSessions.complete(session, SystemClock.elapsedRealtime());
+    }
+
     private final java.util.Map<String, PickerSession> pickerSessions = new java.util.HashMap<>();
     private static final class PickerSession {
         final int user; final String pkg; final Intent request;
@@ -962,20 +1018,55 @@ public class VActivityManagerService extends IActivityManager.Stub
 
     /** Synchronously retires all runtime ownership before a virtual user id can be reused. */
     public boolean clearUserRuntimeState(int userId) {
+        traceUserRuntimeCleanup(userId, "begin", false);
         BroadcastDispatchStopFence.StopScope broadcastStop =
                 mBroadcastDispatchStopFence.beginUser(userId);
+        traceUserRuntimeCleanup(userId, "cancel-broadcast", false);
         mStaticBroadcastDispatcher.cancelUser(userId, "user-cleanup");
+        traceUserRuntimeCleanup(userId, "line-stop-fence", false);
         LinePushStopFence.StopScope lineStop = beginLinePushStop(
                 LinePushBroadcastPolicy.LINE_PACKAGE, userId);
         try {
+            traceUserRuntimeCleanup(userId, "retire-processes", false);
+            nativeAccountPickerSessions.retireUser(userId);
             retireUserProcesses(userId, "user-cleanup");
+            traceUserRuntimeCleanup(userId, "clear-pending-intents", false);
             mPendingIntents.clearUser(userId);
+            traceUserRuntimeCleanup(userId, "clear-prepared-launches", false);
             mPreparedActivityLaunches.cancelUser(userId);
+            traceUserRuntimeCleanup(userId, "verify", true);
             return !hasUserRuntimeState(userId);
         } finally {
+            traceUserRuntimeCleanup(userId, "end-fences", false);
             endLinePushStop(lineStop);
             mBroadcastDispatchStopFence.end(broadcastStop);
         }
+    }
+
+    private void traceUserRuntimeCleanup(int userId, String phase, boolean includeCounts) {
+        try {
+            VLog.i(TAG, "user-runtime-cleanup phase=" + phase + " user=" + userId
+                    + (includeCounts ? " " + runtimeOwnershipCounts(userId) : ""));
+        } catch (RuntimeException | LinkageError unavailableDiagnostics) {
+            // A failed metadata log cannot interrupt or alter ownership cleanup.
+        }
+    }
+
+    private String runtimeOwnershipCounts(int userId) {
+        int processes = 0;
+        int services = 0;
+        synchronized (mPidsSelfLocked) {
+            for (int i = 0; i < mPidsSelfLocked.size(); i++) {
+                if (mPidsSelfLocked.valueAt(i).userId == userId) processes++;
+            }
+        }
+        synchronized (mHistory) {
+            for (ServiceRecord service : mHistory) {
+                if (service.process != null && service.process.userId == userId) services++;
+            }
+        }
+        return "processes=" + processes + " services=" + services
+                + " pendingIntents=" + mPendingIntents.hasUser(userId);
     }
 
     private void retireUserProcesses(int userId, String reason) {
@@ -2085,6 +2176,7 @@ public class VActivityManagerService extends IActivityManager.Stub
                 return;
             }
             process.terminalCleanupStarted = true;
+            nativeAccountPickerSessions.retireOwner(process);
             if (process.osIsolatedWorker) {
                 mIsolatedServiceOwners.remove(process.isolatedOwnerKey,
                         process.generation, process);
@@ -3563,6 +3655,7 @@ public class VActivityManagerService extends IActivityManager.Stub
                 LinePushBroadcastPolicy.LINE_PACKAGE, userHandle);
         try {
             mTrustedGmsCloudMessagingSupervisor.stopForUser(userHandle);
+            nativeAccountPickerSessions.retireUser(userHandle);
             retireUserProcesses(userHandle, "user-stop");
             mPendingIntents.clearUser(userHandle);
             if (hasUserRuntimeState(userHandle)) return -1;
