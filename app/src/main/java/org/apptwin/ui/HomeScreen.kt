@@ -38,7 +38,7 @@ import androidx.compose.material.icons.filled.Error
 import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.Home
-import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material.icons.filled.Remove
 import androidx.compose.material.icons.filled.Security
 import androidx.compose.material.icons.filled.Cloud
@@ -189,26 +189,28 @@ fun HomeScreen(
                     contentPadding = PaddingValues(16.dp, 12.dp, 16.dp, 104.dp),
                     verticalArrangement = Arrangement.spacedBy(18.dp),
                 ) {
-                    item { HomeSummary(groupCount = state.groups.size) }
                     item {
-                        TextButton(
-                            modifier = Modifier.testTag("expand-all-spaces"),
-                            onClick = {
-                                collapsedGroupIds = if (allExpanded) {
-                                    state.groups.map(GroupItem::groupId)
-                                } else {
-                                    emptyList()
-                                }
-                            },
-                        ) {
-                            Icon(
-                                if (allExpanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
-                                contentDescription = null,
-                            )
-                            Text(
-                                if (allExpanded) "全部收合" else "全部展開",
-                                modifier = Modifier.padding(start = 8.dp),
-                            )
+                        Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.CenterEnd) {
+                            TextButton(
+                                modifier = Modifier.testTag("expand-all-spaces"),
+                                contentPadding = PaddingValues(horizontal = 0.dp, vertical = 8.dp),
+                                onClick = {
+                                    collapsedGroupIds = if (allExpanded) {
+                                        state.groups.map(GroupItem::groupId)
+                                    } else {
+                                        emptyList()
+                                    }
+                                },
+                            ) {
+                                Icon(
+                                    if (allExpanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
+                                    contentDescription = null,
+                                )
+                                Text(
+                                    if (allExpanded) "全部收合" else "全部展開",
+                                    modifier = Modifier.padding(start = 8.dp),
+                                )
+                            }
                         }
                     }
                     items(
@@ -597,51 +599,6 @@ private fun DataIntegrityWarning(count: Int, modifier: Modifier = Modifier) {
 }
 
 @Composable
-private fun HomeSummary(groupCount: Int) {
-    Card(
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.primaryContainer,
-        ),
-    ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(20.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(16.dp),
-        ) {
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    "一個空間，一套獨立身分",
-                    style = MaterialTheme.typography.titleLarge,
-                    fontWeight = FontWeight.Bold,
-                )
-                Text(
-                    "將工作、私人或購物帳號分開，手機上的原始 App 不受影響。",
-                    modifier = Modifier.padding(top = 6.dp),
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.82f),
-                )
-            }
-            Box(
-                modifier = Modifier
-                    .size(52.dp)
-                    .clip(CircleShape)
-                    .background(MaterialTheme.colorScheme.primary),
-                contentAlignment = Alignment.Center,
-            ) {
-                Text(
-                    groupCount.toString(),
-                    style = MaterialTheme.typography.titleLarge,
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.onPrimary,
-                )
-            }
-        }
-    }
-}
-
-@Composable
 private fun ExpandableSpaceCard(
     item: GroupItem,
     expanded: Boolean,
@@ -702,6 +659,16 @@ private fun ExpandableSpaceCard(
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
+                Box {
+                    IconButton(
+                        modifier = Modifier.testTag("space-manage-${item.groupId}"),
+                        enabled = !isBusy,
+                        onClick = onOpenDetails,
+                    ) {
+                        Icon(Icons.Default.Tune, contentDescription = "管理 ${item.name} 空間")
+                    }
+
+                }
                 if (isBusy && gmsBusyMessage == null) {
                     CircularProgressIndicator(
                         modifier = Modifier.size(24.dp),
@@ -721,16 +688,6 @@ private fun ExpandableSpaceCard(
                             },
                         )
                     }
-                }
-                Box {
-                    IconButton(
-                        modifier = Modifier.testTag("space-manage-${item.groupId}"),
-                        enabled = !isBusy,
-                        onClick = onOpenDetails,
-                    ) {
-                        Icon(Icons.Default.MoreVert, contentDescription = "管理 ${item.name}")
-                    }
-
                 }
             }
             gmsBusyMessage?.let { message ->
