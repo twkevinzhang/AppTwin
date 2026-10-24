@@ -69,17 +69,6 @@ replace Group data.
 - `gms-capability-fixture`: local/ASUS fixture for availability and isolation evidence. It contains
   no Play Billing or Play Integrity client dependency or success path.
 
-The historical candidate review and the reason for selecting the exact GPL release tree are
-recorded in [`docs/core-engine-audit.md`](docs/core-engine-audit.md). Device acceptance evidence is
-recorded for [LINE](docs/m0-line-acceptance.md) and
-[Shopee Taiwan](docs/m0-shopee-acceptance.md).
-Group-scoped long-press uninstall and cross-Group data-preservation evidence is recorded in
-[`docs/group-app-uninstall-acceptance.md`](docs/group-app-uninstall-acceptance.md).
-The current fixture acceptance matrix is recorded in
-[`docs/m1-m3-fixture-acceptance.md`](docs/m1-m3-fixture-acceptance.md).
-The exact per-Group microG boundary and destructive ASUS fixture procedure are recorded in
-[`docs/microg-asus-fixture-acceptance.md`](docs/microg-asus-fixture-acceptance.md).
-
 For Shopee, select the imported package and use **開啟登入** to enter Shopee's declared native
 login activity. The normal GroupApp action continues to open Shopee's home activity. AppTwin
 does not bypass Shopee traffic verification or device-integrity decisions.
