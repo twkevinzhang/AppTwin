@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Intentionally declares no policies: the fixture can request admin status but control nothing. -->
+<device-admin>
+    <uses-policies />
+</device-admin>

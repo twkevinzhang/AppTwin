@@ -13,6 +13,68 @@ import java.io.File
 /** Reads only the exact names/bytes supplied in this guest's private opt-in configuration. */
 class MediaCompatibilityActivity : Activity() {
     private var sharedWriteOptIn = false
+    private val statusView by lazy { TextView(this).apply { textSize = 18f; setPadding(48, 96, 48, 48) } }
+    private val adminResult by lazy { TextView(this).apply { textSize = 18f; setPadding(48, 24, 48, 24) } }
+    private val rootView by lazy {
+        android.widget.LinearLayout(this).apply {
+            orientation = android.widget.LinearLayout.VERTICAL
+            addView(statusView)
+            addView(android.widget.Button(context).apply {
+                text = "Request device admin"
+                setOnClickListener { requestDeviceAdmin() }
+            })
+            addView(android.widget.Button(context).apply {
+                text = "Request overlay access"
+                setOnClickListener { requestOverlay() }
+            })
+            addView(adminResult)
+        }
+    }
+    private fun requestDeviceAdmin() {
+        val admin = android.content.ComponentName(this, FixtureAdminReceiver::class.java)
+        adminResult.text = "admin request sent"
+        try {
+            startActivityForResult(android.content.Intent(android.app.admin.DevicePolicyManager.ACTION_ADD_DEVICE_ADMIN)
+                .putExtra(android.app.admin.DevicePolicyManager.EXTRA_DEVICE_ADMIN, admin), ADMIN_REQUEST)
+        } catch (failure: Exception) { adminResult.text = "admin request failed:${failure.javaClass.simpleName}" }
+    }
+    private fun requestOverlay() {
+        adminResult.text = "overlay request sent"
+        try {
+            startActivityForResult(android.content.Intent(android.provider.Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                android.net.Uri.parse("package:$packageName")), OVERLAY_REQUEST)
+        } catch (failure: Exception) { adminResult.text = "overlay request failed:${failure.javaClass.simpleName}" }
+    }
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: android.content.Intent?) {
+        super.onActivityResult(requestCode, resultCode, data)
+        if (requestCode == ADMIN_REQUEST) adminResult.text = "admin result=$resultCode"
+        if (requestCode == OVERLAY_REQUEST) adminResult.text = "overlay result=$resultCode"
+    }
+    private val mediaPermissions = arrayOf("android.permission.READ_MEDIA_IMAGES", "android.permission.READ_MEDIA_VIDEO")
+
+    /** Manual launch only: ask for media access and show what this process can actually read. */
+    private fun startInteractiveProbe() {
+        if (mediaPermissions.all { checkSelfPermission(it) == PackageManager.PERMISSION_GRANTED }) refreshInteractiveProbe()
+        else requestPermissions(mediaPermissions, INTERACTIVE_REQUEST)
+    }
+    override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        if (requestCode == INTERACTIVE_REQUEST) refreshInteractiveProbe()
+    }
+    private fun refreshInteractiveProbe() {
+        val granted = mediaPermissions.joinToString(" ") {
+            "${it.substringAfterLast('.')}=${checkSelfPermission(it) == PackageManager.PERMISSION_GRANTED}"
+        }
+        Thread {
+            fun count(collection: android.net.Uri) = try {
+                contentResolver.query(collection, arrayOf("_id"), null, null, null)?.use { it.count }?.toString() ?: "null"
+            } catch (failure: Exception) { "blocked:${failure.javaClass.simpleName}" }
+            val summary = "$granted\nimages=${count(MediaStore.Images.Media.EXTERNAL_CONTENT_URI)}\n" +
+                "videos=${count(MediaStore.Video.Media.EXTERNAL_CONTENT_URI)}"
+            runOnUiThread { statusView.text = summary }
+        }.start()
+    }
+    private companion object { const val INTERACTIVE_REQUEST = 7; const val ADMIN_REQUEST = 8; const val OVERLAY_REQUEST = 9 }
     private fun logSharedStage(stage: String) {
         if (sharedWriteOptIn) android.util.Log.i("SharedWriteFixture",
             "stage=$stage pid=${android.os.Process.myPid()} task=$taskId")
@@ -24,9 +86,13 @@ class MediaCompatibilityActivity : Activity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         window.addFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
-        setContentView(TextView(this).apply { text = "Media compatibility acceptance fixture" })
+        setContentView(rootView)
+        statusView.text = "Media compatibility acceptance fixture"
         val configFile = File(filesDir, "media-compat-config.json")
-        if (!configFile.isFile) return
+        if (!configFile.isFile) {
+            startInteractiveProbe()
+            return
+        }
         sharedWriteOptIn = runCatching { JSONObject(configFile.readText()).optString("mode") == "shared-write" }.getOrDefault(false)
         logSharedStage("create")
         val processId = android.os.Process.myPid()

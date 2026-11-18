@@ -231,6 +231,12 @@
         android:required="false" />
 
     <application>
+        <activity android:name="com.lody.virtual.client.stub.CloneSpecialAccessPromptActivity"
+            android:exported="false" android:excludeFromRecents="true"
+            android:theme="@android:style/Theme.Translucent.NoTitleBar" />
+        <activity android:name="com.lody.virtual.client.stub.ClonePermissionPromptActivity"
+            android:exported="false" android:excludeFromRecents="true"
+            android:theme="@android:style/Theme.Translucent.NoTitleBar" />
         <activity android:name="com.lody.virtual.client.stub.TrustedUriPickerActivity"
             android:exported="false" android:theme="@android:style/Theme.Translucent.NoTitleBar" />
         <service

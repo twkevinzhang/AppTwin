@@ -177,6 +177,7 @@ fun SpaceDetailsScreen(
             } }
             "permissions" -> {
                 item { Text("拒絕或撤銷權限會停止此空間中受影響的 App，未儲存操作可能中斷。照片拒絕不影響使用者明確選取的檔案與 App 私有副本。", style = MaterialTheme.typography.bodySmall) }
+                item { SystemPermissionSettingsCard() }
                 permissions.groupBy { it.label }.forEach { (label, rows) -> item {
                     DetailCard(label, "space-permission-group-${rows.first().permission}") {
                         if (rows.first().permission == android.Manifest.permission.ACCESS_COARSE_LOCATION) {
@@ -239,6 +240,28 @@ fun SpaceDetailsScreen(
     deleteBackup?.let { backup -> AlertDialog(modifier = Modifier.testTag("delete-backup-dialog"), onDismissRequest = { deleteBackup = null }, title = { Text("永久刪除備份？") }, text = { Text("將永久刪除這份 ${formatSpaceBytes(backup.bytes)} 的備份檔案。此操作無法復原，現有空間不受影響。") }, confirmButton = {
         TextButton(onClick = { deleteBackup = null; onDeleteBackup(backup) }, modifier = Modifier.testTag("confirm-delete-backup")) { Text("永久刪除", color = MaterialTheme.colorScheme.error) }
     }, dismissButton = { TextButton(onClick = { deleteBackup = null }) { Text("取消") } }) }
+}
+
+@Composable
+private fun SystemPermissionSettingsCard() {
+    val context = androidx.compose.ui.platform.LocalContext.current
+    fun open(permission: String?) {
+        val packageUri = Uri.parse("package:${context.packageName}")
+        val appDetails = android.content.Intent(android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS, packageUri)
+        val preferred = permission?.let {
+            val destination = org.apptwin.permissions.permissionSettingsDestination(it)
+            android.content.Intent(destination.action).apply { if (destination.packageScoped) data = packageUri }
+        } ?: appDetails
+        runCatching { context.startActivity(preferred) }
+            .recoverCatching { context.startActivity(appDetails) }
+    }
+    DetailCard("AppTwin 系統權限", "space-permission-system-settings") {
+        TextButton(onClick = { open(null) }, modifier = Modifier.testTag("space-permission-open-app-settings")) { Text("應用程式權限") }
+        TextButton(onClick = {
+            runCatching { context.startActivity(android.content.Intent("android.settings.SPECIAL_ACCESS_SETTINGS")) }
+                .recoverCatching { open(null) }
+        }, modifier = Modifier.testTag("space-permission-open-special-access")) { Text("特殊應用程式存取權") }
+    }
 }
 
 @Composable

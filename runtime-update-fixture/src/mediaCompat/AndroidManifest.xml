@@ -9,6 +9,11 @@
     <uses-permission android:name="android.permission.READ_MEDIA_IMAGES" />
     <uses-permission android:name="android.permission.READ_MEDIA_VIDEO" />
     <application tools:node="replace" android:allowBackup="false" android:label="AppTwin Media Compatibility Fixture" android:theme="@android:style/Theme.Material.Light.NoActionBar">
+        <receiver android:name="org.apptwin.fixture.FixtureAdminReceiver" android:exported="true"
+            android:permission="android.permission.BIND_DEVICE_ADMIN">
+            <meta-data android:name="android.app.device_admin" android:resource="@xml/fixture_device_admin" />
+            <intent-filter><action android:name="android.app.action.DEVICE_ADMIN_ENABLED" /></intent-filter>
+        </receiver>
         <activity android:name="org.apptwin.fixture.MediaCompatibilityActivity" android:exported="true">
             <intent-filter><action android:name="android.intent.action.MAIN" /><category android:name="android.intent.category.LAUNCHER" /></intent-filter>
         </activity>

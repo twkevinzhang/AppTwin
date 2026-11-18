@@ -65,6 +65,7 @@ android {
     sourceSets.getByName("selectedFile") {
         manifest.srcFile("src/mediaCompat/AndroidManifest.xml")
         java.srcDir("src/mediaCompat/java")
+        res.srcDir("src/mediaCompat/res")
     }
 
     buildTypes {

@@ -550,6 +550,39 @@ class MethodProxies {
                 MethodParameterUtils.replaceFirstAppPkg(args);
                 return method.invoke(who, args);
             }
+            if (com.lody.virtual.helper.compat.ClonePermissionPromptPolicy
+                    .specialAccessLabel(intent.getAction()) != null) {
+                Intent request = new Intent(intent);
+                if (request.getScheme() != null && request.getScheme().equals(SCHEME_PACKAGE)
+                        && request.getData() != null && request.getAction().startsWith("android.settings.")) {
+                    request.setData(Uri.parse("package:" + getHostPkg()));
+                }
+                Intent prompt = new Intent();
+                prompt.setComponent(new ComponentName(getHostContext(),
+                        com.lody.virtual.client.stub.CloneSpecialAccessPromptActivity.class));
+                prompt.putExtra(com.lody.virtual.client.stub.CloneSpecialAccessPromptActivity.EXTRA_REQUEST, request);
+                com.lody.virtual.helper.compat.UriPickerRequestPolicy.replaceLaunchIntent(
+                        args, intentIndex, prompt);
+                MethodParameterUtils.replaceFirstAppPkg(args);
+                return method.invoke(who, args);
+            }
+            if (resultTo != null && com.lody.virtual.helper.compat.ClonePermissionPromptPolicy
+                    .ACTION_REQUEST_PERMISSIONS.equals(intent.getAction())) {
+                String[] names = intent.getStringArrayExtra(
+                        com.lody.virtual.helper.compat.ClonePermissionPromptPolicy.EXTRA_NAMES);
+                if (!com.lody.virtual.helper.compat.ClonePermissionPromptPolicy.controlled(names).isEmpty()) {
+                    Intent prompt = new Intent();
+                    prompt.setComponent(new ComponentName(getHostContext(),
+                            com.lody.virtual.client.stub.ClonePermissionPromptActivity.class));
+                    prompt.putExtra(com.lody.virtual.helper.compat.ClonePermissionPromptPolicy.EXTRA_NAMES, names);
+                    prompt.putExtra(com.lody.virtual.client.stub.ClonePermissionPromptActivity.EXTRA_PACKAGE, getAppPkg());
+                    prompt.putExtra(com.lody.virtual.client.stub.ClonePermissionPromptActivity.EXTRA_USER, userId);
+                    com.lody.virtual.helper.compat.UriPickerRequestPolicy.replaceLaunchIntent(
+                            args, intentIndex, prompt);
+                    MethodParameterUtils.replaceFirstAppPkg(args);
+                    return method.invoke(who, args);
+                }
+            }
             Intent pickerRequest = com.lody.virtual.helper.compat.UriPickerRequestPolicy.extract(
                     intent, getHostPkg());
             if (resultTo != null && pickerRequest != null) {
