@@ -133,6 +133,31 @@ public class MethodProxies {
         }
     }
 
+    /** Geocoder translates supplied coordinates/text; it does not read device location. */
+    static class ReverseGeocode extends MethodProxy {
+        @Override public String getMethodName() { return "reverseGeocode"; }
+
+        protected Object rewriteRequest(Object request) {
+            String attribution = Build.VERSION.SDK_INT >= 30
+                    ? getHostContext().getAttributionTag() : null;
+            return GeocodeRequestIdentity.rebuild(request, getMethodName(), getAppPkg(),
+                    getVUid(), getHostPkg(), getRealUid(), attribution);
+        }
+
+        @Override public Object call(Object who, Method method, Object... args) throws Throwable {
+            if (args == null || args.length != 2) {
+                throw new UnsupportedOperationException("Unsupported geocoder Binder signature");
+            }
+            Object[] forwarded = args.clone();
+            forwarded[0] = rewriteRequest(args[0]);
+            return super.call(who, method, forwarded);
+        }
+    }
+
+    static class ForwardGeocode extends ReverseGeocode {
+        @Override public String getMethodName() { return "forwardGeocode"; }
+    }
+
     static class RemoveUpdates extends ReplaceLastPkgMethodProxy {
 
         public RemoveUpdates() {
