@@ -8,6 +8,7 @@ import com.lody.virtual.remote.PendingResultData;
 import com.lody.virtual.remote.BadgerInfo;
 import com.lody.virtual.remote.PreparedActivityLaunch;
 import com.lody.virtual.remote.TrustedGmsCloudMessagingState;
+import com.lody.virtual.remote.OutboundShareRequest;
 import android.content.Intent;
 import android.accounts.Account;
 import android.content.ComponentName;
@@ -29,6 +30,8 @@ interface IActivityManager {
     Intent takeUriPickerRequest(String session);
     boolean completeUriPicker(String session, int resultCode, in Intent result);
     boolean hasSelectedUriGrant(String uri);
+    String prepareOutboundShare(in OutboundShareRequest request, in IBinder resultTo);
+    OutboundShareRequest takeOutboundShare(String session);
 
     const int PROCESS_RESTART_REJECTED = 0;
     const int PROCESS_RESTART_OWNER_READY = 1;

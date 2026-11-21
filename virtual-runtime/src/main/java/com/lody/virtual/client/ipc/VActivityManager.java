@@ -685,6 +685,14 @@ public class VActivityManager {
         try { return getService().completeUriPicker(session, resultCode, result); }
         catch (RemoteException failure) { return false; }
     }
+    public String prepareOutboundShare(com.lody.virtual.remote.OutboundShareRequest request, IBinder resultTo) {
+        try { return getService().prepareOutboundShare(request, resultTo); }
+        catch (RemoteException failure) { throw new IllegalStateException(failure); }
+    }
+    public com.lody.virtual.remote.OutboundShareRequest takeOutboundShare(String session) {
+        try { return getService().takeOutboundShare(session); }
+        catch (RemoteException failure) { return null; }
+    }
     public boolean hasSelectedUriGrant(String uri) {
         try { return getService().hasSelectedUriGrant(uri); }
         catch (RemoteException failure) { return false; }

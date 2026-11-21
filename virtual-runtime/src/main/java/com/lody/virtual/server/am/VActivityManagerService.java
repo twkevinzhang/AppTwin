@@ -419,6 +419,30 @@ public class VActivityManagerService extends IActivityManager.Stub
         pickerSessions.entrySet().removeIf(entry -> entry.getValue().user == user
                 && (pkg == null || pkg.equals(entry.getValue().pkg)));
     }
+    private final OutboundShareSessions<com.lody.virtual.remote.OutboundShareRequest> outboundSessions =
+            new OutboundShareSessions<>(SystemClock::elapsedRealtime,
+                    com.lody.virtual.remote.OutboundShareRequest::closeSources);
+    @Override public String prepareOutboundShare(com.lody.virtual.remote.OutboundShareRequest request,
+                                                 IBinder resultTo) {
+        if (request == null) throw new SecurityException("Outbound share requires a request");
+        if (resultTo == null || !request.isWellFormed()
+                || request.sources.length > com.lody.virtual.helper.compat.OutboundSharePolicy.MAX_URIS) {
+            request.closeSources();
+            throw new SecurityException("Malformed outbound share");
+        }
+        ProcessRecord caller;
+        synchronized (mPidsSelfLocked) { caller = findProcessLocked(Binder.getCallingPid()); }
+        if (caller == null || !caller.info.packageName.equals(mMainStack.getPackageForToken(caller.userId, resultTo))) {
+            request.closeSources();
+            throw new SecurityException("Outbound share owner mismatch");
+        }
+        request.userId = caller.userId;
+        return outboundSessions.put(request);
+    }
+    @Override public com.lody.virtual.remote.OutboundShareRequest takeOutboundShare(String session) {
+        com.lody.virtual.server.VirtualUserAccessPolicy.enforceHost();
+        return outboundSessions.take(session);
+    }
     @Override public boolean hasSelectedUriGrant(String uri) {
         ProcessRecord caller;
         synchronized (mPidsSelfLocked) { caller = findProcessLocked(Binder.getCallingPid()); }
