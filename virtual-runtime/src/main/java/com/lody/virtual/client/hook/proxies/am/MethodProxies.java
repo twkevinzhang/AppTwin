@@ -598,6 +598,16 @@ class MethodProxies {
                 MethodParameterUtils.replaceFirstAppPkg(args);
                 return method.invoke(who, args);
             }
+            Intent outbound = OutboundShareLauncher.bridgeFor(intent, userId, resultTo, getHostContext());
+            if (outbound == OutboundShareLauncher.REJECTED) {
+                return ActivityManagerCompat.START_INTENT_NOT_RESOLVED;
+            }
+            if (outbound != null) {
+                com.lody.virtual.helper.compat.UriPickerRequestPolicy.replaceLaunchIntent(
+                        args, intentIndex, outbound);
+                MethodParameterUtils.replaceFirstAppPkg(args);
+                return method.invoke(who, args);
+            }
             // chooser
             if (ChooserActivity.check(intent)) {
                 com.lody.virtual.helper.compat.FilePickerDiagnostics.launch("CHOOSER", method.getName(),
