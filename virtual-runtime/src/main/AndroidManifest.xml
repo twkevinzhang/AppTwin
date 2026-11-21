@@ -239,6 +239,11 @@
             android:theme="@android:style/Theme.Translucent.NoTitleBar" />
         <activity android:name="com.lody.virtual.client.stub.TrustedUriPickerActivity"
             android:exported="false" android:theme="@android:style/Theme.Translucent.NoTitleBar" />
+        <provider
+            android:name="com.lody.virtual.client.stub.OutboundFileProvider"
+            android:authorities="${applicationId}.outbound"
+            android:exported="false"
+            android:grantUriPermissions="true" />
         <service
             android:name="com.lody.virtual.client.stub.ForegroundEngineService"
             android:exported="false"
