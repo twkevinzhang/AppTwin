@@ -16,6 +16,7 @@ public final class OutboundFileStore {
     public static final long TTL_MILLIS = 24L * 60L * 60L * 1000L;
     public static final long DEFAULT_CAP_BYTES = 500L * 1024L * 1024L;
     static final int MAX_NAME_LENGTH = 120;
+    static final int MAX_NAME_BYTES = 200;
     private static final int MAX_EXTENSION_LENGTH = 10;
     private static final String FALLBACK_NAME = "file";
 
@@ -105,10 +106,29 @@ public final class OutboundFileStore {
         }
         name = clean.toString().trim();
         if (name.isEmpty() || name.equals(".") || name.equals("..")) return FALLBACK_NAME;
-        if (name.length() <= MAX_NAME_LENGTH) return name;
+        if (name.length() <= MAX_NAME_LENGTH && utf8Length(name) <= MAX_NAME_BYTES) return name;
         int dot = name.lastIndexOf('.');
         String extension = dot > 0 && name.length() - dot <= MAX_EXTENSION_LENGTH + 1 ? name.substring(dot) : "";
-        return name.substring(0, MAX_NAME_LENGTH - extension.length()) + extension;
+        String stem = name.substring(0, name.length() - extension.length());
+        int maxChars = MAX_NAME_LENGTH - extension.length();
+        int maxBytes = MAX_NAME_BYTES - utf8Length(extension);
+        // Filesystems limit names in bytes (NAME_MAX 255); cut on code-point boundaries only.
+        StringBuilder kept = new StringBuilder();
+        int bytes = 0;
+        for (int i = 0; i < stem.length(); ) {
+            int cp = stem.codePointAt(i);
+            String piece = new String(Character.toChars(cp));
+            int pieceBytes = utf8Length(piece);
+            if (kept.length() + piece.length() > maxChars || bytes + pieceBytes > maxBytes) break;
+            kept.append(piece);
+            bytes += pieceBytes;
+            i += Character.charCount(cp);
+        }
+        return kept.length() == 0 ? FALLBACK_NAME + extension : kept + extension;
+    }
+
+    private static int utf8Length(String value) {
+        return value.getBytes(java.nio.charset.StandardCharsets.UTF_8).length;
     }
 
     private static long size(File file) {

@@ -23,7 +23,10 @@ import java.util.Map;
 
 /** Guest-side half of the outbound file bridge: opens the guest's own URIs, never copies. */
 final class OutboundShareLauncher {
-    /** Outbound launch that cannot be served; the caller reports "not resolved" instead of crashing. */
+    /**
+     * Outbound launch that cannot be served. The caller must report START_SUCCESS without
+     * launching: Instrumentation turns START_INTENT_NOT_RESOLVED into ActivityNotFoundException.
+     */
     static final Intent REJECTED = new Intent();
 
     private OutboundShareLauncher() { }
@@ -37,7 +40,7 @@ final class OutboundShareLauncher {
         OutboundSharePolicy.Decision<Intent> decision = OutboundSharePolicy.decide(intent,
                 uri -> isVirtualUri(uri, userId, authorities), hasVirtualTarget);
         if (decision == null) return null;
-        if (resultTo == null) return REJECTED;
+        if (decision.rejected || resultTo == null) return REJECTED;
 
         int n = decision.virtualUris.size();
         ParcelFileDescriptor[] sources = new ParcelFileDescriptor[n];

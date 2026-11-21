@@ -79,11 +79,26 @@ public class OutboundSharePolicyTest {
         assertNull(decide(new FakeRequest("android.intent.action.CHOOSER", null, VIRTUAL), false));
     }
 
-    @Test public void tooManyUrisRejected() {
+    @Test public void tooManyVirtualUrisRejectedInsteadOfForwarded() {
         List<String> many = new ArrayList<>();
         for (int i = 0; i <= OutboundSharePolicy.MAX_URIS; i++) many.add(VIRTUAL + i);
         assertEquals(33, many.size());
+        OutboundSharePolicy.Decision<FakeRequest> d = decide(new FakeRequest(
+                "android.intent.action.SEND_MULTIPLE", null, many.toArray(new String[0])), false);
+        assertNotNull(d);
+        assertTrue(d.rejected);
+    }
+
+    @Test public void tooManyHostOnlyUrisKeepExistingPath() {
+        List<String> many = new ArrayList<>();
+        for (int i = 0; i <= OutboundSharePolicy.MAX_URIS; i++) many.add(HOST_MEDIA + i);
         assertNull(decide(new FakeRequest("android.intent.action.SEND_MULTIPLE", null,
                 many.toArray(new String[0])), false));
+    }
+
+    @Test public void acceptedDecisionIsNotRejected() {
+        OutboundSharePolicy.Decision<FakeRequest> d =
+                decide(new FakeRequest("android.intent.action.VIEW", null, VIRTUAL), false);
+        assertFalse(d.rejected);
     }
 }

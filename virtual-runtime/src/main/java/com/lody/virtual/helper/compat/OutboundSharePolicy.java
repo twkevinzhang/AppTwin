@@ -39,10 +39,13 @@ public final class OutboundSharePolicy {
         public final T payload;
         public final List<String> virtualUris;
         public final boolean chooser;
-        Decision(T payload, List<String> virtualUris, boolean chooser) {
+        /** Carries virtual URIs but cannot be served; forwarding it would crash the guest. */
+        public final boolean rejected;
+        Decision(T payload, List<String> virtualUris, boolean chooser, boolean rejected) {
             this.payload = payload;
             this.virtualUris = virtualUris;
             this.chooser = chooser;
+            this.rejected = rejected;
         }
     }
 
@@ -55,11 +58,10 @@ public final class OutboundSharePolicy {
         if (payload == null || !PAYLOAD_ACTIONS.contains(adapter.action(payload))) return null;
         if (!chooser && hasVirtualTarget) return null;
         Set<String> all = new LinkedHashSet<>(adapter.uris(payload));
-        if (all.size() > MAX_URIS) return null;
         List<String> virtual = new ArrayList<>();
         for (String uri : all) if (uri != null && isVirtualUri.test(uri)) virtual.add(uri);
         if (virtual.isEmpty()) return null;
-        return new Decision<>(payload, Collections.unmodifiableList(virtual), chooser);
+        return new Decision<>(payload, Collections.unmodifiableList(virtual), chooser, all.size() > MAX_URIS);
     }
 
     public static Decision<Intent> decide(Intent request, Predicate<String> isVirtualUri,

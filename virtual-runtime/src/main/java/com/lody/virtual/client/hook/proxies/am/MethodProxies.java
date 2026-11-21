@@ -600,7 +600,10 @@ class MethodProxies {
             }
             Intent outbound = OutboundShareLauncher.bridgeFor(intent, userId, resultTo, getHostContext());
             if (outbound == OutboundShareLauncher.REJECTED) {
-                return ActivityManagerCompat.START_INTENT_NOT_RESOLVED;
+                if (resultTo != null && requestCode >= 0) {
+                    VActivityManager.get().sendActivityResult(resultTo, resultWho, requestCode);
+                }
+                return 0;
             }
             if (outbound != null) {
                 com.lody.virtual.helper.compat.UriPickerRequestPolicy.replaceLaunchIntent(
